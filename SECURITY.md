@@ -72,3 +72,16 @@ Any automated assistant working in this repo should:
 - **Not** run bare `npm install` without the safe script (or equivalent checks)
 - **Not** add dependencies without a malware-name check
 - Prefer removing deps over adding new ones when possible
+
+## Runtime safety (Grocky app)
+
+- **Bypass permissions (YOLO)** requires an explicit confirmation modal and
+  `alwaysApproveAck` in the local store before `--always-approve` is passed.
+- A persistent red banner shows while bypass is active.
+- Permission decisions are written to a local **audit log** in Electron
+  `userData` (`grocky-store.json` → `permissionAudit`).
+- Optional client FS methods are **path-jailed** to the open project root.
+- Prefer not advertising client `fs` / `terminal` capabilities unless handlers
+  exist (claiming them without responses freezes ACP turns).
+- Do **not** add npm packages for Phase features when the Grok CLI already
+  exposes the capability (`grok models`, ACP `session/load`, etc.).

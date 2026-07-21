@@ -9,18 +9,32 @@ import {
   type JsonRpcId,
   type PermissionOption
 } from './acp/client'
-import { getSettings, upsertSession } from './store'
+import {
+  appendPermissionAudit,
+  getSettings,
+  getTranscript,
+  normalizeCwd,
+  saveTranscript,
+  upsertSession
+} from './store'
+import { listModels } from './models'
 import type {
+  ChatMessage,
   ConnectionState,
   MainToRendererEvent,
+  ModelInfo,
   PermissionDecision,
-  PermissionRequest
+  PermissionRequest,
+  ToolCallInfo
 } from '../../shared/types'
 
 interface PendingPermission {
   requestId: JsonRpcId
   options: PermissionOption[]
   toolCallId?: string
+  title: string
+  kind?: string
+  rawInput?: unknown
 }
 
 /**
@@ -35,6 +49,13 @@ export class AgentManager {
   private window: BrowserWindow | null = null
   private pendingPermission: PendingPermission | null = null
   private alwaysApprove = false
+  /** When true, session/update chunks rebuild history instead of live turn */
+  private replayingHistory = false
+  private historyAssistantId: string | null = null
+  private models: ModelInfo[] = []
+  private currentModel?: string
+  /** Live transcript for the active session (mirrored to disk) */
+  private liveMessages: ChatMessage[] = []
 
   setWindow(win: BrowserWindow | null): void {
     this.window = win
@@ -50,6 +71,14 @@ export class AgentManager {
 
   getCwd(): string | null {
     return this.cwd
+  }
+
+  getModels(): ModelInfo[] {
+    return this.models
+  }
+
+  getCurrentModel(): string | undefined {
+    return this.currentModel
   }
 
   private emit(event: MainToRendererEvent): void {
@@ -69,11 +98,19 @@ export class AgentManager {
     }
   }
 
-  async start(
+  private persistLiveTranscript(): void {
+    if (!this.sessionId) return
+    saveTranscript(this.sessionId, this.liveMessages)
+  }
+
+  /**
+   * Boot grok agent process + initialize only (no session/new).
+   */
+  private async bootAgent(
     cwd: string,
     options?: { model?: string; alwaysApprove?: boolean }
-  ): Promise<{ sessionId: string }> {
-    await this.stop()
+  ): Promise<void> {
+    await this.stopProcessOnly()
 
     const settings = getSettings()
     const binary = resolveGrokBinary(settings.grokBinary)
@@ -86,7 +123,12 @@ export class AgentManager {
     }
 
     const model = options?.model ?? settings.model
-    this.alwaysApprove = options?.alwaysApprove ?? settings.alwaysApprove
+    this.currentModel = model
+    this.alwaysApprove = !!(options?.alwaysApprove ?? settings.alwaysApprove)
+    // Hard safety: store may refuse alwaysApprove without ack
+    if (this.alwaysApprove && !settings.alwaysApproveAck) {
+      this.alwaysApprove = false
+    }
 
     const agentArgs = ['agent']
     if (model) {
@@ -98,21 +140,16 @@ export class AgentManager {
     agentArgs.push('stdio')
 
     this.setState('starting')
-    this.cwd = cwd
+    this.cwd = normalizeCwd(cwd)
     this.client = new GrokAcpClient(binary, agentArgs)
+    this.liveMessages = []
+    this.replayingHistory = false
+    this.historyAssistantId = null
+    this.activeMessageId = null
+    this.pendingPermission = null
 
-    this.client.on('stderr', (line) => {
-      this.log('stderr', line)
-      // Always forward severe-looking stderr as soft errors (non-fatal)
-      if (/error|panic|fatal/i.test(line) && !/0 errors/i.test(line)) {
-        // don't spam UI for every rust log; only store last
-      }
-    })
-
-    this.client.on('error', (err) => {
-      this.setState('error', err.message)
-    })
-
+    this.client.on('stderr', (line) => this.log('stderr', line))
+    this.client.on('error', (err) => this.setState('error', err.message))
     this.client.on('exit', (code) => {
       if (this.state !== 'stopped' && this.state !== 'idle') {
         this.setState('error', `Agent process exited (code ${code ?? '?'})`)
@@ -121,11 +158,9 @@ export class AgentManager {
       this.sessionId = null
       this.pendingPermission = null
     })
-
     this.client.on('notification', (method, params) => {
       this.handleNotification(method, params)
     })
-
     this.client.on(
       'server-request',
       (req: { id: JsonRpcId; method: string; params: unknown }) => {
@@ -133,22 +168,45 @@ export class AgentManager {
       }
     )
 
+    this.client.start()
+    const init = await this.client.initialize()
+
+    // Models from initialize meta when present
+    const meta = init._meta as Record<string, unknown> | undefined
+    const modelState = meta?.modelState as
+      | {
+          currentModelId?: string
+          availableModels?: Array<{ modelId?: string; name?: string; description?: string }>
+        }
+      | undefined
+    if (modelState?.availableModels?.length) {
+      this.models = modelState.availableModels.map((m) => ({
+        id: String(m.modelId || ''),
+        name: String(m.name || m.modelId || ''),
+        description: m.description,
+        isDefault: m.modelId === modelState.currentModelId
+      })).filter((m) => m.id)
+      this.currentModel = modelState.currentModelId || model
+    } else {
+      this.models = await listModels()
+      this.currentModel = model || this.models.find((m) => m.isDefault)?.id || this.models[0]?.id
+    }
+    this.emit({ type: 'models', models: this.models, current: this.currentModel })
+  }
+
+  async start(
+    cwd: string,
+    options?: { model?: string; alwaysApprove?: boolean }
+  ): Promise<{ sessionId: string }> {
+    await this.bootAgent(cwd, options)
+    if (!this.client) throw new Error('Agent failed to boot')
+
     try {
-      this.client.start()
-      await this.client.initialize()
-      const { sessionId } = await this.client.sessionNew(cwd)
+      const { sessionId } = await this.client.sessionNew(this.cwd!)
       this.sessionId = sessionId
+      this.liveMessages = []
       this.setState('ready')
-      this.emit({ type: 'session', sessionId, cwd })
-
-      upsertSession({
-        id: sessionId,
-        cwd,
-        title: path.basename(cwd),
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      })
-
+      this.emit({ type: 'session', sessionId, cwd: this.cwd! })
       return { sessionId }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -158,31 +216,107 @@ export class AgentManager {
     }
   }
 
-  async loadSession(sessionId: string, cwd?: string): Promise<{ sessionId: string }> {
-    if (!this.client || this.state !== 'ready') {
-      if (!cwd) throw new Error('No active agent; provide a project folder first')
-      await this.start(cwd)
+  /**
+   * Resume an existing Grok session: boot agent, session/load (no session/new),
+   * hydrate UI from ACP replay + local transcript cache.
+   */
+  async loadSession(
+    sessionId: string,
+    cwd?: string
+  ): Promise<{ sessionId: string; restored: boolean }> {
+    const targetCwd = cwd ? normalizeCwd(cwd) : this.cwd
+    if (!targetCwd) throw new Error('No project folder for session')
+
+    const settings = getSettings()
+    this.setState('loading')
+    this.emit({ type: 'history-clear', sessionId })
+
+    // Prefer local transcript immediately for snappy UI
+    const local = getTranscript(sessionId)
+    if (local.length > 0) {
+      for (const m of local) {
+        this.emit({
+          type: 'user-message',
+          sessionId,
+          message: { ...m, streaming: false, fromHistory: true }
+        })
+      }
     }
-    if (!this.client) throw new Error('Agent not running')
 
     try {
-      const result = await this.client.sessionLoad(sessionId, cwd ?? this.cwd ?? undefined)
+      // Fresh agent process bound to this project, then load (not new)
+      const needBoot =
+        !this.client ||
+        this.state === 'error' ||
+        this.state === 'idle' ||
+        this.state === 'stopped' ||
+        !this.cwd ||
+        normalizeCwd(this.cwd) !== targetCwd
+
+      if (needBoot) {
+        await this.bootAgent(targetCwd, {
+          model: settings.model,
+          alwaysApprove: settings.alwaysApprove
+        })
+      }
+      if (!this.client) throw new Error('Agent not running')
+
+      this.replayingHistory = true
+      this.historyAssistantId = null
+      this.liveMessages = local.map((m) => ({ ...m, streaming: false, fromHistory: true }))
+
+      const result = await this.client.sessionLoad(sessionId, targetCwd)
       this.sessionId = result.sessionId || sessionId
-      this.emit({
-        type: 'session',
-        sessionId: this.sessionId,
-        cwd: this.cwd || cwd || ''
-      })
-      return { sessionId: this.sessionId }
+      this.cwd = targetCwd
+      this.replayingHistory = false
+      this.setState('ready')
+      this.emit({ type: 'session', sessionId: this.sessionId, cwd: targetCwd })
+
+      const source =
+        local.length > 0 && this.liveMessages.length > local.length
+          ? 'mixed'
+          : local.length > 0
+            ? 'local'
+            : this.liveMessages.length > 0
+              ? 'acp'
+              : 'empty'
+
+      // If ACP didn't stream history, keep local
+      if (source === 'local' || source === 'empty') {
+        /* already emitted local */
+      }
+      this.persistLiveTranscript()
+      this.emit({ type: 'history-done', sessionId: this.sessionId, source })
+      return { sessionId: this.sessionId, restored: this.liveMessages.length > 0 }
     } catch (err) {
+      this.replayingHistory = false
       const message = err instanceof Error ? err.message : String(err)
-      this.emit({ type: 'error', message: `Failed to load session: ${message}` })
-      throw err
+      // Fall back: start new live session but keep local transcript visible
+      try {
+        if (!this.client || this.state !== 'ready') {
+          await this.start(targetCwd, {
+            model: settings.model,
+            alwaysApprove: settings.alwaysApprove
+          })
+        }
+        this.emit({
+          type: 'error',
+          message: `Could not load session into agent (${message}). Showing local transcript; agent context may be fresh.`
+        })
+        this.emit({
+          type: 'history-done',
+          sessionId,
+          source: local.length ? 'local' : 'empty'
+        })
+        return { sessionId: this.sessionId || sessionId, restored: local.length > 0 }
+      } catch (err2) {
+        this.setState('error', message)
+        throw err2
+      }
     }
   }
 
-  async stop(): Promise<void> {
-    this.setState('stopped')
+  private async stopProcessOnly(): Promise<void> {
     this.pendingPermission = null
     if (this.client) {
       await this.client.dispose()
@@ -190,6 +324,12 @@ export class AgentManager {
     }
     this.sessionId = null
     this.activeMessageId = null
+  }
+
+  async stop(): Promise<void> {
+    this.setState('stopped')
+    this.persistLiveTranscript()
+    await this.stopProcessOnly()
     this.setState('idle')
   }
 
@@ -198,11 +338,39 @@ export class AgentManager {
       throw new Error('Agent is not ready')
     }
 
-    // Refresh always-approve from settings each prompt
-    this.alwaysApprove = getSettings().alwaysApprove
+    const settings = getSettings()
+    this.alwaysApprove = !!(settings.alwaysApprove && settings.alwaysApproveAck)
 
     const messageId = randomUUID()
     this.activeMessageId = messageId
+
+    const userMsg: ChatMessage = {
+      id: randomUUID(),
+      role: 'user',
+      text,
+      createdAt: Date.now()
+    }
+    this.liveMessages.push(userMsg)
+    this.liveMessages.push({
+      id: messageId,
+      role: 'assistant',
+      text: '',
+      thought: '',
+      toolCalls: [],
+      createdAt: Date.now(),
+      streaming: true
+    })
+    this.persistLiveTranscript()
+
+    if (this.sessionId && this.cwd) {
+      upsertSession({
+        id: this.sessionId,
+        cwd: this.cwd,
+        title: text.slice(0, 60) || path.basename(this.cwd),
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      })
+    }
 
     void this.client
       .sessionPrompt(this.sessionId, [{ type: 'text', text }])
@@ -211,6 +379,7 @@ export class AgentManager {
           result && typeof result === 'object' && 'stopReason' in result
             ? String((result as { stopReason?: string }).stopReason)
             : undefined
+        this.finalizeAssistant(messageId)
         this.emit({
           type: 'message-done',
           sessionId: this.sessionId!,
@@ -219,12 +388,13 @@ export class AgentManager {
         })
         this.activeMessageId = null
         this.pendingPermission = null
+        this.persistLiveTranscript()
 
         if (this.sessionId && this.cwd) {
           upsertSession({
             id: this.sessionId,
             cwd: this.cwd,
-            title: text.slice(0, 60),
+            title: text.slice(0, 60) || path.basename(this.cwd),
             createdAt: Date.now(),
             updatedAt: Date.now()
           })
@@ -236,6 +406,7 @@ export class AgentManager {
           message: err.message,
           sessionId: this.sessionId ?? undefined
         })
+        this.finalizeAssistant(messageId)
         this.emit({
           type: 'message-done',
           sessionId: this.sessionId!,
@@ -244,19 +415,33 @@ export class AgentManager {
         })
         this.activeMessageId = null
         this.pendingPermission = null
+        this.persistLiveTranscript()
       })
 
     return { messageId }
   }
 
+  private finalizeAssistant(messageId: string): void {
+    this.liveMessages = this.liveMessages.map((m) =>
+      m.id === messageId ? { ...m, streaming: false } : m
+    )
+  }
+
+  private patchAssistant(
+    messageId: string,
+    patch: (m: ChatMessage) => ChatMessage
+  ): void {
+    this.liveMessages = this.liveMessages.map((m) => (m.id === messageId ? patch(m) : m))
+  }
+
   async cancelPrompt(): Promise<void> {
     if (!this.client || !this.sessionId) return
 
-    // If a permission is outstanding, ACP requires a cancelled outcome
     if (this.pendingPermission && this.client) {
       this.client.respondToRequest(this.pendingPermission.requestId, {
         outcome: { outcome: 'cancelled' }
       })
+      this.recordAudit('cancelled')
       this.pendingPermission = null
       this.emit({ type: 'permission-request', request: null })
     }
@@ -275,14 +460,35 @@ export class AgentManager {
     const options = pending?.options ?? []
     const id = pending?.requestId ?? requestId
 
-    this.log('permission decision', decision, 'id', id, 'options', options)
+    this.log('permission decision', decision, 'id', id)
     this.client.respondPermission(id, decision, options)
+    this.recordAudit(decision)
     this.pendingPermission = null
   }
 
-  /**
-   * Agent → client requests. Must always respond or the turn freezes.
-   */
+  private recordAudit(decision: PermissionDecision | 'cancelled' | 'auto-allow'): void {
+    const p = this.pendingPermission
+    if (!p) return
+    const preview =
+      p.rawInput === undefined
+        ? undefined
+        : typeof p.rawInput === 'string'
+          ? p.rawInput.slice(0, 500)
+          : JSON.stringify(p.rawInput).slice(0, 500)
+
+    appendPermissionAudit({
+      id: randomUUID(),
+      at: Date.now(),
+      sessionId: this.sessionId || '',
+      cwd: this.cwd || '',
+      toolCallId: p.toolCallId || 'unknown',
+      title: p.title,
+      kind: p.kind,
+      decision,
+      rawInputPreview: preview
+    })
+  }
+
   private handleServerRequest(req: {
     id: JsonRpcId
     method: string
@@ -301,7 +507,6 @@ export class AgentManager {
       return
     }
 
-    // Optional FS methods — only if we ever advertise them; still handle to avoid hangs
     if (method === 'fs/read_text_file') {
       this.handleFsRead(id, p)
       return
@@ -311,7 +516,6 @@ export class AgentManager {
       return
     }
 
-    // Unknown agent→client method: reject so the agent can recover instead of hanging
     this.log('unhandled server method', method)
     this.client?.respondError(
       id,
@@ -336,18 +540,18 @@ export class AgentManager {
     const title =
       (toolCall.title as string) ||
       (p.title as string) ||
-      (typeof toolCall.rawInput === 'string'
-        ? toolCall.rawInput.slice(0, 80)
-        : null) ||
+      (typeof toolCall.rawInput === 'string' ? toolCall.rawInput.slice(0, 80) : null) ||
       'Allow tool?'
 
     this.pendingPermission = {
       requestId: id,
       options,
-      toolCallId
+      toolCallId,
+      title,
+      kind: toolCall.kind as string | undefined,
+      rawInput: toolCall.rawInput ?? toolCall.input ?? p.rawInput
     }
 
-    // Mark tool as waiting for auth in the UI
     if (toolCallId && this.activeMessageId && this.sessionId) {
       this.emit({
         type: 'tool-call-update',
@@ -363,10 +567,11 @@ export class AgentManager {
       })
     }
 
-    // Auto-approve if user enabled the toggle (or agent was started with --always-approve)
-    if (this.alwaysApprove || getSettings().alwaysApprove) {
+    const settings = getSettings()
+    if (settings.alwaysApprove && settings.alwaysApproveAck) {
       this.log('auto-approving permission', id)
       this.client?.respondPermission(id, 'allow-once', options)
+      this.recordAudit('auto-allow')
       this.pendingPermission = null
       return
     }
@@ -389,6 +594,15 @@ export class AgentManager {
       if (!filePath) {
         this.client?.respondError(id, -32602, 'path required')
         return
+      }
+      // Path jail: only under project cwd when set
+      if (this.cwd) {
+        const resolved = path.resolve(filePath)
+        const root = path.resolve(this.cwd)
+        if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+          this.client?.respondError(id, -32000, 'Path outside project root is not allowed')
+          return
+        }
       }
       let content = fs.readFileSync(filePath, 'utf8')
       const line = typeof p.line === 'number' ? p.line : undefined
@@ -414,6 +628,14 @@ export class AgentManager {
         this.client?.respondError(id, -32602, 'path required')
         return
       }
+      if (this.cwd) {
+        const resolved = path.resolve(filePath)
+        const root = path.resolve(this.cwd)
+        if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+          this.client?.respondError(id, -32000, 'Path outside project root is not allowed')
+          return
+        }
+      }
       fs.mkdirSync(path.dirname(filePath), { recursive: true })
       fs.writeFileSync(filePath, content, 'utf8')
       this.client?.respondToRequest(id, null)
@@ -431,7 +653,6 @@ export class AgentManager {
       return
     }
 
-    // Nested updates / vendor extensions
     if (method.startsWith('session/') || method.startsWith('x.ai/') || method.startsWith('_x.ai/')) {
       if (p.update || p.sessionUpdate) {
         this.handleSessionUpdate(p)
@@ -439,13 +660,79 @@ export class AgentManager {
     }
   }
 
+  private ensureAssistantId(explicit?: string): string {
+    if (explicit) {
+      this.activeMessageId = explicit
+      return explicit
+    }
+    if (this.replayingHistory) {
+      if (!this.historyAssistantId) {
+        this.historyAssistantId = randomUUID()
+        const msg: ChatMessage = {
+          id: this.historyAssistantId,
+          role: 'assistant',
+          text: '',
+          thought: '',
+          toolCalls: [],
+          createdAt: Date.now(),
+          fromHistory: true
+        }
+        this.liveMessages.push(msg)
+        if (this.sessionId) {
+          this.emit({ type: 'user-message', sessionId: this.sessionId, message: msg })
+        }
+      }
+      return this.historyAssistantId
+    }
+    const messageId = this.activeMessageId || randomUUID()
+    if (!this.activeMessageId) this.activeMessageId = messageId
+    return messageId
+  }
+
   private handleSessionUpdate(params: Record<string, unknown>): void {
     const update = (params.update ?? params) as Record<string, unknown>
     const sessionId = (params.sessionId as string) || this.sessionId || ''
-    const messageId = this.activeMessageId || randomUUID()
-    if (!this.activeMessageId) this.activeMessageId = messageId
-
     const kind = (update.sessionUpdate as string) || ''
+
+    // History replay: user messages
+    if (kind === 'user_message_chunk') {
+      const content = update.content as { text?: string } | string | undefined
+      const text =
+        typeof content === 'string'
+          ? content
+          : content?.text || (update.text as string) || ''
+      if (!text) return
+      const messageId =
+        (update.messageId as string) || (update.id as string) || randomUUID()
+      // Append to last user or create
+      const last = this.liveMessages[this.liveMessages.length - 1]
+      if (last?.role === 'user' && last.fromHistory && last.streaming !== false) {
+        last.text += text
+        this.emit({
+          type: 'message-chunk',
+          sessionId,
+          messageId: last.id,
+          text
+        })
+      } else {
+        const msg: ChatMessage = {
+          id: messageId,
+          role: 'user',
+          text,
+          createdAt: Date.now(),
+          fromHistory: this.replayingHistory
+        }
+        this.liveMessages.push(msg)
+        this.emit({ type: 'user-message', sessionId, message: msg })
+      }
+      // Close prior assistant grouping when user speaks in history
+      this.historyAssistantId = null
+      return
+    }
+
+    const messageId = this.ensureAssistantId(
+      (update.messageId as string) || undefined
+    )
 
     if (kind === 'agent_message_chunk') {
       const content = update.content as { text?: string } | string | undefined
@@ -454,6 +741,7 @@ export class AgentManager {
           ? content
           : content?.text || (update.text as string) || ''
       if (text) {
+        this.patchAssistant(messageId, (m) => ({ ...m, text: m.text + text }))
         this.emit({ type: 'message-chunk', sessionId, messageId, text })
       }
       return
@@ -466,6 +754,10 @@ export class AgentManager {
           ? content
           : content?.text || (update.text as string) || ''
       if (text) {
+        this.patchAssistant(messageId, (m) => ({
+          ...m,
+          thought: (m.thought || '') + text
+        }))
         this.emit({ type: 'thought-chunk', sessionId, messageId, text })
       }
       return
@@ -474,6 +766,13 @@ export class AgentManager {
     if (kind === 'tool_call') {
       const toolCall = parseToolCallFromUpdate(update)
       if (toolCall) {
+        this.patchAssistant(messageId, (m) => {
+          const tools = [...(m.toolCalls || [])]
+          const idx = tools.findIndex((t) => t.toolCallId === toolCall.toolCallId)
+          if (idx >= 0) tools[idx] = { ...tools[idx], ...toolCall }
+          else tools.push(toolCall)
+          return { ...m, toolCalls: tools }
+        })
         this.emit({ type: 'tool-call', sessionId, messageId, toolCall })
       }
       return
@@ -482,12 +781,21 @@ export class AgentManager {
     if (kind === 'tool_call_update') {
       const toolCall = parseToolCallFromUpdate(update)
       if (toolCall) {
+        this.patchAssistant(messageId, (m) => {
+          let tools = (m.toolCalls || []).map((t) =>
+            t.toolCallId === toolCall.toolCallId ? { ...t, ...toolCall } : t
+          )
+          if (!tools.some((t) => t.toolCallId === toolCall.toolCallId)) {
+            tools = [...tools, toolCall]
+          }
+          return { ...m, toolCalls: tools }
+        })
         this.emit({
           type: 'tool-call-update',
           sessionId,
           messageId,
           toolCallId: toolCall.toolCallId,
-          patch: toolCall
+          patch: toolCall as Partial<ToolCallInfo>
         })
       }
       return

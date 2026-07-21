@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AppSettings,
+  ChatMessage,
   GrockyApi,
   MainToRendererEvent,
   PermissionDecision
@@ -21,6 +22,11 @@ const api: GrockyApi = {
     ipcRenderer.invoke('grocky:respond-permission', requestId, decision),
   listSessions: () => ipcRenderer.invoke('grocky:list-sessions'),
   loadSession: (sessionId: string) => ipcRenderer.invoke('grocky:load-session', sessionId),
+  getTranscript: (sessionId: string) => ipcRenderer.invoke('grocky:get-transcript', sessionId),
+  saveTranscript: (sessionId: string, messages: ChatMessage[]) =>
+    ipcRenderer.invoke('grocky:save-transcript', sessionId, messages),
+  listModels: () => ipcRenderer.invoke('grocky:list-models'),
+  getPermissionAudit: () => ipcRenderer.invoke('grocky:get-permission-audit'),
   getConnectionState: () => ipcRenderer.invoke('grocky:get-connection-state'),
   getGrokPath: () => ipcRenderer.invoke('grocky:get-grok-path'),
   onEvent: (handler) => {

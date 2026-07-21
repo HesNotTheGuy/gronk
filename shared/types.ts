@@ -14,6 +14,7 @@ export type ConnectionState =
   | 'ready'
   | 'error'
   | 'stopped'
+  | 'loading'
 
 export interface SessionInfo {
   id: string
@@ -63,6 +64,8 @@ export interface ChatMessage {
   createdAt: number
   streaming?: boolean
   error?: string
+  /** True when restored from history (not live stream) */
+  fromHistory?: boolean
 }
 
 export interface PermissionRequest {
@@ -80,15 +83,41 @@ export type PermissionDecision =
   | 'allow-always'
   | 'reject-once'
 
+export interface PermissionAuditEntry {
+  id: string
+  at: number
+  sessionId: string
+  cwd: string
+  toolCallId: string
+  title: string
+  kind?: string
+  decision: PermissionDecision | 'cancelled' | 'auto-allow'
+  rawInputPreview?: string
+}
+
+export interface ModelInfo {
+  id: string
+  name: string
+  description?: string
+  isDefault?: boolean
+}
+
 export interface AppSettings {
   model?: string
+  /**
+   * Bypass tool permission prompts (equivalent to --always-approve).
+   * Dangerous — must be confirmed in UI before enabling.
+   */
   alwaysApprove: boolean
+  /** User acknowledged YOLO risk at least once this install */
+  alwaysApproveAck?: boolean
   grokBinary?: string
   theme: 'dark' | 'light' | 'system'
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   alwaysApprove: false,
+  alwaysApproveAck: false,
   theme: 'dark'
 }
 
@@ -96,6 +125,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export type MainToRendererEvent =
   | { type: 'connection'; state: ConnectionState; error?: string }
   | { type: 'session'; sessionId: string; cwd: string }
+  | { type: 'history-clear'; sessionId: string }
+  | { type: 'history-done'; sessionId: string; source: 'acp' | 'local' | 'mixed' | 'empty' }
+  | { type: 'user-message'; sessionId: string; message: ChatMessage }
   | { type: 'message-chunk'; sessionId: string; messageId: string; text: string }
   | { type: 'thought-chunk'; sessionId: string; messageId: string; text: string }
   | { type: 'tool-call'; sessionId: string; messageId: string; toolCall: ToolCallInfo }
@@ -109,6 +141,7 @@ export type MainToRendererEvent =
   | { type: 'message-done'; sessionId: string; messageId: string; stopReason?: string }
   | { type: 'permission-request'; request: PermissionRequest | null }
   | { type: 'plan'; sessionId: string; messageId: string; plan: unknown }
+  | { type: 'models'; models: ModelInfo[]; current?: string }
   | { type: 'error'; message: string; sessionId?: string }
 
 export interface GrockyApi {
@@ -117,7 +150,10 @@ export interface GrockyApi {
   setSettings: (partial: Partial<AppSettings>) => Promise<AppSettings>
   getRecentProjects: () => Promise<ProjectContext[]>
   addRecentProject: (cwd: string) => Promise<ProjectContext[]>
-  startAgent: (cwd: string, options?: { model?: string; alwaysApprove?: boolean }) => Promise<{ sessionId: string }>
+  startAgent: (
+    cwd: string,
+    options?: { model?: string; alwaysApprove?: boolean; forceNew?: boolean }
+  ) => Promise<{ sessionId: string }>
   stopAgent: () => Promise<void>
   sendPrompt: (text: string) => Promise<{ messageId: string }>
   cancelPrompt: () => Promise<void>
@@ -126,7 +162,11 @@ export interface GrockyApi {
     decision: PermissionDecision
   ) => Promise<void>
   listSessions: () => Promise<SessionInfo[]>
-  loadSession: (sessionId: string) => Promise<{ sessionId: string }>
+  loadSession: (sessionId: string) => Promise<{ sessionId: string; restored: boolean }>
+  getTranscript: (sessionId: string) => Promise<ChatMessage[]>
+  saveTranscript: (sessionId: string, messages: ChatMessage[]) => Promise<void>
+  listModels: () => Promise<ModelInfo[]>
+  getPermissionAudit: () => Promise<PermissionAuditEntry[]>
   getConnectionState: () => Promise<ConnectionState>
   getGrokPath: () => Promise<string | null>
   onEvent: (handler: (event: MainToRendererEvent) => void) => () => void

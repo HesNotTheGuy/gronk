@@ -1,6 +1,6 @@
 {
   "name": "grocky",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop GUI for Grok Build CLI — Claude Code-style app over ACP",
   "main": "out/main/index.js",
   "author": "Grocky",

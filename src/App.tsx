@@ -1,7 +1,9 @@
 import { Composer } from './components/Composer'
 import { MessageList } from './components/MessageList'
 import { PermissionModal } from './components/PermissionModal'
+import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
+import { YoloConfirm } from './components/YoloConfirm'
 import { useGrocky } from './hooks/useGrocky'
 
 const HINTS = [
@@ -16,7 +18,7 @@ export function App() {
   const statusClass =
     g.connection === 'ready'
       ? 'ready'
-      : g.connection === 'starting'
+      : g.connection === 'starting' || g.connection === 'loading'
         ? 'starting'
         : g.connection === 'error'
           ? 'error'
@@ -27,11 +29,13 @@ export function App() {
       ? 'ONLINE'
       : g.connection === 'starting'
         ? 'ARMING'
-        : g.connection === 'error'
-          ? 'FAULT'
-          : g.connection === 'stopped'
-            ? 'STOPPED'
-            : 'STANDBY'
+        : g.connection === 'loading'
+          ? 'RESTORE'
+          : g.connection === 'error'
+            ? 'FAULT'
+            : g.connection === 'stopped'
+              ? 'STOPPED'
+              : 'STANDBY'
 
   return (
     <div className="app">
@@ -43,12 +47,21 @@ export function App() {
         sessions={g.sessions}
         activeCwd={g.cwd}
         activeSessionId={g.sessionId}
-        alwaysApprove={!!g.settings?.alwaysApprove}
+        alwaysApprove={g.yoloActive}
+        models={g.models}
+        currentModel={g.settings?.model}
         onOpenProject={(cwd) => void g.openProject(cwd)}
+        onSelectSession={(s) => void g.selectSession(s)}
         onToggleAlwaysApprove={() => {
-          void g.updateSettings({ alwaysApprove: !g.settings?.alwaysApprove })
+          if (g.yoloActive) {
+            void g.updateSettings({ alwaysApprove: false })
+          } else {
+            void g.updateSettings({ alwaysApprove: true })
+          }
         }}
-        onNewChat={() => void g.openProject(g.cwd)}
+        onNewChat={() => void g.newChat()}
+        onOpenSettings={() => g.setShowSettings(true)}
+        onChangeModel={(id) => void g.changeModel(id)}
       />
 
       <main className="main">
@@ -63,6 +76,11 @@ export function App() {
             </div>
           </div>
           <div className="topbar-actions">
+            {g.settings?.model ? (
+              <div className="status-pill model-pill" title="Active model">
+                {g.settings.model}
+              </div>
+            ) : null}
             <div
               className={`status-pill ${statusClass}`}
               title={g.grokPath || 'grok binary not found'}
@@ -72,6 +90,12 @@ export function App() {
             </div>
           </div>
         </header>
+
+        {g.yoloActive ? (
+          <div className="yolo-banner">
+            BYPASS PERMISSIONS ACTIVE — agent tools auto-approve. Turn off in sidebar when done.
+          </div>
+        ) : null}
 
         {g.error ? (
           <div className="error-banner">
@@ -84,6 +108,13 @@ export function App() {
             >
               Dismiss
             </button>
+          </div>
+        ) : null}
+
+        {g.historySource && g.historySource !== 'empty' ? (
+          <div className="history-banner">
+            Transcript restored ({g.historySource}
+            {g.historySource === 'local' ? ' cache' : ''})
           </div>
         ) : null}
 
@@ -108,7 +139,7 @@ export function App() {
                 <p className="empty-copy">
                   {g.cwd
                     ? 'Stream prompts to the local Grok agent. Tool calls land live. You stay on the auth gate for anything that matters.'
-                    : 'A desktop shell for Grok Build — ACP over stdio, mission-control UI. Same agent. Less terminal cosplay.'}
+                    : 'A desktop shell for Grok Build — ACP over stdio. Session restore, model picker, and gated permissions. Zero extra npm deps for this phase.'}
                 </p>
 
                 {g.cwd ? (
@@ -133,13 +164,6 @@ export function App() {
                     >
                       Open project
                     </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => void g.openProject()}
-                    >
-                      Launch sequence
-                    </button>
                   </div>
                 )}
 
@@ -154,11 +178,11 @@ export function App() {
                   </span>
                   <span>
                     Mode
-                    <strong>{g.settings?.alwaysApprove ? 'YOLO' : 'GATED'}</strong>
+                    <strong>{g.yoloActive ? 'YOLO' : 'GATED'}</strong>
                   </span>
                   <span>
-                    Session
-                    <strong>{g.sessionId ? g.sessionId.slice(0, 8) : 'NONE'}</strong>
+                    Model
+                    <strong>{g.settings?.model || 'default'}</strong>
                   </span>
                 </div>
               </div>
@@ -170,7 +194,7 @@ export function App() {
 
         <Composer
           disabled={g.connection !== 'ready'}
-          busy={g.busy}
+          busy={g.busy || g.connection === 'loading'}
           onSend={(t) => void g.sendPrompt(t)}
           onCancel={() => void g.cancel()}
         />
@@ -182,6 +206,27 @@ export function App() {
           onRespond={(d) => void g.respondPermission(d)}
         />
       ) : null}
+
+      {g.showYoloConfirm ? (
+        <YoloConfirm
+          onConfirm={() => void g.confirmYolo()}
+          onCancel={g.cancelYolo}
+        />
+      ) : null}
+
+      <SettingsPanel
+        open={g.showSettings}
+        settings={g.settings}
+        models={g.models}
+        grokPath={g.grokPath}
+        audit={g.audit}
+        onClose={() => g.setShowSettings(false)}
+        onChangeModel={(id) => void g.changeModel(id)}
+        onToggleYolo={() => {
+          if (g.yoloActive) void g.updateSettings({ alwaysApprove: false })
+          else void g.updateSettings({ alwaysApprove: true })
+        }}
+      />
     </div>
   )
 }
