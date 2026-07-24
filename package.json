@@ -1,6 +1,6 @@
 {
   "name": "grocky",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Desktop GUI for Grok Build CLI — Claude Code-style app over ACP",
   "main": "out/main/index.js",
   "author": "Grocky",
@@ -29,7 +29,7 @@
     "@types/react": "19.1.2",
     "@types/react-dom": "19.1.2",
     "@vitejs/plugin-react": "4.4.1",
-    "electron": "35.2.1",
+    "electron": "36.4.0",
     "electron-builder": "26.0.12",
     "electron-vite": "3.1.0",
     "typescript": "5.8.3",

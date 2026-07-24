@@ -1,37 +1,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
+  ActivePlan,
+  AgentSurface,
   AppSettings,
+  AppSurface,
+  AuthStatus,
   ChatMessage,
   ConnectionState,
+  HealthStatus,
+  LoginMethod,
   MainToRendererEvent,
   ModelInfo,
   PermissionAuditEntry,
+  PermissionMode,
   PermissionRequest,
   ProjectContext,
+  PromptAttachment,
   SessionInfo,
   ToolCallInfo
 } from '../../shared/types'
-
-function createUserMessage(text: string): ChatMessage {
-  return {
-    id: crypto.randomUUID(),
-    role: 'user',
-    text,
-    createdAt: Date.now()
-  }
-}
-
-function createAssistantPlaceholder(id: string): ChatMessage {
-  return {
-    id,
-    role: 'assistant',
-    text: '',
-    thought: '',
-    toolCalls: [],
-    createdAt: Date.now(),
-    streaming: true
-  }
-}
+import {
+  folderName,
+  isChatSession,
+  isChatWorkspace,
+  isWorkspaceSession,
+  pathsEqual
+} from '../../shared/path'
+import {
+  createAssistantPlaceholder,
+  createUserMessage,
+  hasAssistantReplyAfter
+} from '../lib/messages'
+import { parsePlan } from '../lib/plan'
+import { applyTheme } from '../lib/theme'
 
 export function useGrocky() {
   const [connection, setConnection] = useState<ConnectionState>('idle')
@@ -47,10 +48,27 @@ export function useGrocky() {
   const [grokPath, setGrokPath] = useState<string | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [audit, setAudit] = useState<PermissionAuditEntry[]>([])
+  const [health, setHealth] = useState<HealthStatus | null>(null)
+  const [auth, setAuth] = useState<AuthStatus | null>(null)
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authMessage, setAuthMessage] = useState<string | null>(null)
+  const [deviceHint, setDeviceHint] = useState<string | null>(null)
   const [showYoloConfirm, setShowYoloConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [historySource, setHistorySource] = useState<string | null>(null)
+  const [activePlan, setActivePlan] = useState<ActivePlan | null>(null)
+  const [planCollapsed, setPlanCollapsed] = useState(false)
+  /** home | chat | project — drives shell navigation */
+  const [surface, setSurface] = useState<AppSurface>('home')
+  /**
+   * When true, main pane shows the browse home for that surface
+   * (chat list / project tabs) instead of the live conversation.
+   */
+  const [browsing, setBrowsing] = useState(true)
+  const [chatWorkspacePath, setChatWorkspacePath] = useState<string | null>(null)
+  const [agentSurface, setAgentSurface] = useState<AgentSurface | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const stickToBottom = useRef(true)
   const messagesRef = useRef<ChatMessage[]>([])
 
   useEffect(() => {
@@ -58,20 +76,28 @@ export function useGrocky() {
   }, [messages])
 
   const refreshMeta = useCallback(async () => {
-    const [projects, sess, s, path, modelList, auditList] = await Promise.all([
-      window.grocky.getRecentProjects(),
-      window.grocky.listSessions(),
-      window.grocky.getSettings(),
-      window.grocky.getGrokPath(),
-      window.grocky.listModels(),
-      window.grocky.getPermissionAudit()
-    ])
+    const [projects, sess, s, path, modelList, auditList, healthStatus, authStatus, chatPath] =
+      await Promise.all([
+        window.grocky.getRecentProjects(),
+        window.grocky.listSessions(),
+        window.grocky.getSettings(),
+        window.grocky.getGrokPath(),
+        window.grocky.listModels(),
+        window.grocky.getPermissionAudit(),
+        window.grocky.getHealth(),
+        window.grocky.getAuthStatus(),
+        window.grocky.getChatWorkspacePath()
+      ])
     setRecentProjects(projects)
     setSessions(sess)
     setSettingsState(s)
     setGrokPath(path)
     setModels(modelList)
     setAudit(auditList)
+    setHealth(healthStatus)
+    setAuth(authStatus)
+    setChatWorkspacePath(chatPath)
+    applyTheme(s.theme)
   }, [])
 
   useEffect(() => {
@@ -92,6 +118,7 @@ export function useGrocky() {
         case 'history-clear':
           setMessages([])
           setHistorySource(null)
+          setActivePlan(null)
           break
         case 'history-done':
           setHistorySource(event.source)
@@ -185,8 +212,25 @@ export function useGrocky() {
         case 'permission-request':
           setPermission(event.request)
           break
+        case 'plan': {
+          const entries = parsePlan(event.plan)
+          if (entries.length) {
+            setActivePlan({
+              sessionId: event.sessionId,
+              messageId: event.messageId,
+              entries,
+              updatedAt: Date.now()
+            })
+            setPlanCollapsed(false)
+          }
+          break
+        }
         case 'models':
           setModels(event.models)
+          break
+        case 'auth':
+          setAuth(event.auth)
+          if (event.auth.authenticated) setAuthMessage(null)
           break
         case 'error':
           setError(event.message)
@@ -200,11 +244,32 @@ export function useGrocky() {
     return unsub
   }, [refreshMeta])
 
+  // Theme: system preference changes
+  useEffect(() => {
+    if (!settings || settings.theme !== 'system') return
+    const mq = window.matchMedia('(prefers-color-scheme: light)')
+    const handler = () => applyTheme('system')
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [settings?.theme])
+
+  // Smart scroll: only stick when near bottom
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
+    const onScroll = () => {
+      const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+      stickToBottom.current = dist < 80
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !stickToBottom.current) return
     el.scrollTop = el.scrollHeight
-  }, [messages, permission])
+  }, [messages, permission, activePlan])
 
   // Persist transcript while chatting
   useEffect(() => {
@@ -215,13 +280,41 @@ export function useGrocky() {
     return () => clearTimeout(t)
   }, [messages, sessionId])
 
-  const normalizePath = useCallback((p: string) => {
-    return p.replace(/\\/g, '/').replace(/\/+$/, '')
-  }, [])
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && e.key.toLowerCase() === 'n' && cwd) {
+        e.preventDefault()
+        void openProjectRef.current?.(cwd, { forceNew: true })
+      }
+      if (mod && e.key === ',') {
+        e.preventDefault()
+        setShowSettings(true)
+      }
+      if (mod && e.key.toLowerCase() === 'o') {
+        e.preventDefault()
+        void openProjectRef.current?.()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [cwd])
 
   const openProject = useCallback(
     async (folder?: string | null, opts?: { forceNew?: boolean }) => {
       setError(null)
+
+      const authNow = await window.grocky.getAuthStatus()
+      setAuth(authNow)
+      if (!authNow.authenticated) {
+        setError(
+          authNow.message ||
+            'Sign in with your own Grok account before opening a project.'
+        )
+        return
+      }
+
       let target = folder
       if (!target) {
         target = await window.grocky.selectFolder()
@@ -229,9 +322,14 @@ export function useGrocky() {
       if (!target) return
 
       const sameProject =
-        cwd && normalizePath(cwd) === normalizePath(target) && connection === 'ready'
+        cwd &&
+        pathsEqual(cwd, target) &&
+        connection === 'ready' &&
+        agentSurface === 'project'
 
       if (sameProject && !opts?.forceNew) {
+        setSurface('project')
+        setBrowsing(false)
         await refreshMeta()
         return
       }
@@ -242,13 +340,18 @@ export function useGrocky() {
       setBusy(false)
       setPermission(null)
       setHistorySource(null)
+      setActivePlan(null)
+      setSurface('project')
+      setBrowsing(false)
+      setAgentSurface('project')
 
       try {
         const s = await window.grocky.getSettings()
         const { sessionId: id } = await window.grocky.startAgent(target, {
           model: s.model,
           alwaysApprove: s.alwaysApprove,
-          forceNew: opts?.forceNew
+          forceNew: opts?.forceNew,
+          surface: 'project'
         })
         setSessionId(id)
         await refreshMeta()
@@ -256,28 +359,141 @@ export function useGrocky() {
         setError(err instanceof Error ? err.message : String(err))
       }
     },
-    [cwd, connection, normalizePath, refreshMeta]
+    [cwd, connection, refreshMeta, agentSurface]
+  )
+
+  const openProjectRef = useRef(openProject)
+  openProjectRef.current = openProject
+
+  /** General Grok chat (website/X-style) via CLI — not a coding project */
+  const openChat = useCallback(
+    async (opts?: { forceNew?: boolean }) => {
+      setError(null)
+      const authNow = await window.grocky.getAuthStatus()
+      setAuth(authNow)
+      if (!authNow.authenticated) {
+        setError(
+          authNow.message ||
+            'Sign in with your own Grok account before chatting.'
+        )
+        return
+      }
+
+      const chatPath =
+        chatWorkspacePath || (await window.grocky.getChatWorkspacePath())
+      setChatWorkspacePath(chatPath)
+
+      const sameChat =
+        cwd &&
+        isChatWorkspace(cwd, chatPath) &&
+        connection === 'ready' &&
+        agentSurface === 'chat'
+
+      if (sameChat && !opts?.forceNew) {
+        setSurface('chat')
+        setBrowsing(false)
+        await refreshMeta()
+        return
+      }
+
+      setMessages([])
+      setSessionId(null)
+      setCwd(chatPath)
+      setBusy(false)
+      setPermission(null)
+      setHistorySource(null)
+      setActivePlan(null)
+      setSurface('chat')
+      setBrowsing(false)
+      setAgentSurface('chat')
+
+      try {
+        const s = await window.grocky.getSettings()
+        const { sessionId: id } = await window.grocky.startAgent(chatPath, {
+          model: s.model,
+          alwaysApprove: s.alwaysApprove,
+          forceNew: opts?.forceNew,
+          surface: 'chat'
+        })
+        setSessionId(id)
+        await refreshMeta()
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      }
+    },
+    [chatWorkspacePath, cwd, connection, refreshMeta, agentSurface]
   )
 
   const newChat = useCallback(async () => {
+    if (agentSurface === 'chat' || surface === 'chat') {
+      await openChat({ forceNew: true })
+      return
+    }
     if (!cwd) return
     await openProject(cwd, { forceNew: true })
-  }, [cwd, openProject])
+  }, [cwd, openProject, openChat, agentSurface, surface])
+
+  const goHome = useCallback(() => {
+    setSurface('home')
+    setBrowsing(true)
+  }, [])
+
+  /** Chat browse home — previous chats (does not start a new agent) */
+  const goChat = useCallback(() => {
+    setSurface('chat')
+    setBrowsing(true)
+  }, [])
+
+  /** Projects browse home — tabbed projects / sessions (no Explorer) */
+  const goProjects = useCallback(() => {
+    setSurface('project')
+    setBrowsing(true)
+  }, [])
 
   const selectSession = useCallback(
     async (session: SessionInfo) => {
       setError(null)
+      const authNow = await window.grocky.getAuthStatus()
+      setAuth(authNow)
+      if (!authNow.authenticated) {
+        setError(
+          authNow.message ||
+            'Sign in with your own Grok account before restoring a session.'
+        )
+        return
+      }
+
+      const chatPath =
+        chatWorkspacePath || (await window.grocky.getChatWorkspacePath())
+      const isChat = isChatWorkspace(session.cwd, chatPath)
+
       setPermission(null)
       setBusy(true)
       setHistorySource(null)
+      setActivePlan(null)
       setSessionId(session.id)
       setCwd(session.cwd)
+      setSurface(isChat ? 'chat' : 'project')
+      setBrowsing(false)
+      setAgentSurface(isChat ? 'chat' : 'project')
+      stickToBottom.current = true
 
       try {
-        // Local transcript first for instant UI
         const local = await window.grocky.getTranscript(session.id)
-        if (local.length) setMessages(local.map((m) => ({ ...m, streaming: false })))
-        else setMessages([])
+        if (local.length) {
+          setMessages(
+            local.map((m) => ({
+              ...m,
+              streaming: false,
+              sendStatus:
+                m.role === 'user'
+                  ? m.sendStatus === 'failed'
+                    ? ('failed' as const)
+                    : ('sent' as const)
+                  : m.sendStatus
+            }))
+          )
+        } else setMessages([])
 
         const result = await window.grocky.loadSession(session.id)
         setSessionId(result.sessionId)
@@ -287,27 +503,112 @@ export function useGrocky() {
         setBusy(false)
       }
     },
-    [refreshMeta]
+    [refreshMeta, chatWorkspacePath]
   )
 
   const sendPrompt = useCallback(
-    async (text: string) => {
+    async (
+      text: string,
+      attachments: PromptAttachment[] = [],
+      opts?: { replaceUserId?: string }
+    ) => {
       const trimmed = text.trim()
-      if (!trimmed || busy || connection !== 'ready') return
+      if ((!trimmed && attachments.length === 0) || busy || connection !== 'ready') return
 
       setError(null)
       setBusy(true)
-      setMessages((prev) => [...prev, createUserMessage(trimmed)])
+      stickToBottom.current = true
+
+      let userId = opts?.replaceUserId
+      if (userId) {
+        // Retry: reuse the same bubble — never spam a second copy
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === userId
+              ? {
+                  ...m,
+                  text: trimmed,
+                  attachments: attachments.length ? attachments : m.attachments,
+                  sendStatus: 'sending' as const,
+                  error: undefined
+                }
+              : m
+          )
+        )
+      } else {
+        const msg = createUserMessage(trimmed, attachments, 'sending')
+        userId = msg.id
+        setMessages((prev) => [...prev, msg])
+      }
 
       try {
-        const { messageId } = await window.grocky.sendPrompt(trimmed)
-        setMessages((prev) => [...prev, createAssistantPlaceholder(messageId)])
+        const { messageId } = await window.grocky.sendPrompt(trimmed, { attachments })
+        setMessages((prev) => {
+          const next = prev.map((m) =>
+            m.id === userId ? { ...m, sendStatus: 'sent' as const, error: undefined } : m
+          )
+          // Drop empty failed placeholders that might sit after a retried user msg
+          const cleaned = next.filter(
+            (m, i) =>
+              !(
+                m.role === 'assistant' &&
+                !m.text &&
+                !m.streaming &&
+                !m.toolCalls?.length &&
+                i > 0 &&
+                next[i - 1]?.id === userId
+              )
+          )
+          return [...cleaned, createAssistantPlaceholder(messageId)]
+        })
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
         setBusy(false)
-        setError(err instanceof Error ? err.message : String(err))
+        setError(message)
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === userId
+              ? { ...m, sendStatus: 'failed' as const, error: message }
+              : m
+          )
+        )
       }
     },
     [busy, connection]
+  )
+
+  /** Retry only a failed / unanswered user message without duplicating it. */
+  const retryPrompt = useCallback(
+    async (userMessageId: string) => {
+      if (busy || connection !== 'ready') return
+      const list = messagesRef.current
+      const idx = list.findIndex((m) => m.id === userMessageId && m.role === 'user')
+      if (idx < 0) return
+      const msg = list[idx]
+      if (hasAssistantReplyAfter(list, idx) && msg.sendStatus !== 'failed') {
+        // Already answered — do not re-send / spam
+        return
+      }
+      // Drop empty/incomplete assistant placeholders after this user turn only
+      setMessages((prev) => {
+        const cut = prev.findIndex((m) => m.id === userMessageId)
+        if (cut < 0) return prev
+        const head = prev.slice(0, cut + 1)
+        let i = cut + 1
+        while (i < prev.length && prev[i].role === 'assistant') {
+          const a = prev[i]
+          const empty = !a.text && !a.toolCalls?.length && !a.thought
+          if (empty || a.streaming) {
+            i++
+            continue
+          }
+          break
+        }
+        return [...head, ...prev.slice(i)]
+      })
+      await sendPrompt(msg.text, msg.attachments || [], { replaceUserId: userMessageId })
+    },
+    [busy, connection, sendPrompt]
   )
 
   const cancel = useCallback(async () => {
@@ -326,31 +627,60 @@ export function useGrocky() {
   )
 
   const updateSettings = useCallback(async (partial: Partial<AppSettings>) => {
-    // Intercept YOLO enable → require confirm
-    if (partial.alwaysApprove === true) {
-      const current = await window.grocky.getSettings()
-      if (!current.alwaysApproveAck) {
-        setShowYoloConfirm(true)
-        return current
-      }
+    // FIX-14: re-confirm YOLO every enable (not only first install)
+    if (
+      partial.alwaysApprove === true ||
+      partial.permissionMode === 'bypassPermissions'
+    ) {
+      setShowYoloConfirm(true)
+      return await window.grocky.getSettings()
     }
     const next = await window.grocky.setSettings(partial)
     setSettingsState(next)
+    if (partial.theme) applyTheme(next.theme)
+    if (partial.grokBinary !== undefined) {
+      const path = await window.grocky.getGrokPath()
+      setGrokPath(path)
+      const h = await window.grocky.getHealth()
+      setHealth(h)
+    }
     return next
   }, [])
 
   const confirmYolo = useCallback(async () => {
+    // Two-step so store guard sees priorAck (FIX-14)
+    await window.grocky.setSettings({ alwaysApproveAck: true })
     const next = await window.grocky.setSettings({
-      alwaysApproveAck: true,
-      alwaysApprove: true
+      alwaysApprove: true,
+      permissionMode: 'bypassPermissions'
     })
     setSettingsState(next)
     setShowYoloConfirm(false)
-    // Restart agent with flag if a project is open
     if (cwd && connection === 'ready') {
-      await openProject(cwd, { forceNew: true })
+      if (agentSurface === 'chat') await openChat({ forceNew: true })
+      else await openProject(cwd, { forceNew: true })
     }
-  }, [cwd, connection, openProject])
+  }, [cwd, connection, openProject, openChat, agentSurface])
+
+  const changePermissionMode = useCallback(
+    async (mode: PermissionMode) => {
+      if (mode === 'bypassPermissions') {
+        setShowYoloConfirm(true)
+        return
+      }
+      const next = await window.grocky.setSettings({
+        permissionMode: mode,
+        alwaysApprove: false
+      })
+      setSettingsState(next)
+      // Restart agent so CLI gets the new mode
+      if (cwd && (connection === 'ready' || connection === 'error')) {
+        if (agentSurface === 'chat') await openChat({ forceNew: true })
+        else await openProject(cwd, { forceNew: true })
+      }
+    },
+    [cwd, connection, openProject, openChat, agentSurface]
+  )
 
   const cancelYolo = useCallback(() => {
     setShowYoloConfirm(false)
@@ -361,17 +691,155 @@ export function useGrocky() {
       const next = await window.grocky.setSettings({ model: modelId })
       setSettingsState(next)
       if (cwd) {
-        await openProject(cwd, { forceNew: true })
+        if (agentSurface === 'chat') await openChat({ forceNew: true })
+        else await openProject(cwd, { forceNew: true })
       }
     },
-    [cwd, openProject]
+    [cwd, openProject, openChat, agentSurface]
   )
+
+  const renameSession = useCallback(async (id: string, title: string) => {
+    await window.grocky.renameSession(id, title)
+    const sess = await window.grocky.listSessions()
+    setSessions(sess)
+  }, [])
+
+  const deleteSession = useCallback(
+    async (id: string) => {
+      const sess = await window.grocky.deleteSession(id)
+      setSessions(sess)
+      if (sessionId === id) {
+        setMessages([])
+        setSessionId(null)
+        setActivePlan(null)
+        setHistorySource(null)
+        if (agentSurface === 'chat') await openChat({ forceNew: true })
+        else if (cwd) await openProject(cwd, { forceNew: true })
+      }
+    },
+    [sessionId, cwd, openProject, openChat, agentSurface]
+  )
+
+  const archiveSession = useCallback(
+    async (id: string) => {
+      await window.grocky.archiveSession(id, true)
+      const sess = await window.grocky.listSessions()
+      setSessions(sess)
+      if (sessionId === id) {
+        setMessages([])
+        setSessionId(null)
+        setActivePlan(null)
+        setHistorySource(null)
+        if (agentSurface === 'chat') await openChat({ forceNew: true })
+        else if (cwd) await openProject(cwd, { forceNew: true })
+      }
+    },
+    [sessionId, cwd, openProject, openChat, agentSurface]
+  )
+
+  const exportSession = useCallback(async (id: string) => {
+    const result = await window.grocky.exportTranscript(id, 'md')
+    if (result?.path) {
+      // brief feedback via error banner slot reused as status is noisy; keep silent success
+    }
+  }, [])
+
+  const pickBinary = useCallback(async () => {
+    const path = await window.grocky.selectFile({
+      title: 'Select grok binary',
+      filters:
+        window.grocky.platform === 'win32'
+          ? [{ name: 'Executable', extensions: ['exe'] }]
+          : undefined
+    })
+    if (path) await updateSettings({ grokBinary: path })
+  }, [updateSettings])
+
+  const clearBinary = useCallback(async () => {
+    // Empty string clears override (Electron IPC drops `undefined` keys)
+    const next = await window.grocky.setSettings({ grokBinary: '' })
+    setSettingsState(next)
+    const path = await window.grocky.getGrokPath()
+    setGrokPath(path)
+    setHealth(await window.grocky.getHealth())
+  }, [])
+
+  const refreshHealth = useCallback(async () => {
+    const h = await window.grocky.getHealth()
+    setHealth(h)
+    setGrokPath(h.grokPath)
+    setAuth(h.auth)
+  }, [])
+
+  const refreshAuth = useCallback(async () => {
+    setAuthBusy(true)
+    try {
+      const a = await window.grocky.getAuthStatus()
+      setAuth(a)
+      setAuthMessage(a.message || null)
+    } finally {
+      setAuthBusy(false)
+    }
+  }, [])
+
+  const login = useCallback(async (method: LoginMethod = 'oauth') => {
+    setAuthBusy(true)
+    setAuthMessage(
+      method === 'device'
+        ? 'Device login started — complete the code in your browser…'
+        : 'Browser login started — complete sign-in in the window that opens…'
+    )
+    setDeviceHint(null)
+    try {
+      const result = await window.grocky.login(method)
+      setAuth(result.auth)
+      setAuthMessage(result.message)
+      if (result.deviceHint) setDeviceHint(result.deviceHint)
+      if (result.ok) {
+        await refreshMeta()
+      }
+      return result
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setAuthMessage(msg)
+      return null
+    } finally {
+      setAuthBusy(false)
+    }
+  }, [refreshMeta])
+
+  const logout = useCallback(async () => {
+    setAuthBusy(true)
+    setDeviceHint(null)
+    try {
+      // Clear live session UI immediately
+      setMessages([])
+      setSessionId(null)
+      setCwd(null)
+      setActivePlan(null)
+      setPermission(null)
+      setBusy(false)
+      setConnection('idle')
+
+      const result = await window.grocky.logout()
+      setAuth(result.auth)
+      setAuthMessage(result.message)
+      await refreshMeta()
+      return result
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setAuthMessage(msg)
+      return null
+    } finally {
+      setAuthBusy(false)
+    }
+  }, [refreshMeta])
 
   const projectName = useMemo(() => {
     if (!cwd) return null
-    const parts = cwd.replace(/\\/g, '/').split('/')
-    return parts[parts.length - 1] || cwd
-  }, [cwd])
+    if (agentSurface === 'chat') return 'Chat'
+    return folderName(cwd)
+  }, [cwd, agentSurface])
 
   const uniqueSessions = useMemo(() => {
     const seen = new Set<string>()
@@ -384,7 +852,38 @@ export function useGrocky() {
     return out
   }, [sessions])
 
-  const yoloActive = !!(settings?.alwaysApprove && settings?.alwaysApproveAck)
+  const activeSessions = useMemo(
+    () => uniqueSessions.filter((s) => !s.archived),
+    [uniqueSessions]
+  )
+
+  const chatSessions = useMemo(
+    () => activeSessions.filter((s) => isChatSession(s, chatWorkspacePath)),
+    [activeSessions, chatWorkspacePath]
+  )
+
+  /**
+   * Workspace (folder) sessions only.
+   * App Chat is stored under userData/chat-workspace and never listed here.
+   */
+  const projectOnlySessions = useMemo(
+    () => activeSessions.filter((s) => isWorkspaceSession(s, chatWorkspacePath)),
+    [activeSessions, chatWorkspacePath]
+  )
+
+  /** Workspace folders only — strip chat sandbox if it ever landed in recent */
+  const workspaceProjects = useMemo(
+    () => recentProjects.filter((p) => !isChatWorkspace(p.cwd, chatWorkspacePath)),
+    [recentProjects, chatWorkspacePath]
+  )
+
+  const yoloActive = !!(
+    (settings?.alwaysApprove && settings?.alwaysApproveAck) ||
+    (settings?.permissionMode === 'bypassPermissions' && settings?.alwaysApproveAck)
+  )
+  const permissionMode: PermissionMode =
+    settings?.permissionMode || (yoloActive ? 'bypassPermissions' : 'default')
+  const isAuthenticated = !!auth?.authenticated
 
   return {
     connection,
@@ -392,8 +891,19 @@ export function useGrocky() {
     projectName,
     sessionId,
     messages,
-    recentProjects,
+    recentProjects: workspaceProjects,
     sessions: uniqueSessions,
+    chatSessions,
+    /** Folder agent sessions only (never app Chat) */
+    projectOnlySessions,
+    surface,
+    browsing,
+    agentSurface,
+    chatWorkspacePath,
+    openChat,
+    goHome,
+    goChat,
+    goProjects,
     settings,
     permission,
     error,
@@ -401,22 +911,44 @@ export function useGrocky() {
     grokPath,
     models,
     audit,
+    health,
+    auth,
+    authBusy,
+    authMessage,
+    deviceHint,
+    isAuthenticated,
     showYoloConfirm,
     showSettings,
     setShowSettings,
     historySource,
+    activePlan,
+    planCollapsed,
+    setPlanCollapsed,
     yoloActive,
+    permissionMode,
     scrollRef,
     openProject,
     newChat,
     selectSession,
     sendPrompt,
+    retryPrompt,
     cancel,
     respondPermission,
     updateSettings,
     confirmYolo,
     cancelYolo,
     changeModel,
+    changePermissionMode,
+    renameSession,
+    deleteSession,
+    archiveSession,
+    exportSession,
+    pickBinary,
+    clearBinary,
+    refreshHealth,
+    refreshAuth,
+    login,
+    logout,
     setError,
     refreshMeta
   }

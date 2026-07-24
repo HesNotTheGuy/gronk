@@ -1,34 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ToolCallInfo } from '../../shared/types'
-
-function formatBody(tool: ToolCallInfo): string {
-  const parts: string[] = []
-  if (tool.rawInput !== undefined) {
-    parts.push(
-      typeof tool.rawInput === 'string'
-        ? tool.rawInput
-        : JSON.stringify(tool.rawInput, null, 2)
-    )
-  }
-  if (tool.content !== undefined) {
-    parts.push(
-      typeof tool.content === 'string'
-        ? tool.content
-        : JSON.stringify(tool.content, null, 2)
-    )
-  }
-  if (tool.error) parts.push(`Error: ${tool.error}`)
-  return parts.join('\n\n---\n\n') || 'No payload'
-}
+import { formatTool } from '../lib/tool-format'
+import { ImageGallery } from './LocalImage'
 
 function statusLabel(status: ToolCallInfo['status']): string {
   switch (status) {
     case 'completed':
-      return 'ok'
+      return 'done'
     case 'failed':
       return 'fail'
     case 'in_progress':
-      return 'run'
+      return 'running'
     case 'pending':
       return 'auth'
     case 'cancelled':
@@ -38,17 +20,122 @@ function statusLabel(status: ToolCallInfo['status']): string {
   }
 }
 
-export function ToolCard({ tool }: { tool: ToolCallInfo }) {
-  const [open, setOpen] = useState(tool.status === 'failed')
+function kindGlyph(kind: string): string {
+  switch (kind) {
+    case 'EDIT':
+      return '✎'
+    case 'READ':
+      return '◈'
+    case 'SHELL':
+      return '›'
+    case 'SEARCH':
+      return '⌕'
+    case 'NET':
+      return '⇄'
+    case 'LIST':
+      return '☰'
+    case 'IMAGE':
+      return '▣'
+    default:
+      return '·'
+  }
+}
+
+/** One-line human brief: "READ package.json" / "SHELL npm test" */
+export function toolBrief(tool: ToolCallInfo): string {
+  const fmt = formatTool(tool)
+  const summary = fmt.summary.replace(/\s+/g, ' ').trim()
+  const short =
+    summary.length > 72 ? summary.slice(0, 69).replace(/\s+\S*$/, '') + '…' : summary
+  return `${fmt.kindLabel}  ${short}`
+}
+
+export function ToolCard({
+  tool,
+  defaultOpen
+}: {
+  tool: ToolCallInfo
+  defaultOpen?: boolean
+}) {
+  const live = tool.status === 'in_progress' || tool.status === 'pending'
+  const [open, setOpen] = useState(
+    defaultOpen ?? (tool.status === 'failed')
+  )
+  const fmt = formatTool(tool)
+
+  // Keep open if it fails mid-run; collapse when it succeeds unless user opened it
+  useEffect(() => {
+    if (tool.status === 'failed') setOpen(true)
+  }, [tool.status])
+
+  const brief = toolBrief(tool)
+  const images = fmt.images || []
+  // Always surface generated images — that's the useful output, not the path dump
+  const showImages = images.length > 0 && tool.status === 'completed'
 
   return (
-    <div className="tool-card">
-      <button type="button" className="tool-head" onClick={() => setOpen((v) => !v)}>
-        <span className="tool-icon">{(tool.kind || 'T').slice(0, 1).toUpperCase()}</span>
-        <span className="tool-title">{tool.title}</span>
-        <span className={`tool-status ${tool.status}`}>{statusLabel(tool.status)}</span>
+    <div
+      className={`tool-card kind-${fmt.kindLabel.toLowerCase()} status-${tool.status} ${open ? 'open' : ''} ${live ? 'live' : ''}`}
+    >
+      <button
+        type="button"
+        className="tool-head"
+        onClick={() => setOpen((v) => !v)}
+        title={open ? 'Hide details' : 'Show tool details'}
+        aria-expanded={open}
+      >
+        <span className="tool-icon" aria-hidden>
+          {kindGlyph(fmt.kindLabel)}
+        </span>
+        <span className="tool-brief">
+          <span className="tool-kind">{fmt.kindLabel}</span>
+          <span className="tool-title" title={fmt.summary}>
+            {fmt.summary}
+          </span>
+        </span>
+        <span className={`tool-status ${tool.status}`}>
+          {live ? <span className="tool-pulse" aria-hidden /> : null}
+          {statusLabel(tool.status)}
+        </span>
+        <span className="tool-chevron" aria-hidden>
+          {open ? '▾' : '▸'}
+        </span>
       </button>
-      {open && <div className="tool-body">{formatBody(tool)}</div>}
+      {showImages ? (
+        <div className="tool-images">
+          <ImageGallery images={images} />
+        </div>
+      ) : null}
+      {open ? (
+        <div className="tool-body">
+          <div className="tool-brief-line">{brief}</div>
+          {fmt.diffLines && fmt.diffLines.length > 0 ? (
+            <div className="tool-diff">
+              {fmt.path ? <div className="tool-diff-path">{fmt.path}</div> : null}
+              <pre className="diff-pre">
+                {fmt.diffLines.map((line, i) => (
+                  <div key={i} className={`diff-line ${line.type}`}>
+                    <span className="diff-mark">
+                      {line.type === 'add'
+                        ? '+'
+                        : line.type === 'del'
+                          ? '−'
+                          : line.type === 'hunk'
+                            ? '@@'
+                            : ' '}
+                    </span>
+                    {line.text}
+                  </div>
+                ))}
+              </pre>
+            </div>
+          ) : null}
+          {fmt.body ? <div className="tool-payload">{fmt.body}</div> : null}
+          {!fmt.body && !fmt.diffLines?.length && !showImages ? (
+            <div className="tool-payload muted">No extra payload</div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }

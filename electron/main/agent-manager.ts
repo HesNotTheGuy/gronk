@@ -1,10 +1,12 @@
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import {
   GrokAcpClient,
+  isAllowedGrokBasename,
   parseToolCallFromUpdate,
+  probeGrokBinary,
   resolveGrokBinary,
   type JsonRpcId,
   type PermissionOption
@@ -13,11 +15,15 @@ import {
   appendPermissionAudit,
   getSettings,
   getTranscript,
+  listSessions,
   normalizeCwd,
   saveTranscript,
   upsertSession
 } from './store'
 import { listModels } from './models'
+import { assertAuthenticated } from './auth'
+import { isChatWorkspace } from '../../shared/path'
+import { redactPreview } from './redact'
 import type {
   ChatMessage,
   ConnectionState,
@@ -28,6 +34,15 @@ import type {
   ToolCallInfo
 } from '../../shared/types'
 
+/** Grocky app chat sandbox (same path as grocky:get-chat-workspace). */
+function chatWorkspaceRoot(): string {
+  return path.join(app.getPath('userData'), 'chat-workspace')
+}
+
+function isChatPadCwd(cwd: string): boolean {
+  return isChatWorkspace(cwd, chatWorkspaceRoot())
+}
+
 interface PendingPermission {
   requestId: JsonRpcId
   options: PermissionOption[]
@@ -35,7 +50,11 @@ interface PendingPermission {
   title: string
   kind?: string
   rawInput?: unknown
+  /** When set, resolve ACP fs/write after user decision */
+  fsWrite?: { path: string; content: string }
 }
+
+const MAX_FS_READ_BYTES = 4 * 1024 * 1024 // 4 MB
 
 /**
  * Owns the lifecycle of one `grok agent stdio` process and maps ACP events → renderer IPC.
@@ -47,10 +66,18 @@ export class AgentManager {
   private state: ConnectionState = 'idle'
   private activeMessageId: string | null = null
   private window: BrowserWindow | null = null
-  private pendingPermission: PendingPermission | null = null
+  /** FIX-9: one pending permission per request id (queue display FIFO) */
+  private pendingPermissions = new Map<string, PendingPermission>()
+  private permissionQueue: string[] = []
   private alwaysApprove = false
   /** When true, session/update chunks rebuild history instead of live turn */
   private replayingHistory = false
+  /**
+   * When true, ignore ACP history replay chunks (user/assistant/thought).
+   * Used when a full local transcript already exists so session/load does not
+   * re-append messages that the agent echoes (FIX-R7 follow-on).
+   */
+  private suppressHistoryReplay = false
   private historyAssistantId: string | null = null
   private models: ModelInfo[] = []
   private currentModel?: string
@@ -106,11 +133,26 @@ export class AgentManager {
   /**
    * Boot grok agent process + initialize only (no session/new).
    */
+  private surface: 'chat' | 'project' = 'project'
+
   private async bootAgent(
     cwd: string,
-    options?: { model?: string; alwaysApprove?: boolean }
+    options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project' }
   ): Promise<void> {
     await this.stopProcessOnly()
+
+    // Per-install: never start an agent without local CLI credentials.
+    // Auth is this OS user's Grok session only — not shared across machines/users.
+    try {
+      await assertAuthenticated()
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Sign in required before starting the agent.'
+      this.setState('error', message)
+      throw err
+    }
 
     const settings = getSettings()
     const binary = resolveGrokBinary(settings.grokBinary)
@@ -122,6 +164,22 @@ export class AgentManager {
       throw new Error('grok binary not found')
     }
 
+    // FIX-3: user-supplied override must pass basename + version probe
+    if (settings.grokBinary) {
+      if (!isAllowedGrokBasename(binary)) {
+        const msg = 'Grok binary override rejected: basename must be grok (not an arbitrary executable).'
+        this.setState('error', msg)
+        throw new Error(msg)
+      }
+      const ok = await probeGrokBinary(binary)
+      if (!ok) {
+        const msg =
+          'Grok binary override failed version probe. Point settings at a real grok CLI binary.'
+        this.setState('error', msg)
+        throw new Error(msg)
+      }
+    }
+
     const model = options?.model ?? settings.model
     this.currentModel = model
     this.alwaysApprove = !!(options?.alwaysApprove ?? settings.alwaysApprove)
@@ -130,11 +188,44 @@ export class AgentManager {
       this.alwaysApprove = false
     }
 
-    const agentArgs = ['agent']
+    // permission-mode is a top-level grok flag (before `agent` subcommand)
+    let permissionMode = settings.permissionMode || 'default'
+    if (this.alwaysApprove) {
+      permissionMode = 'bypassPermissions'
+    } else if (permissionMode === 'bypassPermissions' && !settings.alwaysApproveAck) {
+      permissionMode = 'default'
+    }
+
+    this.surface = options?.surface === 'chat' ? 'chat' : 'project'
+
+    // Global flags before `agent` subcommand
+    const agentArgs: string[] = []
+    if (permissionMode && permissionMode !== 'default') {
+      agentArgs.push('--permission-mode', permissionMode)
+    }
+    if (this.surface === 'chat') {
+      // Conversational Grok (website/X-style) — still CLI-backed, not a web wrap
+      agentArgs.push(
+        '--system-prompt-override',
+        [
+          'You are Grok, built by xAI.',
+          'You are in Grocky desktop Chat mode — a general conversation like grok.com or Grok on X.',
+          'Be helpful, witty when appropriate, and clear.',
+          'Answer directly. Do not browse or edit the local filesystem unless the user explicitly asks.',
+          'You may use web search when current information helps.',
+          'You are not limited to coding topics.'
+        ].join(' ')
+      )
+      agentArgs.push(
+        '--rules',
+        'Chat mode: prefer direct answers over tool-heavy exploration. Never modify files unless asked.'
+      )
+    }
+    agentArgs.push('agent')
     if (model) {
       agentArgs.push('-m', model)
     }
-    if (this.alwaysApprove) {
+    if (this.alwaysApprove || permissionMode === 'bypassPermissions') {
       agentArgs.push('--always-approve')
     }
     agentArgs.push('stdio')
@@ -146,7 +237,8 @@ export class AgentManager {
     this.replayingHistory = false
     this.historyAssistantId = null
     this.activeMessageId = null
-    this.pendingPermission = null
+    this.pendingPermissions.clear()
+    this.permissionQueue = []
 
     this.client.on('stderr', (line) => this.log('stderr', line))
     this.client.on('error', (err) => this.setState('error', err.message))
@@ -156,7 +248,8 @@ export class AgentManager {
       }
       this.client = null
       this.sessionId = null
-      this.pendingPermission = null
+      this.pendingPermissions.clear()
+      this.permissionQueue = []
     })
     this.client.on('notification', (method, params) => {
       this.handleNotification(method, params)
@@ -196,13 +289,20 @@ export class AgentManager {
 
   async start(
     cwd: string,
-    options?: { model?: string; alwaysApprove?: boolean }
+    options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project' }
   ): Promise<{ sessionId: string }> {
     await this.bootAgent(cwd, options)
     if (!this.client) throw new Error('Agent failed to boot')
 
     try {
-      const { sessionId } = await this.client.sessionNew(this.cwd!)
+      const meta =
+        this.surface === 'chat'
+          ? {
+              rules:
+                'Chat mode: conversational Grok. Prefer direct answers; avoid filesystem edits unless asked.'
+            }
+          : undefined
+      const { sessionId } = await this.client.sessionNew(this.cwd!, [], meta)
       this.sessionId = sessionId
       this.liveMessages = []
       this.setState('ready')
@@ -214,6 +314,10 @@ export class AgentManager {
       await this.stop()
       throw err
     }
+  }
+
+  getSurface(): 'chat' | 'project' {
+    return this.surface
   }
 
   /**
@@ -231,7 +335,7 @@ export class AgentManager {
     this.setState('loading')
     this.emit({ type: 'history-clear', sessionId })
 
-    // Prefer local transcript immediately for snappy UI
+    // Prefer local transcript immediately for snappy UI (already de-duped in getTranscript)
     const local = getTranscript(sessionId)
     if (local.length > 0) {
       for (const m of local) {
@@ -256,52 +360,61 @@ export class AgentManager {
       if (needBoot) {
         await this.bootAgent(targetCwd, {
           model: settings.model,
-          alwaysApprove: settings.alwaysApprove
+          alwaysApprove: settings.alwaysApprove,
+          surface: isChatPadCwd(targetCwd) ? 'chat' : 'project'
         })
       }
       if (!this.client) throw new Error('Agent not running')
 
       this.replayingHistory = true
+      // If we already have a local transcript, do not rebuild messages from ACP echo
+      this.suppressHistoryReplay = local.length > 0
       this.historyAssistantId = null
       this.liveMessages = local.map((m) => ({ ...m, streaming: false, fromHistory: true }))
 
-      const result = await this.client.sessionLoad(sessionId, targetCwd)
+      // ACP requires absolute path; Windows paths with backslashes are fine.
+      // Prefer native absolute form for the CLI.
+      const absCwd = path.isAbsolute(targetCwd)
+        ? targetCwd
+        : path.resolve(targetCwd)
+      const result = await this.client.sessionLoad(sessionId, absCwd, [])
       this.sessionId = result.sessionId || sessionId
       this.cwd = targetCwd
       this.replayingHistory = false
+      this.suppressHistoryReplay = false
       this.setState('ready')
       this.emit({ type: 'session', sessionId: this.sessionId, cwd: targetCwd })
 
       const source =
-        local.length > 0 && this.liveMessages.length > local.length
-          ? 'mixed'
-          : local.length > 0
-            ? 'local'
-            : this.liveMessages.length > 0
-              ? 'acp'
-              : 'empty'
+        local.length > 0
+          ? 'local'
+          : this.liveMessages.length > 0
+            ? 'acp'
+            : 'empty'
 
-      // If ACP didn't stream history, keep local
-      if (source === 'local' || source === 'empty') {
-        /* already emitted local */
-      }
       this.persistLiveTranscript()
       this.emit({ type: 'history-done', sessionId: this.sessionId, source })
       return { sessionId: this.sessionId, restored: this.liveMessages.length > 0 }
     } catch (err) {
       this.replayingHistory = false
+      this.suppressHistoryReplay = false
       const message = err instanceof Error ? err.message : String(err)
       // Fall back: start new live session but keep local transcript visible
       try {
         if (!this.client || this.state !== 'ready') {
           await this.start(targetCwd, {
             model: settings.model,
-            alwaysApprove: settings.alwaysApprove
+            alwaysApprove: settings.alwaysApprove,
+            surface: isChatPadCwd(targetCwd) ? 'chat' : 'project'
           })
         }
+        // User-facing: history is still on screen; only the agent's live memory failed to resume.
         this.emit({
           type: 'error',
-          message: `Could not load session into agent (${message}). Showing local transcript; agent context may be fresh.`
+          message:
+            `Could not resume this conversation in the Grok agent (${message}). ` +
+            `Your chat history is still shown here, but the agent may not remember prior turns — ` +
+            `new replies start with a fresh context.`
         })
         this.emit({
           type: 'history-done',
@@ -317,13 +430,41 @@ export class AgentManager {
   }
 
   private async stopProcessOnly(): Promise<void> {
-    this.pendingPermission = null
+    this.pendingPermissions.clear()
+    this.permissionQueue = []
     if (this.client) {
       await this.client.dispose()
       this.client = null
     }
     this.sessionId = null
     this.activeMessageId = null
+  }
+
+  private permKey(id: JsonRpcId): string {
+    return String(id)
+  }
+
+  private emitFrontPermission(): void {
+    const front = this.permissionQueue[0]
+    if (!front) {
+      this.emit({ type: 'permission-request', request: null })
+      return
+    }
+    const p = this.pendingPermissions.get(front)
+    if (!p) {
+      this.permissionQueue.shift()
+      this.emitFrontPermission()
+      return
+    }
+    const request: PermissionRequest = {
+      requestId: p.requestId,
+      sessionId: this.sessionId || '',
+      toolCallId: p.toolCallId || 'unknown',
+      title: p.title,
+      kind: p.kind,
+      rawInput: p.rawInput
+    }
+    this.emit({ type: 'permission-request', request })
   }
 
   async stop(): Promise<void> {
@@ -333,7 +474,20 @@ export class AgentManager {
     this.setState('idle')
   }
 
-  async sendPrompt(text: string): Promise<{ messageId: string }> {
+  async sendPrompt(
+    text: string,
+    options?: {
+      attachments?: Array<{
+        id: string
+        kind: 'file' | 'image'
+        name: string
+        path?: string
+        data?: string
+        mimeType?: string
+        previewUrl?: string
+      }>
+    }
+  ): Promise<{ messageId: string }> {
     if (!this.client || !this.sessionId || this.state !== 'ready') {
       throw new Error('Agent is not ready')
     }
@@ -343,12 +497,45 @@ export class AgentManager {
 
     const messageId = randomUUID()
     this.activeMessageId = messageId
+    const attachments = options?.attachments ?? []
+
+    // Build ACP content blocks: files as path context, images as image blocks
+    const promptBlocks: Array<{ type: string; text?: string; data?: string; mimeType?: string }> =
+      []
+    const filePaths = attachments
+      .filter((a) => a.kind === 'file' && a.path)
+      .map((a) => a.path as string)
+    let fullText = text.trim()
+    if (filePaths.length) {
+      const ctx = filePaths.map((p) => `- ${p}`).join('\n')
+      fullText = fullText
+        ? `${fullText}\n\nAttached files:\n${ctx}`
+        : `Please inspect these files:\n${ctx}`
+    }
+    if (fullText) {
+      promptBlocks.push({ type: 'text', text: fullText })
+    }
+    for (const img of attachments.filter((a) => a.kind === 'image' && a.data)) {
+      promptBlocks.push({
+        type: 'image',
+        data: img.data,
+        mimeType: img.mimeType || 'image/png'
+      })
+    }
+    if (promptBlocks.length === 0) {
+      throw new Error('Empty prompt')
+    }
 
     const userMsg: ChatMessage = {
       id: randomUUID(),
       role: 'user',
-      text,
-      createdAt: Date.now()
+      text: fullText || text,
+      createdAt: Date.now(),
+      attachments: attachments.map((a) => ({
+        ...a,
+        // Don't persist huge base64 in local cache via liveMessages → save strips later
+        data: a.kind === 'image' ? undefined : a.data
+      }))
     }
     this.liveMessages.push(userMsg)
     this.liveMessages.push({
@@ -363,17 +550,22 @@ export class AgentManager {
     this.persistLiveTranscript()
 
     if (this.sessionId && this.cwd) {
+      // Only seed title when session has none yet; renameSession owns later titles
+      const prev = listSessions().find((s) => s.id === this.sessionId)
       upsertSession({
         id: this.sessionId,
         cwd: this.cwd,
-        title: text.slice(0, 60) || path.basename(this.cwd),
+        surface: this.surface,
+        ...(!prev?.title
+          ? { title: (fullText || text).slice(0, 60) || path.basename(this.cwd) }
+          : {}),
         createdAt: Date.now(),
         updatedAt: Date.now()
       })
     }
 
     void this.client
-      .sessionPrompt(this.sessionId, [{ type: 'text', text }])
+      .sessionPrompt(this.sessionId, promptBlocks)
       .then((result) => {
         const stopReason =
           result && typeof result === 'object' && 'stopReason' in result
@@ -387,16 +579,15 @@ export class AgentManager {
           stopReason
         })
         this.activeMessageId = null
-        this.pendingPermission = null
         this.persistLiveTranscript()
 
         if (this.sessionId && this.cwd) {
           upsertSession({
             id: this.sessionId,
             cwd: this.cwd,
-            title: text.slice(0, 60) || path.basename(this.cwd),
-            createdAt: Date.now(),
-            updatedAt: Date.now()
+            surface: this.surface,
+            updatedAt: Date.now(),
+            createdAt: Date.now()
           })
         }
       })
@@ -414,7 +605,6 @@ export class AgentManager {
           stopReason: 'error'
         })
         this.activeMessageId = null
-        this.pendingPermission = null
         this.persistLiveTranscript()
       })
 
@@ -437,14 +627,15 @@ export class AgentManager {
   async cancelPrompt(): Promise<void> {
     if (!this.client || !this.sessionId) return
 
-    if (this.pendingPermission && this.client) {
-      this.client.respondToRequest(this.pendingPermission.requestId, {
+    for (const p of this.pendingPermissions.values()) {
+      this.client.respondToRequest(p.requestId, {
         outcome: { outcome: 'cancelled' }
       })
-      this.recordAudit('cancelled')
-      this.pendingPermission = null
-      this.emit({ type: 'permission-request', request: null })
+      this.recordAuditFor(p, 'cancelled')
     }
+    this.pendingPermissions.clear()
+    this.permissionQueue = []
+    this.emit({ type: 'permission-request', request: null })
 
     try {
       await this.client.sessionCancel(this.sessionId)
@@ -456,26 +647,52 @@ export class AgentManager {
   respondPermission(requestId: number | string, decision: PermissionDecision): void {
     if (!this.client) return
 
-    const pending = this.pendingPermission
-    const options = pending?.options ?? []
-    const id = pending?.requestId ?? requestId
+    const key = this.permKey(requestId)
+    const pending = this.pendingPermissions.get(key)
+    if (!pending) {
+      this.log('permission decision for unknown requestId', requestId)
+      return
+    }
 
-    this.log('permission decision', decision, 'id', id)
-    this.client.respondPermission(id, decision, options)
-    this.recordAudit(decision)
-    this.pendingPermission = null
+    this.log('permission decision', decision, 'id', requestId)
+
+    // FIX-6: resolve fs/write after user consent
+    if (pending.fsWrite) {
+      if (decision === 'allow-once' || decision === 'allow-always') {
+        try {
+          const safe = this.resolveInsideJail(pending.fsWrite.path)
+          if (!safe) {
+            this.client.respondError(pending.requestId, -32000, 'Path outside project root is not allowed')
+            this.recordAuditFor(pending, 'reject-once')
+          } else {
+            fs.mkdirSync(path.dirname(safe), { recursive: true })
+            fs.writeFileSync(safe, pending.fsWrite.content, 'utf8')
+            this.client.respondToRequest(pending.requestId, null)
+            this.recordAuditFor(pending, decision)
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          this.client.respondError(pending.requestId, -32000, message)
+          this.recordAuditFor(pending, 'reject-once')
+        }
+      } else {
+        this.client.respondError(pending.requestId, -32000, 'User denied file write')
+        this.recordAuditFor(pending, 'reject-once')
+      }
+    } else {
+      this.client.respondPermission(pending.requestId, decision, pending.options)
+      this.recordAuditFor(pending, decision)
+    }
+
+    this.pendingPermissions.delete(key)
+    this.permissionQueue = this.permissionQueue.filter((k) => k !== key)
+    this.emitFrontPermission()
   }
 
-  private recordAudit(decision: PermissionDecision | 'cancelled' | 'auto-allow'): void {
-    const p = this.pendingPermission
-    if (!p) return
-    const preview =
-      p.rawInput === undefined
-        ? undefined
-        : typeof p.rawInput === 'string'
-          ? p.rawInput.slice(0, 500)
-          : JSON.stringify(p.rawInput).slice(0, 500)
-
+  private recordAuditFor(
+    p: PendingPermission,
+    decision: PermissionDecision | 'cancelled' | 'auto-allow'
+  ): void {
     appendPermissionAudit({
       id: randomUUID(),
       at: Date.now(),
@@ -485,7 +702,7 @@ export class AgentManager {
       title: p.title,
       kind: p.kind,
       decision,
-      rawInputPreview: preview
+      rawInputPreview: redactPreview(p.rawInput, 500)
     })
   }
 
@@ -543,7 +760,7 @@ export class AgentManager {
       (typeof toolCall.rawInput === 'string' ? toolCall.rawInput.slice(0, 80) : null) ||
       'Allow tool?'
 
-    this.pendingPermission = {
+    const pending: PendingPermission = {
       requestId: id,
       options,
       toolCallId,
@@ -571,21 +788,39 @@ export class AgentManager {
     if (settings.alwaysApprove && settings.alwaysApproveAck) {
       this.log('auto-approving permission', id)
       this.client?.respondPermission(id, 'allow-once', options)
-      this.recordAudit('auto-allow')
-      this.pendingPermission = null
+      this.recordAuditFor(pending, 'auto-allow')
       return
     }
 
-    const request: PermissionRequest = {
-      requestId: id,
-      sessionId: (p.sessionId as string) || this.sessionId || '',
-      toolCallId: toolCallId || 'unknown',
-      title,
-      kind: toolCall.kind as string | undefined,
-      rawInput: toolCall.rawInput ?? toolCall.input ?? p.rawInput
-    }
+    const key = this.permKey(id)
+    this.pendingPermissions.set(key, pending)
+    if (!this.permissionQueue.includes(key)) this.permissionQueue.push(key)
+    this.emitFrontPermission()
+  }
 
-    this.emit({ type: 'permission-request', request })
+  /** FIX-5: realpath-aware jail; refuse when no project root */
+  private resolveInsideJail(filePath: string): string | null {
+    if (!this.cwd) return null
+    let root: string
+    try {
+      root = fs.realpathSync(path.resolve(this.cwd))
+    } catch {
+      return null
+    }
+    const resolved = path.resolve(root, filePath)
+    let probe = resolved
+    while (!fs.existsSync(probe) && path.dirname(probe) !== probe) {
+      probe = path.dirname(probe)
+    }
+    let realProbe: string
+    try {
+      realProbe = fs.realpathSync(probe)
+    } catch {
+      return null
+    }
+    const real = realProbe + resolved.slice(probe.length)
+    if (real === root || real.startsWith(root + path.sep)) return real
+    return null
   }
 
   private handleFsRead(id: JsonRpcId, p: Record<string, unknown>): void {
@@ -595,16 +830,24 @@ export class AgentManager {
         this.client?.respondError(id, -32602, 'path required')
         return
       }
-      // Path jail: only under project cwd when set
-      if (this.cwd) {
-        const resolved = path.resolve(filePath)
-        const root = path.resolve(this.cwd)
-        if (!resolved.startsWith(root + path.sep) && resolved !== root) {
-          this.client?.respondError(id, -32000, 'Path outside project root is not allowed')
-          return
-        }
+      const safe = this.resolveInsideJail(filePath)
+      if (!safe) {
+        this.client?.respondError(id, -32000, 'Path outside project root is not allowed')
+        return
       }
-      let content = fs.readFileSync(filePath, 'utf8')
+
+      // FIX-8: bound size before full read
+      const stat = fs.statSync(safe)
+      if (stat.size > MAX_FS_READ_BYTES) {
+        this.client?.respondError(
+          id,
+          -32000,
+          `File too large (${stat.size} bytes; max ${MAX_FS_READ_BYTES})`
+        )
+        return
+      }
+
+      let content = fs.readFileSync(safe, 'utf8')
       const line = typeof p.line === 'number' ? p.line : undefined
       const limit = typeof p.limit === 'number' ? p.limit : undefined
       if (line !== undefined || limit !== undefined) {
@@ -628,17 +871,36 @@ export class AgentManager {
         this.client?.respondError(id, -32602, 'path required')
         return
       }
-      if (this.cwd) {
-        const resolved = path.resolve(filePath)
-        const root = path.resolve(this.cwd)
-        if (!resolved.startsWith(root + path.sep) && resolved !== root) {
-          this.client?.respondError(id, -32000, 'Path outside project root is not allowed')
-          return
-        }
+      const safe = this.resolveInsideJail(filePath)
+      if (!safe) {
+        this.client?.respondError(id, -32000, 'Path outside project root is not allowed')
+        return
       }
-      fs.mkdirSync(path.dirname(filePath), { recursive: true })
-      fs.writeFileSync(filePath, content, 'utf8')
-      this.client?.respondToRequest(id, null)
+
+      const settings = getSettings()
+      const pending: PendingPermission = {
+        requestId: id,
+        options: [],
+        toolCallId: `fs-write-${id}`,
+        title: 'Write file',
+        kind: 'fs/write',
+        rawInput: { path: safe },
+        fsWrite: { path: safe, content }
+      }
+
+      // FIX-6: YOLO still audits; non-YOLO requires user consent
+      if (settings.alwaysApprove && settings.alwaysApproveAck) {
+        fs.mkdirSync(path.dirname(safe), { recursive: true })
+        fs.writeFileSync(safe, content, 'utf8')
+        this.client?.respondToRequest(id, null)
+        this.recordAuditFor(pending, 'auto-allow')
+        return
+      }
+
+      const key = this.permKey(id)
+      this.pendingPermissions.set(key, pending)
+      if (!this.permissionQueue.includes(key)) this.permissionQueue.push(key)
+      this.emitFrontPermission()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       this.client?.respondError(id, -32000, message)
@@ -695,7 +957,12 @@ export class AgentManager {
     const kind = (update.sessionUpdate as string) || ''
 
     // History replay: user messages
+    // FIX-R7: live turns already have the user bubble (renderer optimistic + main
+    // sendPrompt). The agent echoes the prompt as user_message_chunk — ignore it.
+    // Only rebuild user turns while replaying session/load history, and only when
+    // we did not already load a full local transcript.
     if (kind === 'user_message_chunk') {
+      if (!this.replayingHistory || this.suppressHistoryReplay) return
       const content = update.content as { text?: string } | string | undefined
       const text =
         typeof content === 'string'
@@ -727,6 +994,14 @@ export class AgentManager {
       }
       // Close prior assistant grouping when user speaks in history
       this.historyAssistantId = null
+      return
+    }
+
+    // Skip assistant/thought history rebuild when local transcript is authoritative
+    if (
+      this.suppressHistoryReplay &&
+      (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk')
+    ) {
       return
     }
 
@@ -803,6 +1078,7 @@ export class AgentManager {
 
     if (kind === 'plan') {
       this.emit({ type: 'plan', sessionId, messageId, plan: update })
+      return
     }
   }
 }

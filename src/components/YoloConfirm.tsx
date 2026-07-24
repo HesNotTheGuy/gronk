@@ -6,11 +6,12 @@ interface Props {
 export function YoloConfirm({ onConfirm, onCancel }: Props) {
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal modal-danger">
+      <div className="modal modal-danger modal-kicker">
         <h3>Enable bypass permissions?</h3>
         <p>
-          This turns on <strong>always-approve</strong> for the Grok agent
-          (<code>--always-approve</code>). The agent can edit files and run shell
+          This sets permission mode to <strong>Bypass all (YOLO)</strong> for the Grok agent
+          (<code>--permission-mode bypassPermissions</code> / <code>--always-approve</code>). The
+          agent can edit files and run shell
           commands <strong>without asking</strong>.
         </p>
         <ul className="danger-list">

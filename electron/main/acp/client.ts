@@ -5,6 +5,9 @@ import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
 import type { PermissionDecision, ToolCallInfo } from '../../../shared/types'
+import { redactSecrets } from '../redact'
+
+const MAX_ACP_LINE_BYTES = 8 * 1024 * 1024 // 8 MB
 
 export type JsonRpcId = string | number
 
@@ -77,7 +80,20 @@ export class GrokAcpClient extends EventEmitter {
     })
 
     this.rl = createInterface({ input: this.proc.stdout })
-    this.rl.on('line', (line) => this.onLine(line))
+    this.rl.on('line', (line) => {
+      // FIX-8: drop oversized ACP lines to avoid unbounded memory use
+      if (line.length > MAX_ACP_LINE_BYTES) {
+        console.error(
+          '[grocky] dropping oversized ACP line',
+          line.length,
+          'bytes (max',
+          MAX_ACP_LINE_BYTES,
+          ')'
+        )
+        return
+      }
+      this.onLine(line)
+    })
 
     this.proc.stderr.setEncoding('utf8')
     this.proc.stderr.on('data', (chunk: string) => {
@@ -120,17 +136,31 @@ export class GrokAcpClient extends EventEmitter {
     }) as Promise<AcpInitializeResult>
   }
 
-  async sessionNew(cwd: string, mcpServers: unknown[] = []): Promise<AcpSessionNewResult> {
+  async sessionNew(
+    cwd: string,
+    mcpServers: unknown[] = [],
+    meta?: Record<string, unknown>
+  ): Promise<AcpSessionNewResult> {
     return this.request('session/new', {
       cwd,
-      mcpServers
+      mcpServers,
+      ...(meta && Object.keys(meta).length ? { _meta: meta } : {})
     }) as Promise<AcpSessionNewResult>
   }
 
-  async sessionLoad(sessionId: string, cwd?: string): Promise<AcpSessionNewResult> {
+  /**
+   * ACP LoadSessionRequest requires sessionId + absolute cwd + mcpServers.
+   * Omitting mcpServers yields JSON-RPC "Invalid params" from the agent.
+   */
+  async sessionLoad(
+    sessionId: string,
+    cwd: string,
+    mcpServers: unknown[] = []
+  ): Promise<AcpSessionNewResult> {
     return this.request('session/load', {
       sessionId,
-      ...(cwd ? { cwd } : {})
+      cwd,
+      mcpServers
     }) as Promise<AcpSessionNewResult>
   }
 
@@ -197,18 +227,26 @@ export class GrokAcpClient extends EventEmitter {
     }
 
     if (!optionId) {
-      // Fall back to common ids, then first option for allow decisions
-      optionId =
-        decision === 'allow-once'
-          ? options.find((o) => /allow/i.test(o.optionId) && !/always/i.test(o.optionId))
-              ?.optionId ||
-            options[0]?.optionId ||
-            'allow-once'
-          : decision === 'allow-always'
-            ? options.find((o) => /always/i.test(o.optionId))?.optionId ||
-              options.find((o) => /allow/i.test(o.optionId))?.optionId ||
-              'allow-always'
-            : options.find((o) => /reject|deny/i.test(o.optionId))?.optionId || 'reject-once'
+      // FIX-9: never fabricate allow ids or fall back to options[0]
+      if (decision === 'allow-once') {
+        optionId = options.find(
+          (o) => /allow/i.test(o.optionId) && !/always/i.test(o.optionId)
+        )?.optionId
+      } else if (decision === 'allow-always') {
+        optionId =
+          options.find((o) => /always/i.test(o.optionId))?.optionId ||
+          options.find((o) => /allow/i.test(o.optionId))?.optionId
+      } else {
+        optionId = options.find((o) => /reject|deny/i.test(o.optionId))?.optionId
+      }
+    }
+
+    if (!optionId) {
+      // Fail closed: cancel rather than invent an allow
+      this.respondToRequest(requestId, {
+        outcome: { outcome: 'cancelled' }
+      })
+      return
     }
 
     this.respondToRequest(requestId, {
@@ -267,7 +305,7 @@ export class GrokAcpClient extends EventEmitter {
     }
     const line = JSON.stringify(msg)
     if (this.debug) {
-      console.error('[acp →]', line.slice(0, 500))
+      console.error('[acp →]', redactSecrets(line).slice(0, 500))
     }
     this.proc.stdin.write(line + '\n')
   }
@@ -277,7 +315,7 @@ export class GrokAcpClient extends EventEmitter {
     if (!trimmed) return
 
     if (this.debug) {
-      console.error('[acp ←]', trimmed.slice(0, 500))
+      console.error('[acp ←]', redactSecrets(trimmed).slice(0, 500))
     }
 
     let msg: {
@@ -335,9 +373,67 @@ export class GrokAcpClient extends EventEmitter {
   }
 }
 
+// Real CLI is grok / grok.exe. Do not include .cmd/.bat — Node 20+ / Electron 36
+// rejects spawn of batch files without shell:true (EINVAL, post-CVE-2024-27980),
+// and shell:true is unsafe here (FIX-R4).
+const ALLOWED_GROK_BASENAMES = new Set(['grok', 'grok.exe'])
+
+/** Basename must look like the grok CLI (blocks cmd.exe / powershell overrides). */
+export function isAllowedGrokBasename(filePath: string): boolean {
+  const base = path.basename(filePath).toLowerCase()
+  return ALLOWED_GROK_BASENAMES.has(base)
+}
+
+/**
+ * Probe that an override binary answers like grok (`--version`).
+ * Auto-detected PATH/~/.grok/bin paths skip this probe.
+ */
+export function probeGrokBinary(binary: string, timeoutMs = 4000): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!isAllowedGrokBasename(binary)) {
+      resolve(false)
+      return
+    }
+    try {
+      const proc = spawn(binary, ['--version'], {
+        windowsHide: true,
+        env: { ...process.env, GROK_DISABLE_AUTOUPDATER: '1' }
+      })
+      let out = ''
+      const timer = setTimeout(() => {
+        try {
+          proc.kill()
+        } catch {
+          /* ignore */
+        }
+        resolve(/grok/i.test(out) || proc.exitCode === 0)
+      }, timeoutMs)
+      proc.stdout?.setEncoding('utf8')
+      proc.stdout?.on('data', (c: string) => {
+        out += c
+      })
+      proc.stderr?.setEncoding('utf8')
+      proc.stderr?.on('data', (c: string) => {
+        out += c
+      })
+      proc.on('error', () => {
+        clearTimeout(timer)
+        resolve(false)
+      })
+      proc.on('close', (code) => {
+        clearTimeout(timer)
+        resolve(code === 0 || /grok/i.test(out))
+      })
+    } catch {
+      resolve(false)
+    }
+  })
+}
+
 /** Resolve the grok binary in a cross-platform way. */
 export function resolveGrokBinary(override?: string): string | null {
-  if (override && fs.existsSync(override)) {
+  // FIX-3: never return a non-grok basename override
+  if (override && fs.existsSync(override) && isAllowedGrokBasename(override)) {
     return override
   }
 
@@ -345,8 +441,6 @@ export function resolveGrokBinary(override?: string): string | null {
   const isWin = process.platform === 'win32'
   const exe = isWin ? 'grok.exe' : 'grok'
   const candidates: string[] = []
-
-  if (override) candidates.push(override)
 
   candidates.push(path.join(home, '.grok', 'bin', exe))
 
@@ -360,12 +454,11 @@ export function resolveGrokBinary(override?: string): string | null {
   for (const dir of pathEnv.split(path.delimiter)) {
     if (!dir) continue
     candidates.push(path.join(dir, exe))
-    if (isWin) candidates.push(path.join(dir, 'grok.cmd'), path.join(dir, 'grok.bat'))
   }
 
   for (const c of candidates) {
     try {
-      if (fs.existsSync(c)) return c
+      if (fs.existsSync(c) && isAllowedGrokBasename(c)) return c
     } catch {
       /* ignore */
     }

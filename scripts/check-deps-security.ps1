@@ -61,6 +61,7 @@ $warn = $false
 
 $cacheDir = Join-Path $ProjectRoot '.cache'
 $datasetPath = Join-Path $cacheDir 'datadog-malicious-npm-manifest.json'
+# FIX-21: fail closed unless explicitly skipped
 if (-not $SkipOnlineDataset) {
   New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
   $url = 'https://raw.githubusercontent.com/DataDog/malicious-software-packages-dataset/main/samples/npm/manifest.json'
@@ -68,30 +69,69 @@ if (-not $SkipOnlineDataset) {
     Write-Host 'Fetching Datadog malicious npm manifest...' -ForegroundColor DarkGray
     Invoke-WebRequest -Uri $url -OutFile $datasetPath -UseBasicParsing -TimeoutSec 60
   } catch {
-    Write-Host "WARN: could not refresh malware dataset: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "FAIL: could not refresh malware dataset: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host 'Pass -SkipOnlineDataset only if you intentionally accept offline install risk.' -ForegroundColor Red
+    $hardFail = $true
+  }
+}
+
+# Enumerate ALL resolved package names from lockfile (not just top-level package.json)
+$lockPath = Join-Path $ProjectRoot 'package-lock.json'
+$allNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($n in $declared) { [void]$allNames.Add($n) }
+if (Test-Path $lockPath) {
+  try {
+    $lockObj = Get-Content -Raw $lockPath | ConvertFrom-Json
+    if ($lockObj.packages) {
+      foreach ($prop in $lockObj.packages.PSObject.Properties) {
+        $key = [string]$prop.Name
+        if ([string]::IsNullOrWhiteSpace($key)) { continue }
+        # keys like "node_modules/foo" or "node_modules/@scope/pkg"
+        $name = $key -replace '^node_modules/', ''
+        if ($name -match 'node_modules/') {
+          $parts = $name -split 'node_modules/'
+          $name = $parts[-1]
+        }
+        if (-not [string]::IsNullOrWhiteSpace($name)) {
+          [void]$allNames.Add($name)
+        }
+      }
+    }
+  } catch {
+    Write-Host "WARN: could not fully parse package-lock packages map: $($_.Exception.Message)" -ForegroundColor Yellow
     $warn = $true
   }
 }
 
 if (Test-Path $datasetPath) {
-  Write-Host 'Checking declared names against malware dataset...'
-  $manifest = Get-Content -Raw $datasetPath | ConvertFrom-Json
-  foreach ($name in $declared) {
-    $prop = $manifest.PSObject.Properties[$name]
-    if ($null -ne $prop -and $null -ne $prop.Value) {
-      Write-Host "FAIL: $name is listed as malicious (versions: $($prop.Value -join ', '))" -ForegroundColor Red
-      $hardFail = $true
+  Write-Host "Checking $($allNames.Count) resolved names against malware dataset..."
+  try {
+    $manifest = Get-Content -Raw $datasetPath | ConvertFrom-Json
+  } catch {
+    Write-Host "FAIL: malware dataset unreadable/corrupt: $($_.Exception.Message)" -ForegroundColor Red
+    $hardFail = $true
+    $manifest = $null
+  }
+  if ($null -ne $manifest) {
+    foreach ($name in $allNames) {
+      $prop = $manifest.PSObject.Properties[$name]
+      if ($null -ne $prop -and $null -ne $prop.Value) {
+        Write-Host "FAIL: $name is listed as malicious (versions: $($prop.Value -join ', '))" -ForegroundColor Red
+        $hardFail = $true
+      }
+    }
+    if (-not $hardFail) {
+      Write-Host 'OK: no resolved package names in malware dataset' -ForegroundColor Green
     }
   }
-  if (-not $hardFail) {
-    Write-Host 'OK: no declared package names in malware dataset' -ForegroundColor Green
-  }
+} elseif (-not $SkipOnlineDataset) {
+  Write-Host 'FAIL: no malware dataset on disk and online fetch required' -ForegroundColor Red
+  $hardFail = $true
 } else {
-  Write-Host 'WARN: no malware dataset on disk; name-list check skipped' -ForegroundColor Yellow
+  Write-Host 'WARN: dataset skipped by -SkipOnlineDataset' -ForegroundColor Yellow
   $warn = $true
 }
 
-$lockPath = Join-Path $ProjectRoot 'package-lock.json'
 if (Test-Path $lockPath) {
   Write-Host ''
   Write-Host 'Scanning package-lock.json for high-risk scopes...'
