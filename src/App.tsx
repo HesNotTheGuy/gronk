@@ -5,13 +5,13 @@ import { Composer } from './components/Composer'
 import { HomeView } from './components/HomeView'
 import { MessageList } from './components/MessageList'
 import { PermissionModal } from './components/PermissionModal'
-import { PermissionModeBar } from './components/PermissionModeBar'
 import { AgentFleetStrip } from './components/AgentFleet'
 import { PlanPanel } from './components/PlanPanel'
 import { ProjectHome } from './components/ProjectHome'
 import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
 import { YoloConfirm } from './components/YoloConfirm'
+import { CliInstall } from './components/CliInstall'
 import { useGrocky } from './hooks/useGrocky'
 import type { LoginMethod } from '../shared/types'
 
@@ -194,17 +194,6 @@ export function App() {
           </div>
         </header>
 
-        {inProject ? (
-          <div className="mode-toolbar">
-            <PermissionModeBar
-              mode={g.permissionMode}
-              compact
-              disabled={!g.isAuthenticated}
-              onChange={(mode) => void g.changePermissionMode(mode)}
-            />
-          </div>
-        ) : null}
-
         {g.yoloActive && inProject ? (
           <div className="yolo-banner">
             BYPASS PERMISSIONS ACTIVE — agent tools auto-approve. Switch mode or turn off YOLO.
@@ -344,6 +333,12 @@ export function App() {
               disabled={g.connection !== 'ready'}
               busy={g.busy || g.connection === 'loading'}
               cwd={inChat ? null : g.cwd}
+              models={g.models}
+              currentModel={g.settings?.model}
+              onChangeModel={(id) => void g.changeModel(id)}
+              permissionMode={g.permissionMode}
+              onChangeMode={(m) => void g.changePermissionMode(m)}
+              showMode={inProject}
               onSend={(t, atts) => void g.sendPrompt(t, atts)}
               onCancel={() => void g.cancel()}
               onOpenFolder={(path) => openProject(path)}
@@ -365,6 +360,10 @@ export function App() {
             onOpenSettings={() => {
               setShowAuthModal(false)
               g.setShowSettings(true)
+            }}
+            onInstallCli={() => {
+              g.setCliInstallResult(null)
+              g.setShowCliInstall(true)
             }}
           />
           {g.isAuthenticated ? (
@@ -389,6 +388,18 @@ export function App() {
       {g.showYoloConfirm ? (
         <YoloConfirm onConfirm={() => void g.confirmYolo()} onCancel={g.cancelYolo} />
       ) : null}
+
+      <CliInstall
+        open={g.showCliInstall}
+        platform={window.grocky.platform}
+        installing={g.cliInstalling}
+        result={g.cliInstallResult}
+        onInstall={() => void g.installCli()}
+        onClose={() => {
+          g.setShowCliInstall(false)
+          g.setCliInstallResult(null)
+        }}
+      />
 
       <SettingsPanel
         open={g.showSettings}

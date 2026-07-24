@@ -7,7 +7,14 @@ import {
   type DragEvent,
   type KeyboardEvent
 } from 'react'
-import type { FileEntry, PromptAttachment } from '../../shared/types'
+import type {
+  FileEntry,
+  ModelInfo,
+  PermissionMode,
+  PromptAttachment
+} from '../../shared/types'
+import { PERMISSION_MODE_OPTIONS } from '../../shared/types'
+import { MenuButton } from './MenuButton'
 
 interface Props {
   disabled: boolean
@@ -16,6 +23,14 @@ interface Props {
   onSend: (text: string, attachments: PromptAttachment[]) => void
   onCancel: () => void
   onOpenFolder?: (path: string) => void
+  /** Inline Model picker (popover) — both surfaces */
+  models?: ModelInfo[]
+  currentModel?: string
+  onChangeModel?: (id: string) => void
+  /** Inline permission-Mode picker (popover) — Build surface only */
+  permissionMode?: PermissionMode
+  onChangeMode?: (mode: PermissionMode) => void
+  showMode?: boolean
 }
 
 function fileToAttachment(file: File): Promise<PromptAttachment | null> {
@@ -52,7 +67,20 @@ function fileToAttachment(file: File): Promise<PromptAttachment | null> {
   })
 }
 
-export function Composer({ disabled, busy, cwd, onSend, onCancel, onOpenFolder }: Props) {
+export function Composer({
+  disabled,
+  busy,
+  cwd,
+  onSend,
+  onCancel,
+  onOpenFolder,
+  models,
+  currentModel,
+  onChangeModel,
+  permissionMode,
+  onChangeMode,
+  showMode
+}: Props) {
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<PromptAttachment[]>([])
   const [mentionOpen, setMentionOpen] = useState(false)
@@ -336,6 +364,40 @@ export function Composer({ disabled, busy, cwd, onSend, onCancel, onOpenFolder }
         />
         <div className="composer-bar">
           <div className="composer-left">
+            {showMode && onChangeMode ? (
+              <MenuButton
+                label="Mode"
+                value={permissionMode}
+                options={PERMISSION_MODE_OPTIONS.map((o) => ({
+                  id: o.id,
+                  label: o.label,
+                  description: o.description,
+                  dangerous: o.dangerous
+                }))}
+                onSelect={(id) => onChangeMode(id as PermissionMode)}
+                disabled={disabled}
+                title="How the agent's tools are approved"
+              />
+            ) : null}
+            {onChangeModel && models && models.length > 0 ? (
+              <MenuButton
+                label="Model"
+                value={currentModel}
+                valueLabel={
+                  models.find((m) => m.id === currentModel)?.name ||
+                  models.find((m) => m.isDefault)?.name ||
+                  currentModel
+                }
+                options={models.map((m) => ({
+                  id: m.id,
+                  label: m.name || m.id,
+                  description: m.description
+                }))}
+                onSelect={(id) => onChangeModel(id)}
+                disabled={disabled}
+                title="Switch model (restarts the agent)"
+              />
+            ) : null}
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -346,7 +408,7 @@ export function Composer({ disabled, busy, cwd, onSend, onCancel, onOpenFolder }
               Attach
             </button>
             <span className={`composer-hint ${busy ? 'busy' : ''}`}>
-              {busy ? 'Agent executing' : 'ACP · grok agent stdio'}
+              {busy ? 'Agent executing' : 'ACP'}
             </span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>

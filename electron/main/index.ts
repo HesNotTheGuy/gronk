@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
+import { spawn } from 'node:child_process'
 import { agentManager } from './agent-manager'
 import { isChatWorkspace, normalizePath } from '../../shared/path'
 import {
@@ -21,6 +22,7 @@ import { resolveGrokBinary } from './acp/client'
 import { listModels } from './models'
 import { exportTranscriptMarkdown, listProjectFiles } from './fs-utils'
 import { getAuthStatus, loginWithCli, logoutWithCli } from './auth'
+import { redactSecrets } from './redact'
 import type {
   AppSettings,
   ChatMessage,
@@ -108,8 +110,17 @@ function createWindow(): void {
     title: 'Grocky',
     backgroundColor: '#000000',
     show: false,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    titleBarStyle:
+      process.platform === 'darwin'
+        ? 'hiddenInset'
+        : process.platform === 'win32'
+          ? 'hidden'
+          : 'default',
     trafficLightPosition: process.platform === 'darwin' ? { x: 16, y: 16 } : undefined,
+    // Windows: draw our own dark title bar; keep native min/max/close as an overlay
+    ...(process.platform === 'win32'
+      ? { titleBarOverlay: { color: '#0a0a0a', symbolColor: '#e5e5e5', height: 40 } }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -166,6 +177,82 @@ function createWindow(): void {
   mainWindow.on('closed', () => {
     mainWindow = null
     agentManager.setWindow(null)
+  })
+}
+
+/**
+ * Install the Grok CLI via the official x.ai installer. Only ever called from the
+ * user-consented install modal — never automatically. Runs the platform installer,
+ * then re-detects the binary.
+ */
+function installGrokCli(): Promise<{
+  ok: boolean
+  message: string
+  grokPath: string | null
+  installed: boolean
+}> {
+  return new Promise((resolve) => {
+    const isWin = process.platform === 'win32'
+    const cmd = isWin ? 'powershell.exe' : 'bash'
+    const args = isWin
+      ? [
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          'irm https://x.ai/cli/install.ps1 | iex'
+        ]
+      : ['-lc', 'curl -fsSL https://x.ai/cli/install.sh | bash']
+
+    let proc: ReturnType<typeof spawn>
+    try {
+      proc = spawn(cmd, args, { windowsHide: true, env: process.env })
+    } catch (err) {
+      resolve({
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+        grokPath: null,
+        installed: false
+      })
+      return
+    }
+
+    let out = ''
+    const timer = setTimeout(() => {
+      try {
+        proc.kill()
+      } catch {
+        /* ignore */
+      }
+    }, 240_000)
+
+    proc.stdout?.setEncoding('utf8')
+    proc.stdout?.on('data', (c: string) => {
+      out += c
+    })
+    proc.stderr?.setEncoding('utf8')
+    proc.stderr?.on('data', (c: string) => {
+      out += c
+    })
+    proc.on('error', (err) => {
+      clearTimeout(timer)
+      resolve({ ok: false, message: err.message, grokPath: null, installed: false })
+    })
+    proc.on('close', (code) => {
+      clearTimeout(timer)
+      const grokPath = resolveGrokBinary(getSettings().grokBinary)
+      const installed = !!grokPath
+      const tail = redactSecrets((out || '').slice(-1500)).trim()
+      resolve({
+        ok: installed,
+        message: installed
+          ? 'Grok CLI installed. Sign in with your own account to continue.'
+          : tail ||
+            `Installer exited (code ${code ?? '?'}) but the grok binary was not found. Restart Grocky or install manually.`,
+        grokPath,
+        installed
+      })
+    })
   })
 }
 
@@ -515,6 +602,11 @@ function registerIpc(): void {
   ipcMain.handle('grocky:reveal-local-path', async (e, filePath: string) => {
     assertTrustedSender(e)
     return revealLocalPathSafe(assertString(filePath, 'filePath'))
+  })
+
+  ipcMain.handle('grocky:install-cli', async (e) => {
+    assertTrustedSender(e)
+    return installGrokCli()
   })
 }
 

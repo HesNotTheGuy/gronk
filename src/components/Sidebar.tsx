@@ -7,7 +7,6 @@ import type {
   SessionInfo
 } from '../../shared/types'
 import { folderName, pathsEqual } from '../../shared/path'
-import { PermissionModeBar } from './PermissionModeBar'
 
 interface Props {
   alwaysApprove: boolean
@@ -174,37 +173,6 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-body">
-        <div className="sidebar-section sidebar-section-compact">
-          <div className="section-label">Model</div>
-          <select
-            className="model-select sidebar-select"
-            value={currentModel || models.find((m) => m.isDefault)?.id || ''}
-            onChange={(e) => onChangeModel(e.target.value)}
-            title="Restart agent when changed"
-            disabled={!authenticated}
-          >
-            {models.length === 0 ? (
-              <option value="">Discovering…</option>
-            ) : (
-              models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name || m.id}
-                </option>
-              ))
-            )}
-          </select>
-        </div>
-
-        {surface === 'project' && inConversation ? (
-          <div className="sidebar-section sidebar-section-compact">
-            <PermissionModeBar
-              mode={permissionMode}
-              disabled={!authenticated}
-              onChange={onChangePermissionMode}
-            />
-          </div>
-        ) : null}
-
         {surface === 'home' ? (
           <div className="sidebar-section">
             <div className="muted-note">

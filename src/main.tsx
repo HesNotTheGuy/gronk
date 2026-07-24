@@ -20,6 +20,8 @@ try {
       'window.grocky is missing — preload did not load. Check Electron sandbox / preload path.'
     )
   }
+  // Expose OS so CSS can reserve space for the Windows title-bar overlay controls
+  document.documentElement.dataset.platform = window.grocky.platform
   createRoot(rootEl).render(
     <StrictMode>
       <App />

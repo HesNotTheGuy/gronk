@@ -9,6 +9,7 @@ interface Props {
   onLogin: (method: LoginMethod) => void
   onRefresh: () => void
   onOpenSettings: () => void
+  onInstallCli: () => void
 }
 
 export function AuthGate({
@@ -19,7 +20,8 @@ export function AuthGate({
   grokFound,
   onLogin,
   onRefresh,
-  onOpenSettings
+  onOpenSettings,
+  onInstallCli
 }: Props) {
   const checking = !auth || auth.state === 'checking'
 
@@ -46,10 +48,15 @@ export function AuthGate({
 
         {!grokFound ? (
           <div className="auth-warn">
-            Grok CLI not found. Install it first, then return here to sign in.
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onOpenSettings}>
-              Settings
-            </button>
+            Grok CLI not found on this machine.
+            <div className="auth-warn-actions">
+              <button type="button" className="btn btn-primary btn-sm" onClick={onInstallCli}>
+                Install Grok CLI
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onOpenSettings}>
+                Set path…
+              </button>
+            </div>
           </div>
         ) : null}
 

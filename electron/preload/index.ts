@@ -47,6 +47,7 @@ const api: GrockyApi = {
   getAuthStatus: () => ipcRenderer.invoke('grocky:get-auth-status'),
   login: (method?: LoginMethod) => ipcRenderer.invoke('grocky:login', method),
   logout: () => ipcRenderer.invoke('grocky:logout'),
+  installCli: () => ipcRenderer.invoke('grocky:install-cli'),
   readLocalImage: (filePath: string) => ipcRenderer.invoke('grocky:read-local-image', filePath),
   revealLocalPath: (filePath: string) => ipcRenderer.invoke('grocky:reveal-local-path', filePath),
   onEvent: (handler) => {

@@ -357,6 +357,13 @@ export interface GrockyApi {
     auth: AuthStatus
   }>
   logout: () => Promise<{ ok: boolean; message: string; auth: AuthStatus }>
+  /** Install the Grok CLI via the official installer (only after explicit user consent). */
+  installCli: () => Promise<{
+    ok: boolean
+    message: string
+    grokPath: string | null
+    installed: boolean
+  }>
   /**
    * Read a local image file as a data URL for inline chat display.
    * Path may be absolute or session-relative (e.g. images/1.jpg).

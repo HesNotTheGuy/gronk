@@ -55,6 +55,9 @@ export function useGrocky() {
   const [deviceHint, setDeviceHint] = useState<string | null>(null)
   const [showYoloConfirm, setShowYoloConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showCliInstall, setShowCliInstall] = useState(false)
+  const [cliInstalling, setCliInstalling] = useState(false)
+  const [cliInstallResult, setCliInstallResult] = useState<string | null>(null)
   const [historySource, setHistorySource] = useState<string | null>(null)
   const [activePlan, setActivePlan] = useState<ActivePlan | null>(null)
   const [planCollapsed, setPlanCollapsed] = useState(false)
@@ -771,6 +774,22 @@ export function useGrocky() {
     setAuth(h.auth)
   }, [])
 
+  const installCli = useCallback(async () => {
+    setCliInstalling(true)
+    setCliInstallResult(null)
+    try {
+      const res = await window.grocky.installCli()
+      setCliInstallResult(res.message)
+      await refreshMeta()
+      return res
+    } catch (err) {
+      setCliInstallResult(err instanceof Error ? err.message : String(err))
+      return null
+    } finally {
+      setCliInstalling(false)
+    }
+  }, [refreshMeta])
+
   const refreshAuth = useCallback(async () => {
     setAuthBusy(true)
     try {
@@ -920,6 +939,12 @@ export function useGrocky() {
     showYoloConfirm,
     showSettings,
     setShowSettings,
+    showCliInstall,
+    setShowCliInstall,
+    cliInstalling,
+    cliInstallResult,
+    setCliInstallResult,
+    installCli,
     historySource,
     activePlan,
     planCollapsed,
