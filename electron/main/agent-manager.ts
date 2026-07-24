@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import {
   GrokAcpClient,
   isAllowedGrokBasename,
+  mergeToolCall,
   parseToolCallFromUpdate,
   probeGrokBinary,
   resolveGrokBinary,
@@ -1038,40 +1039,33 @@ export class AgentManager {
       return
     }
 
-    if (kind === 'tool_call') {
-      const toolCall = parseToolCallFromUpdate(update)
-      if (toolCall) {
+    if (kind === 'tool_call' || kind === 'tool_call_update') {
+      const parsed = parseToolCallFromUpdate(update)
+      if (parsed) {
+        // Preserve title/kind/rawInput across Grok's late status-only updates.
+        let merged = parsed
         this.patchAssistant(messageId, (m) => {
           const tools = [...(m.toolCalls || [])]
-          const idx = tools.findIndex((t) => t.toolCallId === toolCall.toolCallId)
-          if (idx >= 0) tools[idx] = { ...tools[idx], ...toolCall }
-          else tools.push(toolCall)
-          return { ...m, toolCalls: tools }
-        })
-        this.emit({ type: 'tool-call', sessionId, messageId, toolCall })
-      }
-      return
-    }
-
-    if (kind === 'tool_call_update') {
-      const toolCall = parseToolCallFromUpdate(update)
-      if (toolCall) {
-        this.patchAssistant(messageId, (m) => {
-          let tools = (m.toolCalls || []).map((t) =>
-            t.toolCallId === toolCall.toolCallId ? { ...t, ...toolCall } : t
-          )
-          if (!tools.some((t) => t.toolCallId === toolCall.toolCallId)) {
-            tools = [...tools, toolCall]
+          const idx = tools.findIndex((t) => t.toolCallId === parsed.toolCallId)
+          if (idx >= 0) {
+            merged = mergeToolCall(tools[idx], parsed)
+            tools[idx] = merged
+          } else {
+            tools.push(parsed)
           }
           return { ...m, toolCalls: tools }
         })
-        this.emit({
-          type: 'tool-call-update',
-          sessionId,
-          messageId,
-          toolCallId: toolCall.toolCallId,
-          patch: toolCall as Partial<ToolCallInfo>
-        })
+        if (kind === 'tool_call') {
+          this.emit({ type: 'tool-call', sessionId, messageId, toolCall: merged })
+        } else {
+          this.emit({
+            type: 'tool-call-update',
+            sessionId,
+            messageId,
+            toolCallId: merged.toolCallId,
+            patch: merged
+          })
+        }
       }
       return
     }

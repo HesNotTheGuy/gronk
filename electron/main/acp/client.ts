@@ -467,24 +467,64 @@ export function resolveGrokBinary(override?: string): string | null {
   return null
 }
 
+/** Grok surfaces the tool identity under `_meta["x.ai/tool"]` (name, kind, label). */
+function xaiToolMeta(update: Record<string, unknown>): Record<string, unknown> | undefined {
+  const meta = update._meta as Record<string, unknown> | undefined
+  const t = meta?.['x.ai/tool'] ?? meta?.['xai/tool']
+  return t && typeof t === 'object' ? (t as Record<string, unknown>) : undefined
+}
+
 export function parseToolCallFromUpdate(update: Record<string, unknown>): ToolCallInfo | null {
   const sessionUpdate = update.sessionUpdate as string | undefined
   if (sessionUpdate !== 'tool_call' && sessionUpdate !== 'tool_call_update') return null
 
+  const meta = xaiToolMeta(update)
   const toolCallId =
     (update.toolCallId as string) ||
     (update.tool_call_id as string) ||
     (update.id as string) ||
     `tool-${Date.now()}`
 
+  // Prefer an explicit title, then the tool's human label / snake-case name from _meta.
+  const title =
+    (typeof update.title === 'string' && update.title) ||
+    (meta && typeof meta.label === 'string' && meta.label) ||
+    (meta && typeof meta.name === 'string' && meta.name) ||
+    'Tool'
+
+  // Kind lives at the top level on some updates and in _meta on the initial call.
+  const kind =
+    (typeof update.kind === 'string' && update.kind) ||
+    (meta && typeof meta.kind === 'string' && (meta.kind as string)) ||
+    undefined
+
   return {
     toolCallId,
-    title: (update.title as string) || (update.kind as string) || 'Tool',
-    kind: update.kind as string | undefined,
+    title: title as string,
+    kind: kind || undefined,
     status: normalizeStatus(update.status),
     rawInput: update.rawInput ?? update.input ?? update.arguments,
     content: update.content ?? update.rawOutput ?? update.result ?? update.output,
     error: typeof update.error === 'string' ? update.error : undefined
+  }
+}
+
+/**
+ * Merge a freshly-parsed tool-call update into prior state. Grok's late,
+ * status-only updates carry no title/kind/rawInput; a plain spread would wipe the
+ * good values captured from the initial `tool_call`, so preserve them here.
+ */
+export function mergeToolCall(prev: ToolCallInfo | undefined, next: ToolCallInfo): ToolCallInfo {
+  if (!prev) return next
+  const generic = (t?: string): boolean => !t || t === 'Tool' || t === 'tool'
+  return {
+    toolCallId: next.toolCallId || prev.toolCallId,
+    title: !generic(next.title) ? next.title : prev.title,
+    kind: next.kind || prev.kind,
+    status: next.status || prev.status,
+    rawInput: next.rawInput ?? prev.rawInput,
+    content: next.content ?? prev.content,
+    error: next.error ?? prev.error
   }
 }
 
