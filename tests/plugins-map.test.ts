@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  applyPinnedShas,
   assertCliToken,
   assertEnvPairs,
   assertHeaderPairs,
@@ -11,7 +12,8 @@ import {
   cliMessage,
   mapMcpServers,
   mapPlugin,
-  mapPlugins
+  mapPlugins,
+  parseGitRemoteUrl
 } from '../electron/main/plugins-map'
 
 // ── Option injection (SKILLS-PLUGINS-SPEC Gotcha #8) ────────────────
@@ -128,6 +130,118 @@ test('mapPlugins accepts both a bare array and a {plugins:[]} envelope', () => {
 test('string component entries are accepted', () => {
   const plugin = mapPlugin({ name: 'a', components: { skills: ['one', '  ', 'two'] } }, 'installed')
   assert.deepEqual(plugin?.components?.skills, [{ name: 'one' }, { name: 'two' }])
+})
+
+// ── Pinned commits from the marketplace cache (spec §4.2) ───────────
+
+const XAI_URL = 'https://github.com/xai-org/plugin-marketplace.git'
+const CLAUDE_URL = 'https://github.com/anthropics/claude-plugins-official.git'
+const MARKETPLACES = [
+  { name: 'xAI Official', kind: 'git', url: XAI_URL, branch: null },
+  { name: 'claude-plugins-official', kind: 'git', url: CLAUDE_URL, branch: null }
+]
+const VERCEL_SHA = '4f867228f69a48c4781ccf1bc5d2741af435cc97'
+
+/** Both official catalogs ship a plugin called `vercel` — the collision is the point. */
+function catalog() {
+  return mapPlugins(
+    [
+      { name: 'vercel', marketplace: 'xAI Official' },
+      { name: 'vercel', marketplace: 'claude-plugins-official' }
+    ],
+    'available'
+  )
+}
+
+/** One clone of the xAI marketplace holding `index` as its plugin-index.json. */
+function xaiCache(index: unknown) {
+  return [{ url: XAI_URL, index }]
+}
+
+test('a pinned sha reaches the entry from that marketplace and no other', () => {
+  const plugins = catalog()
+  applyPinnedShas(
+    plugins,
+    xaiCache({ version: 1, plugins: { vercel: { sha: VERCEL_SHA, version: '0.45.1' } } }),
+    MARKETPLACES
+  )
+  assert.equal(plugins[0].sha, VERCEL_SHA)
+  assert.equal(plugins[1].sha, undefined, 'the same name elsewhere must not inherit the commit')
+})
+
+test('a clone is matched to its marketplace across a .git suffix', () => {
+  const plugins = catalog()
+  const index = { plugins: { vercel: { sha: VERCEL_SHA } } }
+  applyPinnedShas(plugins, [{ url: XAI_URL.replace(/\.git$/, ''), index }], MARKETPLACES)
+  assert.equal(plugins[0].sha, VERCEL_SHA)
+})
+
+test('a missing, unusable or unmatched cache leaves sha undefined without throwing', () => {
+  const index = { plugins: { vercel: { sha: VERCEL_SHA } } }
+  for (const caches of [
+    [],
+    xaiCache(null),
+    xaiCache('not an object'),
+    xaiCache({}),
+    // The index keys plugins by name; the array shape asList handles is not it.
+    xaiCache({ plugins: [{ name: 'vercel', sha: VERCEL_SHA }] }),
+    xaiCache({ plugins: { vercel: 'nope' } }),
+    xaiCache({ plugins: { vercel: {} } }),
+    xaiCache({ plugins: { other: { sha: VERCEL_SHA } } }),
+    [{ url: undefined, index }],
+    [{ url: 'https://github.com/someone/unconfigured.git', index }]
+  ]) {
+    const plugins = catalog()
+    applyPinnedShas(plugins, caches, MARKETPLACES)
+    assert.equal(plugins[0].sha, undefined)
+  }
+})
+
+test('only a full-length hex object id is shown as a pinned commit', () => {
+  for (const sha of [
+    'main',
+    'refs/heads/main',
+    VERCEL_SHA.slice(0, 12),
+    `${VERCEL_SHA}0`,
+    'z'.repeat(40),
+    'a'.repeat(100_000),
+    42,
+    null
+  ]) {
+    const plugins = catalog()
+    applyPinnedShas(plugins, xaiCache({ plugins: { vercel: { sha } } }), MARKETPLACES)
+    assert.equal(plugins[0].sha, undefined, `accepted ${String(sha).slice(0, 24)}`)
+  }
+  // git is migrating to sha256, so a 64-char id is a commit id too.
+  const plugins = catalog()
+  applyPinnedShas(plugins, xaiCache({ plugins: { vercel: { sha: 'a'.repeat(64) } } }), MARKETPLACES)
+  assert.equal(plugins[0].sha, 'a'.repeat(64))
+})
+
+test('a sha the CLI itself reported is not overwritten by the cache', () => {
+  const reported = 'b'.repeat(40)
+  const raw = [{ name: 'vercel', marketplace: 'xAI Official', sha: reported }]
+  const plugins = mapPlugins(raw, 'available')
+  applyPinnedShas(plugins, xaiCache({ plugins: { vercel: { sha: VERCEL_SHA } } }), MARKETPLACES)
+  assert.equal(plugins[0].sha, reported)
+})
+
+test('parseGitRemoteUrl reads remote.origin.url and nothing else', () => {
+  const config = `[core]
+\tbare = false
+[remote "origin"]
+\turl = ${XAI_URL}
+\tfetch = +refs/heads/main:refs/remotes/origin/main
+[branch "main"]
+\tremote = origin
+`
+  assert.equal(parseGitRemoteUrl(config), XAI_URL)
+  assert.equal(parseGitRemoteUrl(config.replace(/\n/g, '\r\n')), XAI_URL, 'CRLF checkouts count')
+  assert.equal(parseGitRemoteUrl(`[remote "upstream"]\n\turl = ${CLAUDE_URL}`), undefined)
+  assert.equal(parseGitRemoteUrl('[core]\n\tbare = false'), undefined)
+  assert.equal(parseGitRemoteUrl(null), undefined)
+  assert.equal(parseGitRemoteUrl(`[remote "origin"]\n\turl = ${'u'.repeat(3000)}`), undefined)
+  assert.equal(parseGitRemoteUrl(`[remote "origin"]\n\turl = a${String.fromCharCode(0)}b`), undefined)
 })
 
 // ── MCP mapping + redaction (Gotcha #3) ─────────────────────────────

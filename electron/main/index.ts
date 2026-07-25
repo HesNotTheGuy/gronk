@@ -309,7 +309,15 @@ function installGrokCli(): Promise<{
           '-Command',
           'irm https://x.ai/cli/install.ps1 | iex'
         ]
-      : ['-lc', 'curl -fsSL https://x.ai/cli/install.sh | bash']
+      : // curl is not guaranteed on a minimal Linux image — Alpine's busybox ships
+        // wget but no curl, and Debian slim ships neither. Without a fallback the
+        // only symptom is "command not found" buried in the installer output tail.
+        [
+          '-lc',
+          'if command -v curl >/dev/null 2>&1; then curl -fsSL https://x.ai/cli/install.sh | bash; ' +
+            'elif command -v wget >/dev/null 2>&1; then wget -qO- https://x.ai/cli/install.sh | bash; ' +
+            'else echo "Neither curl nor wget is installed. Install one, or run the Grok CLI installer manually: https://x.ai/cli" >&2; exit 127; fi'
+        ]
 
     let proc: ReturnType<typeof spawn>
     try {

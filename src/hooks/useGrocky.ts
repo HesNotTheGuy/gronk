@@ -38,6 +38,14 @@ import {
 import { parsePlan } from '../lib/plan'
 import { applyTheme } from '../lib/theme'
 
+/** Last transcript written to disk — drives the "saved to…" banner. */
+interface ExportNotice {
+  path: string
+  format: 'md' | 'json'
+  /** Main refuses to reveal paths outside its allowed roots; show why inline */
+  revealError?: string
+}
+
 export function useGrocky() {
   const [connection, setConnection] = useState<ConnectionState>('idle')
   const [cwd, setCwd] = useState<string | null>(null)
@@ -59,6 +67,8 @@ export function useGrocky() {
   const [deviceHint, setDeviceHint] = useState<string | null>(null)
   const [showYoloConfirm, setShowYoloConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+  const [exportNotice, setExportNotice] = useState<ExportNotice | null>(null)
   const [showCliInstall, setShowCliInstall] = useState(false)
   const [cliInstalling, setCliInstalling] = useState(false)
   const [cliInstallResult, setCliInstallResult] = useState<string | null>(null)
@@ -762,12 +772,39 @@ export function useGrocky() {
     [sessionId, cwd, openProject, openChat, agentSurface]
   )
 
-  const exportSession = useCallback(async (id: string) => {
-    const result = await window.grocky.exportTranscript(id, 'md')
-    if (result?.path) {
-      // brief feedback via error banner slot reused as status is noisy; keep silent success
+  /** Put an archived session back into the normal lists. */
+  const unarchiveSession = useCallback(async (id: string) => {
+    await window.grocky.archiveSession(id, false)
+    const sess = await window.grocky.listSessions()
+    setSessions(sess)
+  }, [])
+
+  const exportSession = useCallback(async (id: string, format: 'md' | 'json' = 'md') => {
+    try {
+      const result = await window.grocky.exportTranscript(id, format)
+      // null = save dialog cancelled (or nothing to export) — stay silent
+      if (!result?.path) return
+      setExportNotice({ path: result.path, format })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
     }
   }, [])
+
+  const revealExport = useCallback(async () => {
+    if (!exportNotice) return
+    const res = await window.grocky.revealLocalPath(exportNotice.path)
+    // Keep the notice up either way — the path itself is the answer to "where?"
+    setExportNotice((prev) =>
+      prev
+        ? {
+            ...prev,
+            revealError: res.ok ? undefined : res.error || 'Could not open the folder'
+          }
+        : prev
+    )
+  }, [exportNotice])
+
+  const dismissExport = useCallback(() => setExportNotice(null), [])
 
   const pickBinary = useCallback(async () => {
     const path = await window.grocky.selectFile({
@@ -1017,6 +1054,15 @@ export function useGrocky() {
     [uniqueSessions]
   )
 
+  /** Hidden from every normal list — only the Archived panel reads this. */
+  const archivedSessions = useMemo(
+    () =>
+      uniqueSessions
+        .filter((s) => s.archived)
+        .sort((a, b) => (b.archivedAt || b.updatedAt) - (a.archivedAt || a.updatedAt)),
+    [uniqueSessions]
+  )
+
   const chatSessions = useMemo(
     () => activeSessions.filter((s) => isChatSession(s, chatWorkspacePath)),
     [activeSessions, chatWorkspacePath]
@@ -1056,6 +1102,7 @@ export function useGrocky() {
     chatSessions,
     /** Folder agent sessions only (never app Chat) */
     projectOnlySessions,
+    archivedSessions,
     surface,
     browsing,
     agentSurface,
@@ -1080,6 +1127,11 @@ export function useGrocky() {
     showYoloConfirm,
     showSettings,
     setShowSettings,
+    showArchived,
+    setShowArchived,
+    exportNotice,
+    revealExport,
+    dismissExport,
     showCliInstall,
     setShowCliInstall,
     cliInstalling,
@@ -1129,6 +1181,7 @@ export function useGrocky() {
     renameSession,
     deleteSession,
     archiveSession,
+    unarchiveSession,
     exportSession,
     pickBinary,
     clearBinary,

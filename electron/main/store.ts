@@ -6,19 +6,34 @@ import {
   type AppSettings,
   type ChatMessage,
   type PermissionAuditEntry,
+  type PermissionMode,
   type ProjectContext,
   type SessionInfo
 } from '../../shared/types'
 import { isChatWorkspace, normalizePath } from '../../shared/path'
 import { redactPreview, redactValue } from './redact'
 
+/**
+ * What actually lands in grocky-store.json. `alwaysApprove` is absent on purpose:
+ * it is a view of `permissionMode === 'bypassPermissions'`, and keeping a second
+ * copy of one security fact is what let them disagree — a store holding
+ * `bypassPermissions` with `alwaysApprove: false` still spawned the child with
+ * `--always-approve` while the in-app toggle read off.
+ */
+type StoredSettings = Omit<AppSettings, 'alwaysApprove'>
+
 interface StoreData {
-  settings: AppSettings
+  settings: StoredSettings
   recentProjects: ProjectContext[]
   sessions: SessionInfo[]
   /** sessionId -> chat messages (local transcript cache) */
   transcripts: Record<string, ChatMessage[]>
   permissionAudit: PermissionAuditEntry[]
+}
+
+/** Store as read off disk: older files also carried the now-derived field. */
+interface RawStore extends Partial<Omit<StoreData, 'settings'>> {
+  settings?: Partial<AppSettings>
 }
 
 function storePath(): string {
@@ -34,12 +49,59 @@ export function normalizeCwd(cwd: string): string {
   }
 }
 
+/** Drop the derived field so it never reaches disk. */
+function toStored(settings: AppSettings): StoredSettings {
+  const { alwaysApprove: _derived, ...stored } = settings
+  return stored
+}
+
+/** Same, for an incoming patch — `alwaysApprove` folds onto the mode instead. */
+function toStoredPatch(partial: Partial<AppSettings>): Partial<StoredSettings> {
+  const { alwaysApprove: _derived, ...rest } = partial
+  return rest
+}
+
+/** Re-derive `alwaysApprove` for callers; the renderer reads it off AppSettings. */
+function withDerived(settings: StoredSettings): AppSettings {
+  return {
+    ...settings,
+    alwaysApprove: settings.permissionMode === 'bypassPermissions'
+  }
+}
+
+const DEFAULT_STORED_SETTINGS: StoredSettings = toStored(DEFAULT_SETTINGS)
+
+/**
+ * Resolve a settings block read off disk onto the single stored permission fact.
+ *
+ * Older builds persisted `alwaysApprove` beside `permissionMode`, so a file can
+ * hold any combination. Resolution is fail-safe — when the pair disagrees the
+ * value granting LESS access wins:
+ * - `bypassPermissions` + `alwaysApprove: false` -> `default` (the drift that
+ *   used to boot `--always-approve` with the in-app toggle showing off)
+ * - `alwaysApprove: true` beside a gated mode -> the gated mode survives; a
+ *   stray legacy flag never promotes a session to bypass
+ * - `bypassPermissions` with no acknowledgement on disk -> `default`, so a
+ *   hand-edited or pre-FIX-14 file cannot launch straight into YOLO
+ *
+ * A file written by this build has no `alwaysApprove` key at all, so only the
+ * ack gate applies to it.
+ */
+function normalizeStoredSettings(raw: Partial<AppSettings> | undefined): StoredSettings {
+  const settings = toStored({ ...DEFAULT_SETTINGS, ...raw })
+  if (settings.permissionMode !== 'bypassPermissions') return settings
+  if (raw?.alwaysApprove === false || !settings.alwaysApproveAck) {
+    return { ...settings, permissionMode: 'default' }
+  }
+  return settings
+}
+
 function readStore(): StoreData {
   try {
     const raw = fs.readFileSync(storePath(), 'utf8')
-    const data = JSON.parse(raw) as Partial<StoreData>
+    const data = JSON.parse(raw) as RawStore
     return {
-      settings: { ...DEFAULT_SETTINGS, ...data.settings },
+      settings: normalizeStoredSettings(data.settings),
       recentProjects: data.recentProjects ?? [],
       sessions: data.sessions ?? [],
       transcripts: data.transcripts ?? {},
@@ -47,7 +109,7 @@ function readStore(): StoreData {
     }
   } catch {
     return {
-      settings: { ...DEFAULT_SETTINGS },
+      settings: { ...DEFAULT_STORED_SETTINGS },
       recentProjects: [],
       sessions: [],
       transcripts: {},
@@ -85,51 +147,56 @@ function dedupeSessions(sessions: SessionInfo[]): SessionInfo[] {
 }
 
 export function getSettings(): AppSettings {
-  return readStore().settings
+  return withDerived(readStore().settings)
+}
+
+/**
+ * Fold a settings patch down to the one mode it asks for.
+ *
+ * `alwaysApprove` in a patch is the UI's YOLO toggle — shorthand for
+ * `permissionMode: 'bypassPermissions'`, or for leaving it when false. A patch
+ * carrying only the toggle is the user flipping the switch, so it wins over the
+ * stored mode. A patch carrying BOTH and disagreeing with itself resolves
+ * towards less access, so no call can turn bypass on as a side effect.
+ */
+function requestedPermissionMode(
+  partial: Partial<AppSettings>,
+  stored: PermissionMode
+): PermissionMode {
+  const { permissionMode: mode, alwaysApprove: yolo } = partial
+  if (yolo === undefined) return mode ?? stored
+  if (mode === undefined) {
+    if (yolo) return 'bypassPermissions'
+    return stored === 'bypassPermissions' ? 'default' : stored
+  }
+  // Both supplied: honour them when they agree, otherwise take the gated side.
+  if (yolo === (mode === 'bypassPermissions')) return mode
+  return mode === 'bypassPermissions' ? 'default' : mode
 }
 
 export function setSettings(partial: Partial<AppSettings>): AppSettings {
   const data = readStore()
   // FIX-14: require ack already on disk before enabling YOLO (not same-partial ack+enable)
   const priorAck = !!data.settings.alwaysApproveAck
-  const merged: AppSettings = {
-    ...DEFAULT_SETTINGS,
+  const merged: StoredSettings = {
+    ...DEFAULT_STORED_SETTINGS,
     ...data.settings,
-    ...partial
+    ...toStoredPatch(partial)
   }
 
-  // Keep permissionMode ↔ alwaysApprove in sync.
+  // permissionMode is the whole permission state; alwaysApprove is derived from
+  // it on the way out, so there is nothing left here to keep "in sync".
+  //
   // Only `priorAck` (the ack ALREADY on disk) may unlock YOLO. Reading
-  // `merged.alwaysApproveAck` would accept an ack supplied in this same call,
-  // which is exactly the one-shot self-authorization FIX-14 exists to stop.
-  // The UI acknowledges and enables in two separate calls (`confirmYolo`).
-  if (partial.permissionMode === 'bypassPermissions') {
-    if (priorAck) {
-      merged.alwaysApprove = true
-    } else {
-      merged.permissionMode = 'default'
-      merged.alwaysApprove = false
-    }
-  } else if (partial.permissionMode) {
-    merged.alwaysApprove = false
-  }
-
-  if (partial.alwaysApprove === true) {
-    if (priorAck) {
-      merged.alwaysApprove = true
-      merged.permissionMode = 'bypassPermissions'
-    } else {
-      merged.alwaysApprove = false
-      if (merged.permissionMode === 'bypassPermissions') {
-        merged.permissionMode = 'default'
-      }
-    }
-  } else if (partial.alwaysApprove === false) {
-    merged.alwaysApprove = false
-    if (merged.permissionMode === 'bypassPermissions') {
-      merged.permissionMode = 'default'
-    }
-  }
+  // `merged.alwaysApproveAck` alone would accept an ack supplied in this same
+  // call, which is exactly the one-shot self-authorization FIX-14 exists to
+  // stop. The UI acknowledges and enables in two separate calls (`confirmYolo`).
+  // The merged ack is required on top of it so that revoking the ack in this
+  // call also drops bypass, instead of leaving a state the next read undoes.
+  const ackAllowsBypass = priorAck && !!merged.alwaysApproveAck
+  const requested = requestedPermissionMode(partial, data.settings.permissionMode)
+  merged.permissionMode =
+    requested === 'bypassPermissions' && !ackAllowsBypass ? 'default' : requested
 
   // Explicit clear of optional string fields
   if ('grokBinary' in partial && !partial.grokBinary) {
@@ -141,7 +208,7 @@ export function setSettings(partial: Partial<AppSettings>): AppSettings {
 
   data.settings = merged
   writeStore(data)
-  return data.settings
+  return withDerived(data.settings)
 }
 
 /** Never list the app chat sandbox as a coding folder. */

@@ -9,13 +9,15 @@ import { AgentFleetStrip } from './components/AgentFleet'
 import { PlanPanel } from './components/PlanPanel'
 import { ProjectHome } from './components/ProjectHome'
 import { PluginsPanel } from './components/PluginsPanel'
+import { SessionCard } from './components/SessionCard'
 import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
 import { YoloConfirm } from './components/YoloConfirm'
 import { CliInstall } from './components/CliInstall'
 import { PreviewPane } from './components/PreviewPane'
 import { useGrocky } from './hooks/useGrocky'
-import type { LoginMethod } from '../shared/types'
+import { folderName, isChatSession } from '../shared/path'
+import type { LoginMethod, SessionInfo } from '../shared/types'
 
 const PROJECT_HINTS = [
   'Map the architecture and main entry points',
@@ -33,6 +35,7 @@ export function App() {
   const g = useGrocky()
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
 
   const surface = g.surface
   /** Main pane is live conversation (not browse home) */
@@ -45,6 +48,11 @@ export function App() {
       setShowAuthModal(true)
     }
   }, [g.auth?.authenticated, g.auth?.state])
+
+  // The Export popover belongs to one session — never reopen it on the next one
+  useEffect(() => {
+    setExportMenuOpen(false)
+  }, [g.sessionId, surface, g.browsing])
 
   const statusClass =
     g.connection === 'ready'
@@ -89,6 +97,18 @@ export function App() {
     if (result?.ok) setShowAuthModal(false)
   }
 
+  const exportCurrent = (format: 'md' | 'json') => {
+    setExportMenuOpen(false)
+    if (g.sessionId) void g.exportSession(g.sessionId, format)
+  }
+
+  /** Opening an archived session is how you say "I want this back". */
+  const openArchived = async (s: SessionInfo) => {
+    await g.unarchiveSession(s.id)
+    g.setShowArchived(false)
+    await g.selectSession(s)
+  }
+
   const hints = inChat ? CHAT_HINTS : PROJECT_HINTS
 
   return (
@@ -102,11 +122,13 @@ export function App() {
         permissionMode={g.permissionMode}
         surface={surface}
         inConversation={inConversation}
+        browsing={g.browsing}
         projects={g.recentProjects}
         projectSessions={g.projectOnlySessions}
         chatSessions={g.chatSessions}
         activeCwd={g.cwd}
         activeSessionId={g.sessionId}
+        archivedCount={g.archivedSessions.length}
         onGoHome={() => g.goHome()}
         onGoChat={() => g.goChat()}
         onGoProjects={() => g.goProjects()}
@@ -114,6 +136,7 @@ export function App() {
         onOpenChat={openChat}
         onSelectSession={(s) => void g.selectSession(s)}
         onNewProjectSession={() => void g.newChat()}
+        onOpenArchived={() => g.setShowArchived(true)}
         onToggleAlwaysApprove={() => {
           if (g.yoloActive) {
             void g.updateSettings({ alwaysApprove: false, permissionMode: 'default' })
@@ -167,6 +190,48 @@ export function App() {
               >
                 {g.previewRunning ? '■ Preview' : '▶ Preview'}
               </button>
+            ) : null}
+            {inConversation && g.sessionId ? (
+              <div className="topbar-export">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  aria-haspopup="menu"
+                  aria-expanded={exportMenuOpen}
+                  onClick={() => setExportMenuOpen((v) => !v)}
+                  title="Save this transcript to a file"
+                >
+                  Export
+                </button>
+                {exportMenuOpen ? (
+                  <>
+                    <button
+                      type="button"
+                      className="session-menu-backdrop"
+                      aria-label="Close export menu"
+                      onClick={() => setExportMenuOpen(false)}
+                    />
+                    <div className="session-menu" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => exportCurrent('md')}
+                      >
+                        <span className="session-menu-ico">↧</span>
+                        Markdown
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => exportCurrent('json')}
+                      >
+                        <span className="session-menu-ico">↧</span>
+                        JSON
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+              </div>
             ) : null}
             {inConversation ? (
               <button
@@ -227,6 +292,38 @@ export function App() {
           </div>
         ) : null}
 
+        {g.exportNotice ? (
+          <div className="export-banner">
+            <div className="export-banner-text">
+              <span className="export-banner-label">
+                Transcript saved as {g.exportNotice.format === 'json' ? 'JSON' : 'Markdown'}
+              </span>
+              <code className="path-code export-banner-path">{g.exportNotice.path}</code>
+              {g.exportNotice.revealError ? (
+                <span className="export-banner-warn">
+                  Could not open the folder — {g.exportNotice.revealError}
+                </span>
+              ) : null}
+            </div>
+            <div className="export-banner-actions">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => void g.revealExport()}
+              >
+                Show in folder
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => g.dismissExport()}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {g.historySource && g.historySource !== 'empty' && inConversation ? (
           <div className="history-banner">
             Transcript restored ({g.historySource}
@@ -273,9 +370,13 @@ export function App() {
             authenticated={g.isAuthenticated}
             onOpenFolder={() => openProject()}
             onOpenProject={(cwd) => openProject(cwd)}
+            onNewSession={(cwd) =>
+              requireAuth(() => void g.openProject(cwd, { forceNew: true }))
+            }
             onSelectSession={(s) => void g.selectSession(s)}
             onRename={(id, t) => void g.renameSession(id, t)}
             onArchive={(id) => void g.archiveSession(id)}
+            onExport={(id, format) => void g.exportSession(id, format)}
             onDelete={(id) => void g.deleteSession(id)}
             onSignIn={() => setShowAuthModal(true)}
           />
@@ -409,6 +510,47 @@ export function App() {
 
       {g.showYoloConfirm ? (
         <YoloConfirm onConfirm={() => void g.confirmYolo()} onCancel={g.cancelYolo} />
+      ) : null}
+
+      {g.showArchived ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Archived sessions">
+          <div className="modal archived-modal">
+            <div className="settings-modal-head">
+              <h3>Archived</h3>
+              <button
+                type="button"
+                className="btn-mini settings-close"
+                onClick={() => g.setShowArchived(false)}
+              >
+                Close
+              </button>
+            </div>
+            <p>
+              Archived sessions are kept out of the Chat and Build lists. Restore one to put it
+              back — opening it restores it too.
+            </p>
+            {g.archivedSessions.length === 0 ? (
+              <div className="browse-empty">Nothing archived.</div>
+            ) : (
+              <div className="archived-list">
+                {g.archivedSessions.map((s) => (
+                  <SessionCard
+                    key={s.id}
+                    session={s}
+                    subtitle={
+                      isChatSession(s, g.chatWorkspacePath) ? 'Chat' : folderName(s.cwd)
+                    }
+                    onSelect={() => void openArchived(s)}
+                    onRename={(t) => void g.renameSession(s.id, t)}
+                    onUnarchive={() => void g.unarchiveSession(s.id)}
+                    onExport={(format) => void g.exportSession(s.id, format)}
+                    onDelete={() => void g.deleteSession(s.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       ) : null}
 
       <CliInstall

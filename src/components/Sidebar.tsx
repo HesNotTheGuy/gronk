@@ -18,6 +18,8 @@ interface Props {
   surface: AppSurface
   /** true when main pane is the conversation (not a browse home) */
   inConversation: boolean
+  /** true when main pane is the browse home for this surface */
+  browsing: boolean
   /** Recent folder workspaces (coding agent) */
   projects: ProjectContext[]
   /** Folder-bound agent sessions (excludes app chat) */
@@ -26,6 +28,8 @@ interface Props {
   chatSessions: SessionInfo[]
   activeCwd: string | null
   activeSessionId: string | null
+  /** Archived sessions across both surfaces — entry point is hidden at 0 */
+  archivedCount: number
   onGoHome: () => void
   onGoChat: () => void
   onGoProjects: () => void
@@ -33,6 +37,7 @@ interface Props {
   onOpenChat: () => void
   onSelectSession: (s: SessionInfo) => void
   onNewProjectSession: () => void
+  onOpenArchived: () => void
   onToggleAlwaysApprove: () => void
   onChangePermissionMode: (mode: PermissionMode) => void
   onOpenSettings: () => void
@@ -44,6 +49,9 @@ interface Props {
 function sessionTitle(s: SessionInfo): string {
   return (s.title || s.id.slice(0, 8)).trim()
 }
+
+/** Enough to hop between what you actually work in; the rest live in Build. */
+const SWITCHER_LIMIT = 8
 
 const COLLAPSE_KEY = 'grocky.sidebar.collapse.v2'
 
@@ -67,10 +75,10 @@ function loadCollapse(): { folders: boolean; sessions: boolean; chats: boolean }
 }
 
 /**
- * Left rail:
- * - Home: model + account only (browse in main)
- * - Chat: app-bound chat list (no folder pick)
- * - Workspace: folders + sessions for coding agent in a file tree
+ * Left rail — context for the conversation on screen, never a second copy of it.
+ * The browse homes (ChatHome / ProjectHome) own the full lists; while one of
+ * those is up the rails collapse to a note plus the surface's primary action,
+ * so Folders/Sessions are never rendered twice on the same screen.
  */
 export function Sidebar({
   alwaysApprove,
@@ -81,11 +89,13 @@ export function Sidebar({
   permissionMode,
   surface,
   inConversation,
+  browsing,
   projects,
   projectSessions,
   chatSessions,
   activeCwd,
   activeSessionId,
+  archivedCount,
   onGoHome,
   onGoChat,
   onGoProjects,
@@ -93,6 +103,7 @@ export function Sidebar({
   onOpenChat,
   onSelectSession,
   onNewProjectSession,
+  onOpenArchived,
   onToggleAlwaysApprove,
   onChangePermissionMode,
   onOpenSettings,
@@ -114,23 +125,24 @@ export function Sidebar({
     setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const workspaceSessions = useMemo(() => {
-    if (activeCwd && surface === 'project') {
-      const mine = projectSessions
-        .filter((s) => pathsEqual(s.cwd, activeCwd))
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-      if (mine.length) return mine.slice(0, 40)
-    }
-    return [...projectSessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 40)
-  }, [surface, activeCwd, projectSessions])
+  /** Only the open folder's sessions — the cross-folder view is ProjectHome's job */
+  const folderSessions = useMemo(() => {
+    if (!activeCwd) return []
+    return projectSessions
+      .filter((s) => pathsEqual(s.cwd, activeCwd))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 40)
+  }, [activeCwd, projectSessions])
+
+  const folderSwitcher = useMemo(() => projects.slice(0, SWITCHER_LIMIT), [projects])
 
   const chatList = useMemo(
     () => [...chatSessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 40),
     [chatSessions]
   )
 
-  const showChatRail = surface === 'chat'
-  const showWorkspaceRails = surface === 'project'
+  const showChatRail = surface === 'chat' && !browsing
+  const showWorkspaceRails = surface === 'project' && !browsing
 
   return (
     <aside className="sidebar">
@@ -183,7 +195,39 @@ export function Sidebar({
           </div>
         ) : null}
 
-        {/* ---- Chat surface: only chats (app-bound) ---- */}
+        {/* ---- Browse homes own the lists — rail keeps the primary action only ---- */}
+        {browsing && surface === 'chat' ? (
+          <div className="sidebar-section">
+            <div className="muted-note">Your chats are listed in the main pane.</div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm btn-block"
+              disabled={!authenticated}
+              onClick={onOpenChat}
+            >
+              New chat
+            </button>
+          </div>
+        ) : null}
+
+        {browsing && surface === 'project' ? (
+          <div className="sidebar-section">
+            <div className="muted-note">
+              Folders and their sessions are listed in the main pane.
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm btn-block"
+              disabled={!authenticated}
+              onClick={() => onOpenProject()}
+              title="Pick a folder in Explorer"
+            >
+              Open folder…
+            </button>
+          </div>
+        ) : null}
+
+        {/* ---- Chat conversation: hop between chats without leaving it ---- */}
         {showChatRail ? (
           <div className={`sidebar-rail ${open.chats ? 'open' : 'collapsed'}`}>
             <button
@@ -234,7 +278,7 @@ export function Sidebar({
           </div>
         ) : null}
 
-        {/* ---- Workspace surface: folders + sessions ---- */}
+        {/* ---- Folder conversation: switch folder, or switch session inside it ---- */}
         {showWorkspaceRails ? (
           <>
             <div className={`sidebar-rail ${open.folders ? 'open' : 'collapsed'}`}>
@@ -254,21 +298,31 @@ export function Sidebar({
               {open.folders ? (
                 <div className="sidebar-rail-body">
                   <div className="sidebar-rail-toolbar">
-                    <div className="sidebar-rail-sub">Coding agent root</div>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm btn-block sidebar-rail-action"
-                      disabled={!authenticated}
-                      onClick={() => onOpenProject()}
-                      title="Pick a folder in Explorer"
-                    >
-                      Open folder…
-                    </button>
+                    <div className="sidebar-rail-sub">Switch workspace</div>
+                    <div className="sidebar-rail-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm sidebar-rail-action"
+                        disabled={!authenticated}
+                        onClick={() => onOpenProject()}
+                        title="Pick a folder in Explorer"
+                      >
+                        Open…
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm sidebar-rail-action"
+                        onClick={onGoProjects}
+                        title="All folders, with their sessions and activity"
+                      >
+                        All
+                      </button>
+                    </div>
                   </div>
-                  {projects.length === 0 ? (
+                  {folderSwitcher.length === 0 ? (
                     <div className="muted-note">No folders yet</div>
                   ) : (
-                    projects.map((p) => {
+                    folderSwitcher.map((p) => {
                       const active = !!activeCwd && pathsEqual(p.cwd, activeCwd)
                       return (
                         <button
@@ -301,13 +355,13 @@ export function Sidebar({
                   {open.sessions ? '▾' : '▸'}
                 </span>
                 <span className="sidebar-rail-title">Sessions</span>
-                <span className="sidebar-rail-count">{workspaceSessions.length || ''}</span>
+                <span className="sidebar-rail-count">{folderSessions.length || ''}</span>
               </button>
               {open.sessions ? (
                 <div className="sidebar-rail-body">
                   <div className="sidebar-rail-toolbar">
                     <div className="sidebar-rail-sub">
-                      {activeCwd ? folderName(activeCwd) : 'All folders'}
+                      {activeCwd ? folderName(activeCwd) : 'No folder open'}
                     </div>
                     <button
                       type="button"
@@ -323,29 +377,26 @@ export function Sidebar({
                       New session
                     </button>
                   </div>
-                  {workspaceSessions.length === 0 ? (
-                    <div className="muted-note">No sessions yet</div>
+                  {folderSessions.length === 0 ? (
+                    <div className="muted-note">
+                      {activeCwd ? 'No sessions in this folder yet' : 'Open a folder first'}
+                    </div>
                   ) : (
-                    workspaceSessions.map((s) => {
-                      const active = s.id === activeSessionId
-                      const showFolder = !activeCwd || !pathsEqual(s.cwd, activeCwd)
-                      return (
-                        <button
-                          key={s.id}
-                          type="button"
-                          className={`session-item ${active ? 'active' : ''}`}
-                          disabled={!authenticated}
-                          title={sessionTitle(s)}
-                          onClick={() => onSelectSession(s)}
-                        >
-                          <div className="name">{sessionTitle(s)}</div>
-                          <div className="meta">
-                            {showFolder ? `${folderName(s.cwd)} · ` : ''}
-                            {new Date(s.updatedAt).toLocaleDateString()}
-                          </div>
-                        </button>
-                      )
-                    })
+                    folderSessions.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className={`session-item ${s.id === activeSessionId ? 'active' : ''}`}
+                        disabled={!authenticated}
+                        title={sessionTitle(s)}
+                        onClick={() => onSelectSession(s)}
+                      >
+                        <div className="name">{sessionTitle(s)}</div>
+                        <div className="meta">
+                          {new Date(s.updatedAt).toLocaleDateString()}
+                        </div>
+                      </button>
+                    ))
                   )}
                 </div>
               ) : null}
@@ -361,6 +412,18 @@ export function Sidebar({
         {!authenticated ? (
           <button type="button" className="btn btn-primary btn-block" onClick={onSignIn}>
             Sign in
+          </button>
+        ) : null}
+        {/* Stays hidden until there is something archived — archiving is meant to be quiet */}
+        {archivedCount > 0 ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-block"
+            onClick={onOpenArchived}
+            title="View and restore archived sessions"
+          >
+            Archived
+            <span className="archived-entry-count">{archivedCount}</span>
           </button>
         ) : null}
         <button type="button" className="btn btn-ghost btn-block" onClick={onOpenSettings}>

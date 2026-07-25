@@ -59,7 +59,6 @@ test('every permission mode round-trips into argv', () => {
 test('global flags come before `agent`, -m and --always-approve after it, stdio last', () => {
   const { args } = build({
     permissionMode: 'bypassPermissions',
-    alwaysApprove: true,
     alwaysApproveAck: true,
     model: 'grok-4-fast',
     surface: 'chat'
@@ -97,32 +96,20 @@ test('the subcommand and stdio are always present exactly once, in that order', 
 
 // ── YOLO requires a persisted acknowledgement ───────────────────────
 
-test('alwaysApprove is refused when no acknowledgement exists', () => {
-  const result = build({ alwaysApprove: true })
-  assert.equal(result.alwaysApprove, false)
-  assert.equal(result.permissionMode, 'default')
-  assert.ok(!result.args.includes('--always-approve'))
-})
-
 test('bypassPermissions without an ack downgrades to default and stays gated', () => {
   const result = build({ permissionMode: 'bypassPermissions' })
   assert.equal(result.permissionMode, 'default')
+  assert.equal(result.alwaysApprove, false)
   assert.equal(valueAfter(result.args, '--permission-mode'), 'default')
   assert.ok(!result.args.includes('--always-approve'))
 })
 
-test('alwaysApprove with an ack forces bypassPermissions and emits --always-approve', () => {
-  const result = build({ permissionMode: 'default', alwaysApprove: true, alwaysApproveAck: true })
+test('an acknowledged bypassPermissions boot emits --always-approve exactly once', () => {
+  const result = build({ permissionMode: 'bypassPermissions', alwaysApproveAck: true })
   assert.equal(result.alwaysApprove, true)
   assert.equal(result.permissionMode, 'bypassPermissions')
   assert.equal(valueAfter(result.args, '--permission-mode'), 'bypassPermissions')
   assert.equal(result.args.filter((a) => a === '--always-approve').length, 1)
-})
-
-test('an acknowledged bypassPermissions mode also emits --always-approve on its own', () => {
-  const result = build({ permissionMode: 'bypassPermissions', alwaysApproveAck: true })
-  assert.equal(result.alwaysApprove, false, 'the YOLO toggle itself stays off')
-  assert.ok(result.args.includes('--always-approve'))
 })
 
 test('an ack alone never enables anything', () => {
@@ -140,6 +127,22 @@ test('--always-approve appears only for a bypassPermissions boot', () => {
       mode === 'bypassPermissions',
       `mode ${mode} must not auto-approve`
     )
+  }
+})
+
+// The returned alwaysApprove used to be an independent input, so argv and the
+// value the caller mirrored could disagree: a bypassPermissions boot emitted
+// --always-approve while reporting alwaysApprove: false. It is now a pure view
+// of the resolved mode, and these three must agree for every combination.
+test('alwaysApprove is a view of the resolved mode and of the emitted argv', () => {
+  for (const mode of [...ALL_MODES, undefined]) {
+    for (const alwaysApproveAck of [true, false]) {
+      const result = build({ permissionMode: mode, alwaysApproveAck })
+      const bypass = result.permissionMode === 'bypassPermissions'
+      assert.equal(result.alwaysApprove, bypass, `mode ${mode} ack ${alwaysApproveAck}`)
+      assert.equal(result.args.includes('--always-approve'), bypass)
+      assert.equal(valueAfter(result.args, '--permission-mode'), result.permissionMode)
+    }
   }
 })
 
@@ -187,20 +190,17 @@ test('no argv element is ever undefined, empty or multi-line', () => {
   for (const mode of [...ALL_MODES, undefined]) {
     for (const surface of ['chat', 'project', undefined] as const) {
       for (const model of ['grok-4', undefined]) {
-        for (const alwaysApprove of [true, false]) {
-          for (const alwaysApproveAck of [true, false]) {
-            const { args } = build({
-              permissionMode: mode,
-              surface,
-              model,
-              alwaysApprove,
-              alwaysApproveAck
-            })
-            for (const [i, a] of args.entries()) {
-              assert.equal(typeof a, 'string', `args[${i}] must be a string`)
-              assert.notEqual(a, '', `args[${i}] must not be empty`)
-              assert.ok(!/[\r\n]/.test(a), `args[${i}] must not contain a newline`)
-            }
+        for (const alwaysApproveAck of [true, false]) {
+          const { args } = build({
+            permissionMode: mode,
+            surface,
+            model,
+            alwaysApproveAck
+          })
+          for (const [i, a] of args.entries()) {
+            assert.equal(typeof a, 'string', `args[${i}] must be a string`)
+            assert.notEqual(a, '', `args[${i}] must not be empty`)
+            assert.ok(!/[\r\n]/.test(a), `args[${i}] must not contain a newline`)
           }
         }
       }

@@ -8,7 +8,12 @@ interface Props {
   subtitle?: string
   onSelect: () => void
   onRename: (title: string) => void
-  onArchive: () => void
+  /** Omit to hide Archive (e.g. the archived list itself) */
+  onArchive?: () => void
+  /** Shown instead of Archive once the session is archived */
+  onUnarchive?: () => void
+  /** Omit to hide Export — the backend writes .md or .json via a save dialog */
+  onExport?: (format: 'md' | 'json') => void
   onDelete: () => void
 }
 
@@ -19,9 +24,13 @@ export function SessionCard({
   onSelect,
   onRename,
   onArchive,
+  onUnarchive,
+  onExport,
   onDelete
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
+  /** Second level of the same menu — keeps format choice out of the top list */
+  const [pickingFormat, setPickingFormat] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [titleDraft, setTitleDraft] = useState(session.title || '')
   const title = (session.title || session.id.slice(0, 8)).trim()
@@ -30,6 +39,16 @@ export function SessionCard({
     const t = titleDraft.trim()
     if (t && t !== session.title) onRename(t)
     setRenaming(false)
+  }
+
+  const closeMenu = () => {
+    setMenuOpen(false)
+    setPickingFormat(false)
+  }
+
+  const exportAs = (format: 'md' | 'json') => {
+    closeMenu()
+    onExport?.(format)
   }
 
   return (
@@ -63,10 +82,11 @@ export function SessionCard({
           className="session-menu-btn"
           aria-label="Session actions"
           aria-expanded={menuOpen}
-          title="Rename, archive, or delete"
+          title="Rename, export, archive, or delete"
           onClick={(e) => {
             e.stopPropagation()
-            setMenuOpen((v) => !v)
+            if (menuOpen) closeMenu()
+            else setMenuOpen(true)
           }}
         >
           ⋯
@@ -77,44 +97,98 @@ export function SessionCard({
               type="button"
               className="session-menu-backdrop"
               aria-label="Close menu"
-              onClick={() => setMenuOpen(false)}
+              onClick={closeMenu}
             />
             <div className="session-menu" role="menu">
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false)
-                  setTitleDraft(session.title || title)
-                  setRenaming(true)
-                }}
-              >
-                <span className="session-menu-ico">✎</span>
-                Rename
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false)
-                  onArchive()
-                }}
-              >
-                <span className="session-menu-ico">▤</span>
-                Archive
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="danger"
-                onClick={() => {
-                  setMenuOpen(false)
-                  if (confirm('Permanently delete this session?')) onDelete()
-                }}
-              >
-                <span className="session-menu-ico">⌫</span>
-                Delete
-              </button>
+              {pickingFormat ? (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="session-menu-back"
+                    onClick={() => setPickingFormat(false)}
+                  >
+                    <span className="session-menu-ico">‹</span>
+                    Export as
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => exportAs('md')}>
+                    <span className="session-menu-ico">↧</span>
+                    Markdown
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => exportAs('json')}>
+                    <span className="session-menu-ico">↧</span>
+                    JSON
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      closeMenu()
+                      setTitleDraft(session.title || title)
+                      setRenaming(true)
+                    }}
+                  >
+                    <span className="session-menu-ico">✎</span>
+                    Rename
+                  </button>
+                  {onExport ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      aria-haspopup="menu"
+                      onClick={() => setPickingFormat(true)}
+                    >
+                      <span className="session-menu-ico">↧</span>
+                      Export
+                      <span className="session-menu-more" aria-hidden>
+                        ›
+                      </span>
+                    </button>
+                  ) : null}
+                  {session.archived ? (
+                    onUnarchive ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          closeMenu()
+                          onUnarchive()
+                        }}
+                      >
+                        <span className="session-menu-ico">↩</span>
+                        Restore
+                      </button>
+                    ) : null
+                  ) : onArchive ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        closeMenu()
+                        onArchive()
+                      }}
+                    >
+                      <span className="session-menu-ico">▤</span>
+                      Archive
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="danger"
+                    onClick={() => {
+                      closeMenu()
+                      if (confirm('Permanently delete this session?')) onDelete()
+                    }}
+                  >
+                    <span className="session-menu-ico">⌫</span>
+                    Delete
+                  </button>
+                </>
+              )}
             </div>
           </>
         ) : null}

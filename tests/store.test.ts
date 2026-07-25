@@ -20,7 +20,7 @@ import {
   setSettings,
   upsertSession
 } from '../electron/main/store'
-import type { ChatMessage, SessionInfo } from '../shared/types'
+import { PERMISSION_MODE_OPTIONS, type ChatMessage, type SessionInfo } from '../shared/types'
 
 let userData = ''
 
@@ -32,6 +32,17 @@ beforeEach(() => {
 
 function storeFile(): string {
   return path.join(userData, 'grocky-store.json')
+}
+
+/** Settings block exactly as it sits on disk (legacy files may carry extra keys). */
+function readStoredSettings(): Record<string, unknown> {
+  return JSON.parse(fs.readFileSync(storeFile(), 'utf8')).settings
+}
+
+/** Plant a store file, including shapes only older builds could have written. */
+function writeStoredSettings(settings: Record<string, unknown>): void {
+  fs.mkdirSync(userData, { recursive: true })
+  fs.writeFileSync(storeFile(), JSON.stringify({ settings }), 'utf8')
 }
 
 function session(partial: Partial<SessionInfo> & { id: string }): SessionInfo {
@@ -105,6 +116,143 @@ test('a corrupt store file falls back to defaults rather than throwing', () => {
   fs.mkdirSync(userData, { recursive: true })
   fs.writeFileSync(storeFile(), '{ not json', 'utf8')
   assert.equal(getSettings().permissionMode, 'default')
+})
+
+// ── permissionMode is the only stored permission fact ───────────────
+
+test('alwaysApprove is derived on read, never persisted', () => {
+  setSettings({ alwaysApproveAck: true })
+  setSettings({ alwaysApprove: true })
+  const stored = readStoredSettings()
+  assert.equal('alwaysApprove' in stored, false, 'the derived field must not reach disk')
+  assert.equal(stored.permissionMode, 'bypassPermissions')
+  assert.equal(getSettings().alwaysApprove, true)
+})
+
+test('a derived read matches the mode for every mode', () => {
+  setSettings({ alwaysApproveAck: true })
+  for (const mode of PERMISSION_MODE_OPTIONS.map((o) => o.id)) {
+    const after = setSettings({ permissionMode: mode })
+    assert.equal(after.permissionMode, mode)
+    assert.equal(after.alwaysApprove, mode === 'bypassPermissions', `mode ${mode}`)
+    assert.equal(getSettings().alwaysApprove, after.alwaysApprove, `mode ${mode} on re-read`)
+    assert.equal('alwaysApprove' in readStoredSettings(), false, `mode ${mode} on disk`)
+  }
+})
+
+test('an unrelated setting change never disturbs the permission mode', () => {
+  setSettings({ alwaysApproveAck: true })
+  setSettings({ alwaysApprove: true })
+  const after = setSettings({ theme: 'light' })
+  assert.equal(after.permissionMode, 'bypassPermissions')
+  assert.equal(after.alwaysApprove, true)
+})
+
+// A patch that contradicts itself is a bug somewhere upstream; resolve it towards
+// less access so no call can turn bypass on as a side effect of something else.
+test('a patch that disagrees with itself resolves to the safer value', () => {
+  setSettings({ alwaysApproveAck: true })
+  const gated = setSettings({ permissionMode: 'acceptEdits', alwaysApprove: true })
+  assert.equal(gated.permissionMode, 'acceptEdits')
+  assert.equal(gated.alwaysApprove, false)
+
+  setSettings({ alwaysApprove: true })
+  const off = setSettings({ permissionMode: 'bypassPermissions', alwaysApprove: false })
+  assert.equal(off.permissionMode, 'default')
+  assert.equal(off.alwaysApprove, false)
+})
+
+test('the UI two-step (ack, then mode + toggle together) still enables YOLO', () => {
+  // Exactly what useGrocky.confirmYolo sends.
+  setSettings({ alwaysApproveAck: true })
+  const after = setSettings({ alwaysApprove: true, permissionMode: 'bypassPermissions' })
+  assert.equal(after.permissionMode, 'bypassPermissions')
+  assert.equal(after.alwaysApprove, true)
+})
+
+test('revoking the acknowledgement drops YOLO in the same call', () => {
+  setSettings({ alwaysApproveAck: true })
+  setSettings({ alwaysApprove: true })
+  const revoked = setSettings({ alwaysApproveAck: false })
+  assert.equal(revoked.permissionMode, 'default')
+  assert.equal(revoked.alwaysApprove, false)
+})
+
+// ── Migration of stores written before the collapse ─────────────────
+// Older builds persisted both fields, so any combination can be on disk. When
+// they disagree the safer value wins, and bypass always needs the ack.
+
+test('a consistent acknowledged bypass store survives untouched', () => {
+  writeStoredSettings({
+    permissionMode: 'bypassPermissions',
+    alwaysApprove: true,
+    alwaysApproveAck: true
+  })
+  const s = getSettings()
+  assert.equal(s.permissionMode, 'bypassPermissions')
+  assert.equal(s.alwaysApprove, true)
+})
+
+test('a store written by this build (no alwaysApprove key) keeps its bypass mode', () => {
+  writeStoredSettings({ permissionMode: 'bypassPermissions', alwaysApproveAck: true })
+  assert.equal(getSettings().permissionMode, 'bypassPermissions')
+  assert.equal(getSettings().alwaysApprove, true)
+})
+
+test('bypassPermissions beside alwaysApprove:false resolves to the gated mode', () => {
+  // The drift the collapse removes: this store used to spawn --always-approve
+  // while the in-app toggle read off.
+  writeStoredSettings({
+    permissionMode: 'bypassPermissions',
+    alwaysApprove: false,
+    alwaysApproveAck: true
+  })
+  const s = getSettings()
+  assert.equal(s.permissionMode, 'default')
+  assert.equal(s.alwaysApprove, false)
+})
+
+test('a stray alwaysApprove:true never promotes a gated mode to bypass', () => {
+  writeStoredSettings({
+    permissionMode: 'acceptEdits',
+    alwaysApprove: true,
+    alwaysApproveAck: true
+  })
+  const s = getSettings()
+  assert.equal(s.permissionMode, 'acceptEdits')
+  assert.equal(s.alwaysApprove, false)
+})
+
+test('alwaysApprove:true with no mode at all stays on the default mode', () => {
+  writeStoredSettings({ alwaysApprove: true, alwaysApproveAck: true })
+  assert.equal(getSettings().permissionMode, 'default')
+  assert.equal(getSettings().alwaysApprove, false)
+})
+
+test('a store claiming YOLO but never acknowledged cannot launch into bypass', () => {
+  writeStoredSettings({ permissionMode: 'bypassPermissions', alwaysApprove: true })
+  const s = getSettings()
+  assert.equal(s.permissionMode, 'default')
+  assert.equal(s.alwaysApprove, false)
+  assert.equal(!!s.alwaysApproveAck, false)
+
+  // Acknowledging afterwards must not resurrect the mode the file claimed: the
+  // downgrade already happened, so YOLO still needs its own explicit enable.
+  const acked = setSettings({ alwaysApproveAck: true })
+  assert.equal(acked.permissionMode, 'default')
+  assert.equal(acked.alwaysApprove, false)
+})
+
+test('the legacy field is dropped from disk on the next write', () => {
+  writeStoredSettings({
+    permissionMode: 'bypassPermissions',
+    alwaysApprove: true,
+    alwaysApproveAck: true
+  })
+  setSettings({ theme: 'light' })
+  const stored = readStoredSettings()
+  assert.equal('alwaysApprove' in stored, false)
+  assert.equal(stored.permissionMode, 'bypassPermissions')
 })
 
 // ── Recent projects: the chat sandbox is never a coding folder ───────

@@ -10,9 +10,13 @@
  * - `--permission-mode` is ALWAYS emitted, including for 'default'. Omitting it
  *   silently hands permission policy to the user's config file (see the comment on
  *   the push below).
- * - `alwaysApprove` and `bypassPermissions` are refused unless an acknowledgement
- *   is already persisted. `store.setSettings` enforces the same rule; repeating it
- *   here is defence in depth for callers that pass a per-start override.
+ * - `bypassPermissions` is refused unless an acknowledgement is already persisted.
+ *   `store.setSettings` enforces the same rule; repeating it here is defence in
+ *   depth for callers that pass a per-start override.
+ * - YOLO is not a separate input: `--always-approve` is emitted exactly when the
+ *   resolved mode is `bypassPermissions`. Two independent inputs could disagree,
+ *   and did — a bypass mode with the flag off still spawned an auto-approving
+ *   child while the caller mirrored `alwaysApprove: false` onto itself.
  * - Derivation happens exactly once, here. Callers must consume the returned
  *   `permissionMode` / `alwaysApprove` rather than re-deriving them.
  */
@@ -36,8 +40,6 @@ export const CHAT_RULES =
 export interface BuildAgentArgsOptions {
   /** Requested mode — `settings.permissionMode` or a per-start override. Falsy means 'default'. */
   permissionMode?: PermissionMode
-  /** Requested YOLO — `settings.alwaysApprove` or a per-start override. */
-  alwaysApprove?: boolean
   /** `settings.alwaysApproveAck`: the user acknowledged the YOLO risk on this install. */
   alwaysApproveAck?: boolean
   /** Resolved model id. Falsy leaves model selection to the CLI. */
@@ -49,9 +51,9 @@ export interface BuildAgentArgsOptions {
 export interface AgentArgs {
   /** argv for the grok binary, in the order grok requires. */
   args: string[]
-  /** The mode actually handed to the CLI, after ack downgrades. */
+  /** The mode actually handed to the CLI, after the ack downgrade. */
   permissionMode: PermissionMode
-  /** YOLO after the ack downgrade. AgentManager mirrors this onto itself. */
+  /** Derived from `permissionMode`: true exactly when argv carries --always-approve. */
   alwaysApprove: boolean
   /** Normalized surface. */
   surface: 'chat' | 'project'
@@ -65,21 +67,15 @@ export interface AgentArgs {
  * subcommand, and `-m` / `--always-approve` only after it. `stdio` is always last.
  */
 export function buildAgentArgs(options: BuildAgentArgsOptions): AgentArgs {
-  const ack = !!options.alwaysApproveAck
-
-  // Hard safety: store may refuse alwaysApprove without ack
-  let alwaysApprove = !!options.alwaysApprove
-  if (alwaysApprove && !ack) {
-    alwaysApprove = false
-  }
-
   // permission-mode is a top-level grok flag (before `agent` subcommand)
   let permissionMode: PermissionMode = options.permissionMode || 'default'
-  if (alwaysApprove) {
-    permissionMode = 'bypassPermissions'
-  } else if (permissionMode === 'bypassPermissions' && !ack) {
+  // Hard safety: the store refuses bypass without an ack, but a per-start
+  // override reaches here without passing through it.
+  if (permissionMode === 'bypassPermissions' && !options.alwaysApproveAck) {
     permissionMode = 'default'
   }
+  // One fact, one place: YOLO IS the bypass mode.
+  const alwaysApprove = permissionMode === 'bypassPermissions'
 
   const surface = options.surface === 'chat' ? 'chat' : 'project'
   const model = options.model
@@ -90,7 +86,7 @@ export function buildAgentArgs(options: BuildAgentArgsOptions): AgentArgs {
   // ~/.grok/config.toml `permission_mode` (commonly "auto"), which silently auto-approves
   // every tool while Grocky's UI still shows the gated Default mode. Verified against
   // grok 0.2.111: no flag => 0 permission requests; `--permission-mode default` => prompts.
-  args.push('--permission-mode', permissionMode || 'default')
+  args.push('--permission-mode', permissionMode)
   if (surface === 'chat') {
     // Conversational Grok (website/X-style) — still CLI-backed, not a web wrap
     args.push('--system-prompt-override', CHAT_SYSTEM_PROMPT)
@@ -100,7 +96,7 @@ export function buildAgentArgs(options: BuildAgentArgsOptions): AgentArgs {
   if (model) {
     args.push('-m', model)
   }
-  if (alwaysApprove || permissionMode === 'bypassPermissions') {
+  if (alwaysApprove) {
     args.push('--always-approve')
   }
   args.push('stdio')

@@ -32,6 +32,7 @@ import type {
   MainToRendererEvent,
   ModelInfo,
   PermissionDecision,
+  PermissionMode,
   PermissionRequest,
   ToolCallInfo
 } from '../../shared/types'
@@ -43,6 +44,18 @@ function chatWorkspaceRoot(): string {
 
 function isChatPadCwd(cwd: string): boolean {
   return isChatWorkspace(cwd, chatWorkspaceRoot())
+}
+
+/**
+ * Fold the per-start YOLO override (IPC `grocky:start-agent`) onto the stored
+ * mode, which is the only permission fact Grocky keeps. `true` asks for bypass —
+ * still gated on the persisted ack inside buildAgentArgs — and `false` refuses it
+ * for this boot even when the stored mode says otherwise.
+ */
+function requestedMode(stored: PermissionMode, override?: boolean): PermissionMode {
+  if (override === undefined) return stored
+  if (override) return 'bypassPermissions'
+  return stored === 'bypassPermissions' ? 'default' : stored
 }
 
 interface PendingPermission {
@@ -71,7 +84,6 @@ export class AgentManager {
   /** FIX-9: one pending permission per request id (queue display FIFO) */
   private pendingPermissions = new Map<string, PendingPermission>()
   private permissionQueue: string[] = []
-  private alwaysApprove = false
   /** When true, session/update chunks rebuild history instead of live turn */
   private replayingHistory = false
   /**
@@ -133,10 +145,28 @@ export class AgentManager {
   }
 
   /**
+   * YOLO per the CURRENT settings rather than the boot-time argv: the user can
+   * flip the toggle mid-session, and grok only stops asking once it is respawned
+   * with --always-approve. `getSettings()` already derives this from the stored
+   * mode and refuses bypass without a persisted acknowledgement; re-checking the
+   * ack here is defence in depth on the one decision that skips the UI prompt.
+   */
+  private autoApproveActive(): boolean {
+    const settings = getSettings()
+    return settings.alwaysApprove && !!settings.alwaysApproveAck
+  }
+
+  /**
    * Boot grok agent process + initialize only (no session/new).
    */
   private surface: 'chat' | 'project' = 'project'
 
+  /**
+   * `options.alwaysApprove` is the per-start YOLO override coming from the
+   * `grocky:start-agent` IPC; it folds onto the stored permission mode (see
+   * requestedMode) instead of travelling beside it. Omit it to use the mode as
+   * stored.
+   */
   private async bootAgent(
     cwd: string,
     options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project' }
@@ -188,15 +218,20 @@ export class AgentManager {
     // All permission derivation lives in buildAgentArgs — adopt what it decided
     // rather than recomputing the downgrades here (they must never drift apart).
     const built = buildAgentArgs({
-      permissionMode: settings.permissionMode,
-      alwaysApprove: options?.alwaysApprove ?? settings.alwaysApprove,
+      permissionMode: requestedMode(settings.permissionMode, options?.alwaysApprove),
       alwaysApproveAck: settings.alwaysApproveAck,
       model,
       surface: options?.surface
     })
-    this.alwaysApprove = built.alwaysApprove
     this.surface = built.surface
     const agentArgs = built.args
+    // The argv is what decides whether grok asks Grocky for permission at all,
+    // so record the posture the child actually starts with.
+    this.log('boot', {
+      permissionMode: built.permissionMode,
+      alwaysApprove: built.alwaysApprove,
+      surface: built.surface
+    })
 
     this.setState('starting')
     this.cwd = normalizeCwd(cwd)
@@ -326,9 +361,11 @@ export class AgentManager {
         normalizeCwd(this.cwd) !== targetCwd
 
       if (needBoot) {
+        // No alwaysApprove override: bootAgent reads the stored permission mode,
+        // and passing the value derived from it back in would just be a second
+        // copy of the same fact.
         await this.bootAgent(targetCwd, {
           model: settings.model,
-          alwaysApprove: settings.alwaysApprove,
           surface: isChatPadCwd(targetCwd) ? 'chat' : 'project'
         })
       }
@@ -372,7 +409,6 @@ export class AgentManager {
         if (!this.client || this.state !== 'ready') {
           await this.start(targetCwd, {
             model: settings.model,
-            alwaysApprove: settings.alwaysApprove,
             surface: isChatPadCwd(targetCwd) ? 'chat' : 'project'
           })
         }
@@ -459,9 +495,6 @@ export class AgentManager {
     if (!this.client || !this.sessionId || this.state !== 'ready') {
       throw new Error('Agent is not ready')
     }
-
-    const settings = getSettings()
-    this.alwaysApprove = !!(settings.alwaysApprove && settings.alwaysApproveAck)
 
     const messageId = randomUUID()
     this.activeMessageId = messageId
@@ -752,8 +785,7 @@ export class AgentManager {
       })
     }
 
-    const settings = getSettings()
-    if (settings.alwaysApprove && settings.alwaysApproveAck) {
+    if (this.autoApproveActive()) {
       this.log('auto-approving permission', id)
       this.client?.respondPermission(id, 'allow-once', options)
       this.recordAuditFor(pending, 'auto-allow')
@@ -845,7 +877,6 @@ export class AgentManager {
         return
       }
 
-      const settings = getSettings()
       const pending: PendingPermission = {
         requestId: id,
         options: [],
@@ -857,7 +888,7 @@ export class AgentManager {
       }
 
       // FIX-6: YOLO still audits; non-YOLO requires user consent
-      if (settings.alwaysApprove && settings.alwaysApproveAck) {
+      if (this.autoApproveActive()) {
         fs.mkdirSync(path.dirname(safe), { recursive: true })
         fs.writeFileSync(safe, content, 'utf8')
         this.client?.respondToRequest(id, null)

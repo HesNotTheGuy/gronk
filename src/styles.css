@@ -4649,3 +4649,161 @@ html[data-theme='light'] .auth-card {
     display: none;
   }
 }
+
+/* ---------- Transcript export ----------
+   The session menu (SessionCard) and the topbar control share .session-menu,
+   so the popover only needs a positioned parent here. */
+.topbar-export {
+  position: relative;
+}
+
+/* backdrop-filter makes .topbar its own stacking context, so a dropdown inside
+   it would paint under the banners/chat that follow. Lifting the header is
+   cheaper than portalling the menu out of it (see .menu-pop). Still below the
+   modal layer: .main is z-index 2 inside .app, modals sit outside it at 50. */
+.topbar {
+  position: relative;
+  z-index: 3;
+}
+
+.session-menu-more {
+  margin-left: auto;
+  color: var(--ink-4);
+}
+
+/* Second level of the same menu — reads as a header you can click back out of */
+.session-menu-back {
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 2px;
+  color: var(--ink-3);
+}
+
+/* Success notice: the path IS the answer to "where did it go", so it stays on
+   screen even when revealing in the file manager fails. */
+.export-banner {
+  margin: 10px 22px 0;
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--signal);
+  background: var(--signal-dim);
+  animation: rise 0.25s var(--ease) both;
+}
+
+.export-banner-text {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export-banner-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+
+.export-banner-path {
+  /* .path-code draws the box; keep a long path from stretching the banner */
+  font-size: 10px;
+  word-break: break-all;
+}
+
+.export-banner-warn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  /* Mixing with --ink keeps the amber legible on both themes */
+  color: color-mix(in srgb, var(--warn) 70%, var(--ink));
+}
+
+.export-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ---------- Archived sessions ----------
+   Deliberately off the main lists: the only entry point is the sidebar footer,
+   and it hides itself when nothing is archived. */
+.archived-entry-count {
+  padding: 1px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.archived-modal {
+  width: min(620px, 100%);
+  max-height: min(86vh, 780px);
+  /* One scroll region so a card's ⋯ menu is not clipped by a nested box */
+  overflow: auto;
+}
+
+.archived-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: 8px;
+  align-content: start;
+}
+
+/* Two-up rail actions (Open… / All) — the single-action rails keep btn-block */
+.sidebar-rail-actions {
+  display: flex;
+  gap: 6px;
+  margin: 0 4px;
+}
+
+.sidebar-rail-actions .sidebar-rail-action {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+
+/* Folder block now carries both entry points (resume vs. fresh session) */
+.workspace-folder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+@media (max-width: 720px) {
+  .export-banner {
+    margin: 10px 12px 0;
+  }
+
+  .export-banner-actions {
+    width: 100%;
+  }
+
+  .archived-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Stack the folder head so the name and its actions stop fighting for width */
+  .workspace-folder-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-folder-meta {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 0;
+  }
+}

@@ -197,13 +197,15 @@ export interface HealthStatus {
 export interface AppSettings {
   model?: string
   /**
-   * Grok CLI permission mode (`--permission-mode`).
-   * `bypassPermissions` is YOLO — requires alwaysApproveAck.
+   * Grok CLI permission mode (`--permission-mode`) — the only permission fact
+   * Grocky stores. `bypassPermissions` is YOLO and requires alwaysApproveAck.
    */
   permissionMode: PermissionMode
   /**
    * Bypass tool permission prompts (equivalent to --always-approve).
-   * Kept in sync with permissionMode === 'bypassPermissions'.
+   * DERIVED, never persisted: the store computes it as
+   * `permissionMode === 'bypassPermissions'` on every read. In a `setSettings`
+   * patch it is the UI's YOLO toggle and folds back onto the mode.
    * Dangerous — must be confirmed in UI before enabling.
    */
   alwaysApprove: boolean
@@ -217,6 +219,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   permissionMode: 'default',
+  // Derived value for the default mode; the store strips it before writing.
   alwaysApprove: false,
   alwaysApproveAck: false,
   theme: 'dark'
@@ -397,6 +400,11 @@ export interface GrockyApi {
     cwd: string,
     options?: {
       model?: string
+      /**
+       * Per-start YOLO override. Folds onto the stored permission mode in the
+       * main process and is still gated on the persisted acknowledgement; omit
+       * it to boot with the mode as stored.
+       */
       alwaysApprove?: boolean
       forceNew?: boolean
       /** project = coding agent; chat = conversational Grok (no project folder) */

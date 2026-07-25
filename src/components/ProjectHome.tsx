@@ -16,15 +16,19 @@ interface Props {
   authenticated: boolean
   onOpenFolder: () => void
   onOpenProject: (cwd: string) => void
+  onNewSession: (cwd: string) => void
   onSelectSession: (s: SessionInfo) => void
   onRename: (id: string, title: string) => void
   onArchive: (id: string) => void
+  onExport: (id: string, format: 'md' | 'json') => void
   onDelete: (id: string) => void
   onSignIn: () => void
 }
 
 /**
- * Workspace home: each folder, with that folder's sessions nested underneath.
+ * Build landing page: every folder, with that folder's sessions and activity
+ * nested underneath. This is the only cross-folder view — the sidebar rails
+ * stay scoped to the folder currently open, so the two never repeat a list.
  * Chat sessions never appear here (filtered upstream).
  */
 export function ProjectHome({
@@ -35,9 +39,11 @@ export function ProjectHome({
   authenticated,
   onOpenFolder,
   onOpenProject,
+  onNewSession,
   onSelectSession,
   onRename,
   onArchive,
+  onExport,
   onDelete,
   onSignIn
 }: Props) {
@@ -54,8 +60,8 @@ export function ProjectHome({
           Code with the <span>agent</span>
         </h1>
         <p className="home-copy">
-          Open a folder for the coding agent. Sessions live under their folder — Chat stays on the
-          Chat tab.
+          Open a folder for the coding agent. Every folder and its sessions live here; once you are
+          inside one, the left rail keeps just that folder. Chat stays on the Chat tab.
         </p>
         <div className="home-actions">
           {authenticated ? (
@@ -107,14 +113,25 @@ export function ProjectHome({
                     <span className="browse-count">
                       {g.sessions.length} session{g.sessions.length === 1 ? '' : 's'}
                     </span>
-                    <button
-                      type="button"
-                      className="btn-mini"
-                      disabled={!authenticated}
-                      onClick={() => onOpenProject(g.cwd)}
-                    >
-                      Open
-                    </button>
+                    <div className="workspace-folder-actions">
+                      <button
+                        type="button"
+                        className="btn-mini"
+                        disabled={!authenticated}
+                        onClick={() => onOpenProject(g.cwd)}
+                      >
+                        Open
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-mini"
+                        disabled={!authenticated}
+                        onClick={() => onNewSession(g.cwd)}
+                        title="Start a fresh agent session in this folder"
+                      >
+                        New session
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -132,6 +149,7 @@ export function ProjectHome({
                           onSelect={() => onSelectSession(s)}
                           onRename={(t) => onRename(s.id, t)}
                           onArchive={() => onArchive(s.id)}
+                          onExport={(format) => onExport(s.id, format)}
                           onDelete={() => onDelete(s.id)}
                         />
                         <div className="activity-row under-card">

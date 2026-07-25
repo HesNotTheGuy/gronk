@@ -15,8 +15,12 @@
  *   Installing runs third-party hooks/MCP servers outside Grocky's fs jail.
  */
 
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import { runGrokCli, runGrokJson } from './grok-cli'
 import {
+  applyPinnedShas,
   asList,
   assertCliToken,
   assertEnvPairs,
@@ -28,8 +32,10 @@ import {
   cliMessage,
   mapMcpServers,
   mapPlugins,
+  parseGitRemoteUrl,
   str,
-  type RawMarketplace
+  type RawMarketplace,
+  type RawMarketplaceCache
 } from './plugins-map'
 import type {
   McpActionResult,
@@ -78,17 +84,19 @@ export async function listAvailablePlugins(): Promise<Plugin[]> {
   })
   const plugins = mapPlugins(raw, 'available')
 
-  // Best-effort: catalog entries carry a marketplace name but no URL, and the
-  // trust modal wants to echo the source. Local config read, never fatal.
+  // The catalog names a marketplace but carries neither its URL nor the pinned
+  // commit the trust modal has to show, so both are recovered from local state
+  // the CLI already wrote. Best-effort: reads only, never fatal, never network.
   const marketplaces = await listMarketplaces()
-  if (marketplaces.length) {
-    const byName = new Map(marketplaces.map((m) => [m.name, m.url]))
-    for (const plugin of plugins) {
-      if (!plugin.sourceUrl && plugin.marketplace) {
-        plugin.sourceUrl = byName.get(plugin.marketplace)
-      }
+  if (!marketplaces.length) return plugins
+
+  const byName = new Map(marketplaces.map((m) => [m.name, m.url]))
+  for (const plugin of plugins) {
+    if (!plugin.sourceUrl && plugin.marketplace) {
+      plugin.sourceUrl = byName.get(plugin.marketplace)
     }
   }
+  applyPinnedShas(plugins, await readMarketplaceCaches(), marketplaces)
   return plugins
 }
 
@@ -106,6 +114,61 @@ export async function mcpDoctor(name?: string): Promise<McpServer[]> {
   args.push('--json')
   const raw = await runGrokJson<unknown>(args, { timeoutMs: 120_000 })
   return mapMcpServers(raw)
+}
+
+// ── Marketplace cache: pinned commits (spec §4.2) ──────────────────
+
+/** Same resolution as auth.ts: GROK_HOME wins, else ~/.grok. */
+function grokHome(): string {
+  return process.env.GROK_HOME || path.join(os.homedir(), '.grok')
+}
+
+/** Third-party files — bound what we are willing to read (observed index size ~35 KB). */
+const MAX_CACHE_FILE_BYTES = 4_000_000
+const MAX_CACHE_CLONES = 64
+
+/** Read a capped local file. Missing, oversized or unreadable all mean "no data". */
+async function readCappedFile(file: string): Promise<string | null> {
+  try {
+    const stat = await fs.stat(file)
+    if (!stat.isFile() || stat.size > MAX_CACHE_FILE_BYTES) return null
+    return await fs.readFile(file, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Every marketplace clone under ~/.grok/marketplace-cache that ships a plugin
+ * index, paired with its git remote so `applyPinnedShas` can tell the clones
+ * apart. Claude-format clones carry `.claude-plugin/marketplace.json` and no
+ * index at all — they declare no pinned commit, so they are skipped here.
+ */
+async function readMarketplaceCaches(): Promise<RawMarketplaceCache[]> {
+  const root = path.join(grokHome(), 'marketplace-cache')
+  // A missing directory just means no marketplace has ever been synced.
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
+
+  const caches: RawMarketplaceCache[] = []
+  for (const entry of entries) {
+    if (caches.length >= MAX_CACHE_CLONES) break
+    if (!entry.isDirectory()) continue
+    // `entry.name` is a single component straight from readdir, never a path.
+    const clone = path.join(root, entry.name)
+
+    const indexText = await readCappedFile(path.join(clone, '.grok-plugin', 'plugin-index.json'))
+    if (!indexText) continue
+    let index: unknown
+    try {
+      index = JSON.parse(indexText)
+    } catch {
+      continue
+    }
+
+    const config = await readCappedFile(path.join(clone, '.git', 'config'))
+    caches.push({ url: parseGitRemoteUrl(config), index })
+  }
+  return caches
 }
 
 // ── Mutating paths ─────────────────────────────────────────────────
