@@ -2,6 +2,7 @@ import test, { beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { __freshUserData } from './stubs/electron'
 import {
   addRecentProject,
@@ -16,11 +17,19 @@ import {
   listSessions,
   normalizeCwd,
   renameSession,
+  requestedPermissionMode,
   saveTranscript,
   setSettings,
   upsertSession
 } from '../electron/main/store'
-import { PERMISSION_MODE_OPTIONS, type ChatMessage, type SessionInfo } from '../shared/types'
+import {
+  PERMISSION_MODE_OPTIONS,
+  type ChatMessage,
+  type PermissionMode,
+  type SessionInfo
+} from '../shared/types'
+
+const ALL_MODES: PermissionMode[] = PERMISSION_MODE_OPTIONS.map((o) => o.id)
 
 let userData = ''
 
@@ -176,6 +185,135 @@ test('revoking the acknowledgement drops YOLO in the same call', () => {
   const revoked = setSettings({ alwaysApproveAck: false })
   assert.equal(revoked.permissionMode, 'default')
   assert.equal(revoked.alwaysApprove, false)
+})
+
+// ── "absent" and "present but undefined" both mean "leave it alone" ──
+
+// A patch spread in the renderer, an optional field or an IPC round-trip all
+// produce `{ alwaysApproveAck: undefined }`. Spreading that over the persisted
+// `true` silently revoked an acknowledgement nobody withdrew — and took YOLO down
+// with it. Only an explicit `false` may revoke.
+
+test('alwaysApproveAck: undefined in a patch does not revoke the acknowledgement', () => {
+  setSettings({ alwaysApproveAck: true })
+  const after = setSettings({ theme: 'light', alwaysApproveAck: undefined })
+  assert.equal(after.alwaysApproveAck, true)
+  assert.equal(readStoredSettings().alwaysApproveAck, true, 'and not just in the return value')
+})
+
+test('alwaysApproveAck: undefined does not silently drop an enabled YOLO', () => {
+  setSettings({ alwaysApproveAck: true })
+  setSettings({ alwaysApprove: true })
+  const after = setSettings({ alwaysApproveAck: undefined, theme: 'light' })
+  assert.equal(after.permissionMode, 'bypassPermissions')
+  assert.equal(after.alwaysApprove, true)
+})
+
+test('undefined is not a revoke, false still is', () => {
+  setSettings({ alwaysApproveAck: true })
+  setSettings({ alwaysApproveAck: undefined })
+  assert.equal(
+    setSettings({ alwaysApprove: true }).alwaysApprove,
+    true,
+    'the ack survived the undefined key'
+  )
+  assert.equal(setSettings({ alwaysApproveAck: false }).alwaysApproveAck, false)
+  assert.equal(
+    setSettings({ alwaysApprove: true }).alwaysApprove,
+    false,
+    'a deliberate revoke must still bite'
+  )
+})
+
+test('an undefined value never erases a field that has no explicit clear path', () => {
+  setSettings({ theme: 'light' })
+  assert.equal(setSettings({ theme: undefined }).theme, 'light')
+})
+
+// grokBinary / model are the exception on purpose: a falsy value there is the
+// documented "clear the override" gesture, and that branch reads the raw patch.
+// Clearing a binary path is reversible; revoking a security acknowledgement by
+// accident is not.
+test('the explicit clear path for grokBinary and model still works', () => {
+  setSettings({ grokBinary: 'C:/custom/grok.exe', model: 'grok-4.5' })
+  const cleared = setSettings({ grokBinary: undefined, model: undefined })
+  assert.equal('grokBinary' in cleared, false)
+  assert.equal('model' in cleared, false)
+})
+
+// ── An unknown permission mode never survives (fails safe) ──────────
+
+// permissionMode is the only stored permission fact and it lands verbatim in
+// `--permission-mode`. An unknown value makes grok fall back to its own config
+// (commonly permission_mode = "auto"), auto-approving everything.
+
+test('an unknown mode on disk is read back as the gated default', () => {
+  writeStoredSettings({ permissionMode: 'auto-approve', alwaysApproveAck: true })
+  const s = getSettings()
+  assert.equal(s.permissionMode, 'default')
+  assert.equal(s.alwaysApprove, false)
+})
+
+test('an unknown mode on disk is corrected on the next write', () => {
+  writeStoredSettings({ permissionMode: 'yolo', alwaysApproveAck: true })
+  setSettings({ theme: 'light' })
+  assert.equal(readStoredSettings().permissionMode, 'default')
+})
+
+test('every stored value read back is a mode the CLI knows', () => {
+  for (const bogus of ['auto-approve', '', 'DEFAULT', 'plan ', 'bypass']) {
+    writeStoredSettings({ permissionMode: bogus, alwaysApproveAck: true })
+    assert.ok(ALL_MODES.includes(getSettings().permissionMode), `stored ${bogus}`)
+  }
+})
+
+test('an unknown mode in a patch is refused instead of persisted', () => {
+  setSettings({ alwaysApproveAck: true })
+  setSettings({ permissionMode: 'acceptEdits' })
+  const after = setSettings({ permissionMode: 'sudo' as unknown as PermissionMode })
+  assert.equal(after.permissionMode, 'default')
+  assert.equal(after.alwaysApprove, false)
+  assert.equal(readStoredSettings().permissionMode, 'default')
+})
+
+test('an unknown mode cannot smuggle YOLO in beside it', () => {
+  setSettings({ alwaysApproveAck: true })
+  const after = setSettings({
+    permissionMode: 'bypass' as unknown as PermissionMode,
+    alwaysApprove: true
+  })
+  assert.equal(after.permissionMode, 'default')
+  assert.equal(after.alwaysApprove, false)
+})
+
+// ── The fold rule has exactly one implementation ────────────────────
+
+test('the per-start override folds through the same rule as a settings patch', () => {
+  for (const stored of ALL_MODES) {
+    assert.equal(requestedPermissionMode({}, stored), stored, 'no override keeps the stored mode')
+    assert.equal(requestedPermissionMode({ alwaysApprove: undefined }, stored), stored)
+    assert.equal(requestedPermissionMode({ alwaysApprove: true }, stored), 'bypassPermissions')
+    assert.equal(
+      requestedPermissionMode({ alwaysApprove: false }, stored),
+      stored === 'bypassPermissions' ? 'default' : stored,
+      `override false must refuse bypass for ${stored}`
+    )
+  }
+})
+
+// agent-manager carried a verbatim copy of the fold — the dual source of truth
+// this collapse exists to remove. It must call the store's, not keep its own.
+test('agent-manager derives the boot mode from the store rather than re-folding it', () => {
+  const source = fs.readFileSync(
+    fileURLToPath(new URL('../electron/main/agent-manager.ts', import.meta.url)),
+    'utf8'
+  )
+  assert.ok(source.includes('requestedPermissionMode'), 'must call the store fold')
+  assert.equal(
+    source.includes("'bypassPermissions'"),
+    false,
+    'the bypass rule must not be re-implemented outside the store / agent-args'
+  )
 })
 
 // ── Migration of stores written before the collapse ─────────────────

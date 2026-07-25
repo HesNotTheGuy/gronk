@@ -10,6 +10,7 @@
  * - `--permission-mode` is ALWAYS emitted, including for 'default'. Omitting it
  *   silently hands permission policy to the user's config file (see the comment on
  *   the push below).
+ * - Only a mode grok actually knows may reach argv (see normalizePermissionMode).
  * - `bypassPermissions` is refused unless an acknowledgement is already persisted.
  *   `store.setSettings` enforces the same rule; repeating it here is defence in
  *   depth for callers that pass a per-start override.
@@ -18,10 +19,61 @@
  *   and did — a bypass mode with the flag off still spawned an auto-approving
  *   child while the caller mirrored `alwaysApprove: false` onto itself.
  * - Derivation happens exactly once, here. Callers must consume the returned
- *   `permissionMode` / `alwaysApprove` rather than re-deriving them.
+ *   `permissionMode` / `alwaysApprove` rather than re-deriving them — including
+ *   the runtime auto-approve gate (see isAutoApproveActive).
  */
 
-import type { PermissionMode } from '../../shared/types'
+import { PERMISSION_MODE_OPTIONS, type PermissionMode } from '../../shared/types'
+
+/** The modes grok accepts. PERMISSION_MODE_OPTIONS is the authoritative list. */
+const KNOWN_PERMISSION_MODES: ReadonlySet<string> = new Set(
+  PERMISSION_MODE_OPTIONS.map((option) => option.id)
+)
+
+/**
+ * Coerce an untrusted permission mode onto the known set.
+ *
+ * `permissionMode` is the single stored permission fact, it is read back from a
+ * user-writable JSON file, and it ends up verbatim as the value of
+ * `--permission-mode`. An unrecognised value is not inert: grok falls back to
+ * `~/.grok/config.toml` `permission_mode` (commonly "auto"), so one corrupted or
+ * hand-edited string auto-approves every tool while Grocky's UI still shows a
+ * gated mode.
+ *
+ * 'default' is the fail-safe target rather than the stricter 'dontAsk': it
+ * auto-approves nothing and keeps the user in the loop, whereas 'dontAsk' denies
+ * without asking, which reads as a broken agent instead of a broken store.
+ */
+export function normalizePermissionMode(mode: unknown): PermissionMode {
+  return typeof mode === 'string' && KNOWN_PERMISSION_MODES.has(mode)
+    ? (mode as PermissionMode)
+    : 'default'
+}
+
+/**
+ * The runtime gate: may Grocky answer a permission request without asking?
+ *
+ * `bootAlwaysApprove` is the posture the running child was actually spawned with
+ * (the `alwaysApprove` this module returned for that boot); `current` is settings
+ * as they stand now. Both must say bypass, which settles the mid-session flip on
+ * purpose:
+ * - switching YOLO ON mid-session does NOT take effect. The child was spawned
+ *   gated and is still asking; silently answering those prompts would give a
+ *   session more access than it was started with, with no restart to mark the
+ *   change. It applies on the next boot, where the ack gate runs again.
+ * - switching YOLO OFF mid-session DOES take effect immediately. The child keeps
+ *   its `--always-approve` until respawned, but every request that still reaches
+ *   Grocky goes back to the user — de-escalation is always safe to honour early.
+ *
+ * The acknowledgement is re-checked on top, because this is the one decision that
+ * skips the UI prompt entirely.
+ */
+export function isAutoApproveActive(
+  bootAlwaysApprove: boolean,
+  current: { alwaysApprove: boolean; alwaysApproveAck?: boolean }
+): boolean {
+  return bootAlwaysApprove && current.alwaysApprove && !!current.alwaysApproveAck
+}
 
 /** Conversational-Grok persona for the Chat surface (grok.com / Grok on X style). */
 export const CHAT_SYSTEM_PROMPT = [
@@ -67,8 +119,9 @@ export interface AgentArgs {
  * subcommand, and `-m` / `--always-approve` only after it. `stdio` is always last.
  */
 export function buildAgentArgs(options: BuildAgentArgsOptions): AgentArgs {
-  // permission-mode is a top-level grok flag (before `agent` subcommand)
-  let permissionMode: PermissionMode = options.permissionMode || 'default'
+  // permission-mode is a top-level grok flag (before `agent` subcommand). The
+  // store validates too; this is the last gate before the value becomes argv.
+  let permissionMode: PermissionMode = normalizePermissionMode(options.permissionMode)
   // Hard safety: the store refuses bypass without an ack, but a per-start
   // override reaches here without passing through it.
   if (permissionMode === 'bypassPermissions' && !options.alwaysApproveAck) {

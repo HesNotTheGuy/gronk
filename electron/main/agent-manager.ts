@@ -12,13 +12,14 @@ import {
   type JsonRpcId,
   type PermissionOption
 } from './acp/client'
-import { buildAgentArgs } from './agent-args'
+import { buildAgentArgs, isAutoApproveActive } from './agent-args'
 import {
   appendPermissionAudit,
   getSettings,
   getTranscript,
   listSessions,
   normalizeCwd,
+  requestedPermissionMode,
   saveTranscript,
   upsertSession
 } from './store'
@@ -32,7 +33,6 @@ import type {
   MainToRendererEvent,
   ModelInfo,
   PermissionDecision,
-  PermissionMode,
   PermissionRequest,
   ToolCallInfo
 } from '../../shared/types'
@@ -44,18 +44,6 @@ function chatWorkspaceRoot(): string {
 
 function isChatPadCwd(cwd: string): boolean {
   return isChatWorkspace(cwd, chatWorkspaceRoot())
-}
-
-/**
- * Fold the per-start YOLO override (IPC `grocky:start-agent`) onto the stored
- * mode, which is the only permission fact Grocky keeps. `true` asks for bypass —
- * still gated on the persisted ack inside buildAgentArgs — and `false` refuses it
- * for this boot even when the stored mode says otherwise.
- */
-function requestedMode(stored: PermissionMode, override?: boolean): PermissionMode {
-  if (override === undefined) return stored
-  if (override) return 'bypassPermissions'
-  return stored === 'bypassPermissions' ? 'default' : stored
 }
 
 interface PendingPermission {
@@ -97,6 +85,12 @@ export class AgentManager {
   private currentModel?: string
   /** Live transcript for the active session (mirrored to disk) */
   private liveMessages: ChatMessage[] = []
+  /**
+   * The permission posture the RUNNING child was spawned with, straight from
+   * buildAgentArgs. The runtime auto-approve gate is bound to it so a session
+   * cannot drift from how it was started (see isAutoApproveActive).
+   */
+  private bootAlwaysApprove = false
 
   setWindow(win: BrowserWindow | null): void {
     this.window = win
@@ -145,15 +139,12 @@ export class AgentManager {
   }
 
   /**
-   * YOLO per the CURRENT settings rather than the boot-time argv: the user can
-   * flip the toggle mid-session, and grok only stops asking once it is respawned
-   * with --always-approve. `getSettings()` already derives this from the stored
-   * mode and refuses bypass without a persisted acknowledgement; re-checking the
-   * ack here is defence in depth on the one decision that skips the UI prompt.
+   * May Grocky answer a permission request itself? Boot posture AND current
+   * settings must both say bypass — isAutoApproveActive owns that rule and
+   * documents which side wins when the user flips the toggle mid-session.
    */
   private autoApproveActive(): boolean {
-    const settings = getSettings()
-    return settings.alwaysApprove && !!settings.alwaysApproveAck
+    return isAutoApproveActive(this.bootAlwaysApprove, getSettings())
   }
 
   /**
@@ -164,8 +155,8 @@ export class AgentManager {
   /**
    * `options.alwaysApprove` is the per-start YOLO override coming from the
    * `grocky:start-agent` IPC; it folds onto the stored permission mode (see
-   * requestedMode) instead of travelling beside it. Omit it to use the mode as
-   * stored.
+   * store.requestedPermissionMode) instead of travelling beside it. Omit it to
+   * use the mode as stored.
    */
   private async bootAgent(
     cwd: string,
@@ -217,13 +208,22 @@ export class AgentManager {
 
     // All permission derivation lives in buildAgentArgs — adopt what it decided
     // rather than recomputing the downgrades here (they must never drift apart).
+    // The per-start override (IPC `grocky:start-agent`) is the UI's YOLO toggle
+    // asked for one boot instead of for the stored settings, so it folds onto the
+    // stored mode through the store's one fold rule: `true` asks for bypass (still
+    // gated on the persisted ack below), `false` refuses it for this boot, absent
+    // means use the mode as stored.
     const built = buildAgentArgs({
-      permissionMode: requestedMode(settings.permissionMode, options?.alwaysApprove),
+      permissionMode: requestedPermissionMode(
+        { alwaysApprove: options?.alwaysApprove },
+        settings.permissionMode
+      ),
       alwaysApproveAck: settings.alwaysApproveAck,
       model,
       surface: options?.surface
     })
     this.surface = built.surface
+    this.bootAlwaysApprove = built.alwaysApprove
     const agentArgs = built.args
     // The argv is what decides whether grok asks Grocky for permission at all,
     // so record the posture the child actually starts with.
@@ -251,6 +251,7 @@ export class AgentManager {
       }
       this.client = null
       this.sessionId = null
+      this.bootAlwaysApprove = false
       this.pendingPermissions.clear()
       this.permissionQueue = []
     })
@@ -434,6 +435,8 @@ export class AgentManager {
   }
 
   private async stopProcessOnly(): Promise<void> {
+    // No child, no boot posture: the gate must not outlive the process it describes.
+    this.bootAlwaysApprove = false
     this.pendingPermissions.clear()
     this.permissionQueue = []
     if (this.client) {

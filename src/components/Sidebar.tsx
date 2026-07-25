@@ -1,20 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import type {
-  AppSurface,
-  ModelInfo,
-  PermissionMode,
-  ProjectContext,
-  SessionInfo
-} from '../../shared/types'
+import type { AppSurface, ProjectContext, SessionInfo } from '../../shared/types'
 import { folderName, pathsEqual } from '../../shared/path'
 
 interface Props {
   alwaysApprove: boolean
-  models: ModelInfo[]
-  currentModel?: string
   authLabel?: string
   authenticated: boolean
-  permissionMode: PermissionMode
   surface: AppSurface
   /** true when main pane is the conversation (not a browse home) */
   inConversation: boolean
@@ -39,9 +30,7 @@ interface Props {
   onNewProjectSession: () => void
   onOpenArchived: () => void
   onToggleAlwaysApprove: () => void
-  onChangePermissionMode: (mode: PermissionMode) => void
   onOpenSettings: () => void
-  onChangeModel: (id: string) => void
   onLogout: () => void
   onSignIn: () => void
 }
@@ -52,6 +41,9 @@ function sessionTitle(s: SessionInfo): string {
 
 /** Enough to hop between what you actually work in; the rest live in Build. */
 const SWITCHER_LIMIT = 8
+
+/** Rails are a hop list, not an archive — the browse homes hold the full set. */
+const LIST_LIMIT = 40
 
 const COLLAPSE_KEY = 'grocky.sidebar.collapse.v2'
 
@@ -82,11 +74,8 @@ function loadCollapse(): { folders: boolean; sessions: boolean; chats: boolean }
  */
 export function Sidebar({
   alwaysApprove,
-  models,
-  currentModel,
   authLabel,
   authenticated,
-  permissionMode,
   surface,
   inConversation,
   browsing,
@@ -105,9 +94,7 @@ export function Sidebar({
   onNewProjectSession,
   onOpenArchived,
   onToggleAlwaysApprove,
-  onChangePermissionMode,
   onOpenSettings,
-  onChangeModel,
   onLogout,
   onSignIn
 }: Props) {
@@ -126,20 +113,35 @@ export function Sidebar({
   }
 
   /** Only the open folder's sessions — the cross-folder view is ProjectHome's job */
-  const folderSessions = useMemo(() => {
+  const folderSessionsAll = useMemo(() => {
     if (!activeCwd) return []
     return projectSessions
       .filter((s) => pathsEqual(s.cwd, activeCwd))
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 40)
   }, [activeCwd, projectSessions])
+
+  const folderSessions = useMemo(
+    () => folderSessionsAll.slice(0, LIST_LIMIT),
+    [folderSessionsAll]
+  )
 
   const folderSwitcher = useMemo(() => projects.slice(0, SWITCHER_LIMIT), [projects])
 
-  const chatList = useMemo(
-    () => [...chatSessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 40),
+  const chatListAll = useMemo(
+    () => [...chatSessions].sort((a, b) => b.updatedAt - a.updatedAt),
     [chatSessions]
   )
+
+  const chatList = useMemo(() => chatListAll.slice(0, LIST_LIMIT), [chatListAll])
+
+  /**
+   * Every rail count describes the rows actually rendered, and any list that got
+   * cut says how much it is hiding — a header that disagrees with its own body
+   * is worse than no count at all.
+   */
+  const hiddenChats = chatListAll.length - chatList.length
+  const hiddenFolders = projects.length - folderSwitcher.length
+  const hiddenFolderSessions = folderSessionsAll.length - folderSessions.length
 
   const showChatRail = surface === 'chat' && !browsing
   const showWorkspaceRails = surface === 'project' && !browsing
@@ -273,6 +275,16 @@ export function Sidebar({
                     </button>
                   ))
                 )}
+                {hiddenChats > 0 ? (
+                  <button
+                    type="button"
+                    className="sidebar-rail-more"
+                    onClick={onGoChat}
+                    title="Open the full chat list"
+                  >
+                    +{hiddenChats} older · See all
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -293,7 +305,7 @@ export function Sidebar({
                   {open.folders ? '▾' : '▸'}
                 </span>
                 <span className="sidebar-rail-title">Folders</span>
-                <span className="sidebar-rail-count">{projects.length || ''}</span>
+                <span className="sidebar-rail-count">{folderSwitcher.length || ''}</span>
               </button>
               {open.folders ? (
                 <div className="sidebar-rail-body">
@@ -339,6 +351,16 @@ export function Sidebar({
                       )
                     })
                   )}
+                  {hiddenFolders > 0 ? (
+                    <button
+                      type="button"
+                      className="sidebar-rail-more"
+                      onClick={onGoProjects}
+                      title="Open the full folder list"
+                    >
+                      +{hiddenFolders} more · See all
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -398,6 +420,16 @@ export function Sidebar({
                       </button>
                     ))
                   )}
+                  {hiddenFolderSessions > 0 ? (
+                    <button
+                      type="button"
+                      className="sidebar-rail-more"
+                      onClick={onGoProjects}
+                      title="Open the full session list for every folder"
+                    >
+                      +{hiddenFolderSessions} older · See all
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>

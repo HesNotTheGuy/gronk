@@ -44,6 +44,10 @@ interface ExportNotice {
   format: 'md' | 'json'
   /** Main refuses to reveal paths outside its allowed roots; show why inline */
   revealError?: string
+  /** Path is on the clipboard — the banner swaps its label to confirm */
+  copied?: boolean
+  /** Clipboard write refused (no permission / not focused); tell the user */
+  copyError?: string
 }
 
 export function useGrocky() {
@@ -782,8 +786,14 @@ export function useGrocky() {
   const exportSession = useCallback(async (id: string, format: 'md' | 'json' = 'md') => {
     try {
       const result = await window.grocky.exportTranscript(id, format)
-      // null = save dialog cancelled (or nothing to export) — stay silent
-      if (!result?.path) return
+      if (!result.ok) {
+        // A cancel is the user's own choice — stay silent. An empty transcript is
+        // not, and would otherwise read as a dead menu item.
+        if (result.reason === 'empty') {
+          setError('Nothing to export yet — this session has no saved transcript.')
+        }
+        return
+      }
       setExportNotice({ path: result.path, format })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -802,6 +812,31 @@ export function useGrocky() {
           }
         : prev
     )
+  }, [exportNotice])
+
+  /**
+   * Reveal is gated on main's allowed roots and the save dialog defaults to
+   * Documents, which is outside them — so copying the path is the action the
+   * banner can actually promise.
+   */
+  const copyExportPath = useCallback(async () => {
+    if (!exportNotice) return
+    try {
+      await navigator.clipboard.writeText(exportNotice.path)
+      setExportNotice((prev) =>
+        prev ? { ...prev, copied: true, copyError: undefined } : prev
+      )
+    } catch (err) {
+      setExportNotice((prev) =>
+        prev
+          ? {
+              ...prev,
+              copied: false,
+              copyError: err instanceof Error ? err.message : String(err)
+            }
+          : prev
+      )
+    }
   }, [exportNotice])
 
   const dismissExport = useCallback(() => setExportNotice(null), [])
@@ -1131,6 +1166,7 @@ export function useGrocky() {
     setShowArchived,
     exportNotice,
     revealExport,
+    copyExportPath,
     dismissExport,
     showCliInstall,
     setShowCliInstall,

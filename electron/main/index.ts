@@ -474,7 +474,10 @@ function registerIpc(): void {
       }
       const settings = getSettings()
       const model = options?.model ?? settings.model
-      const alwaysApprove = options?.alwaysApprove ?? settings.alwaysApprove
+      // Forward the override as-is. Substituting settings.alwaysApprove here would
+      // re-derive the stored posture in a second place; agent-manager folds an
+      // absent override against the store itself via requestedPermissionMode.
+      const alwaysApprove = options?.alwaysApprove
 
       if (
         !options?.forceNew &&
@@ -584,7 +587,10 @@ function registerIpc(): void {
       const sessions = listSessions()
       const sessionInfo = sessions.find((s) => s.id === id)
       const messages = getTranscript(id)
-      if (!messages.length) return null
+      // Discriminated so the renderer can tell "nothing to export" from "user
+      // cancelled the dialog". A bare null meant both, so an empty transcript
+      // looked exactly like a dead menu item — no dialog, no message.
+      if (!messages.length) return { ok: false as const, reason: 'empty' as const }
 
       const base = (sessionInfo?.title || id.slice(0, 8)).replace(/[<>:"/\\|?*]/g, '_')
       const defaultPath = path.join(
@@ -600,7 +606,9 @@ function registerIpc(): void {
             ? [{ name: 'JSON', extensions: ['json'] }]
             : [{ name: 'Markdown', extensions: ['md'] }]
       })
-      if (result.canceled || !result.filePath) return null
+      if (result.canceled || !result.filePath) {
+        return { ok: false as const, reason: 'cancelled' as const }
+      }
 
       if (format === 'json') {
         fs.writeFileSync(
@@ -612,7 +620,11 @@ function registerIpc(): void {
         const md = exportTranscriptMarkdown(sessionInfo?.title || id, messages)
         fs.writeFileSync(result.filePath, md, 'utf8')
       }
-      return { path: result.filePath }
+      // The user chose this path in a native save dialog, so revealing it is
+      // consented by construction. Recording it here is what lets the reveal
+      // handler open it WITHOUT widening the allowed roots for every other path.
+      rememberExportedPath(result.filePath)
+      return { ok: true as const, path: result.filePath }
     }
   )
 
@@ -928,6 +940,34 @@ function resolveImageCandidates(filePath: string): string[] {
   return candidates
 }
 
+/**
+ * Paths the user picked in an export save dialog during THIS run.
+ *
+ * An exported transcript normally lands in ~/Documents, which is deliberately
+ * not an allowed root — widening the roots to cover it would grant reveal access
+ * to every file there. Instead each path is consented individually at the moment
+ * the user chose it in a native dialog, and the consent dies with the process.
+ * Bounded so a long session cannot grow it without limit.
+ */
+const MAX_REMEMBERED_EXPORTS = 50
+const exportedPaths: string[] = []
+
+function rememberExportedPath(filePath: string): void {
+  let real: string
+  try {
+    real = fs.realpathSync(filePath)
+  } catch {
+    real = path.resolve(filePath)
+  }
+  if (exportedPaths.includes(real)) return
+  exportedPaths.push(real)
+  if (exportedPaths.length > MAX_REMEMBERED_EXPORTS) exportedPaths.shift()
+}
+
+function isConsentedExportPath(resolved: string): boolean {
+  return exportedPaths.includes(resolved)
+}
+
 function isAllowedImagePath(resolved: string): boolean {
   const roots: string[] = [grokSessionsRoot(), chatWorkspaceRoot(), app.getPath('userData')]
   const cwd = agentManager.getCwd()
@@ -1026,7 +1066,10 @@ function revealLocalPathSafe(filePath: string): { ok: boolean; error?: string } 
     } catch {
       real = path.resolve(found)
     }
-    if (!isAllowedImagePath(real)) {
+    // Two independent grounds to reveal: the path sits under an allowed root, or
+    // the user personally chose it in this session's export save dialog. The
+    // second is per-path consent, so it does not widen the roots for anything else.
+    if (!isAllowedImagePath(real) && !isConsentedExportPath(real)) {
       return { ok: false, error: 'Path outside allowed roots' }
     }
     shell.showItemInFolder(real)

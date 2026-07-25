@@ -122,11 +122,18 @@ test('skills are flagged MED as a prompt-injection surface', () => {
 
 // ── Install source ──────────────────────────────────────────────────
 
-test('installSource prefers sourceUrl and never free-form prose', () => {
+test('installSource uses sourceUrl and never free-form prose', () => {
   assert.equal(
     installSource(plugin({ name: 'demo', sourceUrl: '  https://example.com/p  ' })),
     'https://example.com/p'
   )
-  assert.equal(installSource(plugin({ name: '  demo  ' })), 'demo')
   assert.equal(installSource(plugin({ name: '', description: 'https://evil.example' })), '')
+})
+
+// `grok plugin install --help` (0.2.111): <SOURCE> is a git URL, user/repo shorthand or
+// local path. A bare name is none of those, so falling back to it would make the CLI
+// resolve some unrelated path. An empty source leaves the confirm button disabled.
+test('a plugin with no sourceUrl yields no install target rather than its name', () => {
+  assert.equal(installSource(plugin({ name: 'demo' })), '')
+  assert.equal(installSource(plugin({ name: '  spaced name  ' })), '')
 })

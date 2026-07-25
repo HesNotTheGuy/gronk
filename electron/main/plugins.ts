@@ -16,9 +16,9 @@
  */
 
 import fs from 'node:fs/promises'
-import os from 'node:os'
 import path from 'node:path'
 import { runGrokCli, runGrokJson } from './grok-cli'
+import { grokHome } from './grok-home'
 import {
   applyPinnedShas,
   asList,
@@ -32,7 +32,6 @@ import {
   cliMessage,
   mapMcpServers,
   mapPlugins,
-  parseGitRemoteUrl,
   str,
   type RawMarketplace,
   type RawMarketplaceCache
@@ -96,6 +95,10 @@ export async function listAvailablePlugins(): Promise<Plugin[]> {
       plugin.sourceUrl = byName.get(plugin.marketplace)
     }
   }
+  // Runs last on purpose: this backfill can only name the marketplace repo,
+  // while a pinned commit belongs to the plugin's own repo. Where the cache
+  // knows both, its pair replaces the guess above so the trust modal's source
+  // and commit describe one repository rather than two.
   applyPinnedShas(plugins, await readMarketplaceCaches(), marketplaces)
   return plugins
 }
@@ -119,13 +122,24 @@ export async function mcpDoctor(name?: string): Promise<McpServer[]> {
 // ── Marketplace cache: pinned commits (spec §4.2) ──────────────────
 
 /** Same resolution as auth.ts: GROK_HOME wins, else ~/.grok. */
-function grokHome(): string {
-  return process.env.GROK_HOME || path.join(os.homedir(), '.grok')
-}
-
-/** Third-party files — bound what we are willing to read (observed index size ~35 KB). */
+/** Third-party files — bound what we are willing to read (observed catalogs run to ~160 KB). */
 const MAX_CACHE_FILE_BYTES = 4_000_000
 const MAX_CACHE_CLONES = 64
+
+/**
+ * The catalog files a clone can ship, all of them optional.
+ *
+ * Both layouts were read off a real cache and both declare pinned commits: the
+ * Grok clone carries `.grok-plugin/plugin-index.json` (commits, keyed by plugin
+ * name) alongside `.grok-plugin/marketplace.json` (each plugin's own repo URL
+ * and commit), and the Claude clone carries `.claude-plugin/marketplace.json`
+ * in that same array layout. `plugins-map.ts` decides what each one means.
+ */
+const CATALOG_FILES = [
+  ['.grok-plugin', 'plugin-index.json'],
+  ['.grok-plugin', 'marketplace.json'],
+  ['.claude-plugin', 'marketplace.json']
+] as const
 
 /** Read a capped local file. Missing, oversized or unreadable all mean "no data". */
 async function readCappedFile(file: string): Promise<string | null> {
@@ -139,10 +153,12 @@ async function readCappedFile(file: string): Promise<string | null> {
 }
 
 /**
- * Every marketplace clone under ~/.grok/marketplace-cache that ships a plugin
- * index, paired with its git remote so `applyPinnedShas` can tell the clones
- * apart. Claude-format clones carry `.claude-plugin/marketplace.json` and no
- * index at all — they declare no pinned commit, so they are skipped here.
+ * The bytes of every marketplace clone under ~/.grok/marketplace-cache, each
+ * paired with its `.git/config` so `applyPinnedShas` can tell the clones apart.
+ *
+ * Nothing is interpreted here on purpose: this is the readFile half, so the
+ * parsing, validation and clone → marketplace join all stay in the pure module
+ * where `npm test` can reach them without a filesystem.
  */
 async function readMarketplaceCaches(): Promise<RawMarketplaceCache[]> {
   const root = path.join(grokHome(), 'marketplace-cache')
@@ -150,23 +166,22 @@ async function readMarketplaceCaches(): Promise<RawMarketplaceCache[]> {
   const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
 
   const caches: RawMarketplaceCache[] = []
+  let scanned = 0
   for (const entry of entries) {
-    if (caches.length >= MAX_CACHE_CLONES) break
+    if (scanned >= MAX_CACHE_CLONES) break
     if (!entry.isDirectory()) continue
+    scanned++
     // `entry.name` is a single component straight from readdir, never a path.
     const clone = path.join(root, entry.name)
 
-    const indexText = await readCappedFile(path.join(clone, '.grok-plugin', 'plugin-index.json'))
-    if (!indexText) continue
-    let index: unknown
-    try {
-      index = JSON.parse(indexText)
-    } catch {
-      continue
-    }
-
-    const config = await readCappedFile(path.join(clone, '.git', 'config'))
-    caches.push({ url: parseGitRemoteUrl(config), index })
+    const catalogs = await Promise.all(
+      CATALOG_FILES.map((parts) => readCappedFile(path.join(clone, ...parts)))
+    )
+    if (!catalogs.some((text) => text !== null)) continue
+    caches.push({
+      gitConfig: await readCappedFile(path.join(clone, '.git', 'config')),
+      catalogs
+    })
   }
   return caches
 }

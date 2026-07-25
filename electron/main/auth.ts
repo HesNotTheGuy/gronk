@@ -14,16 +14,12 @@
 
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { resolveGrokBinary } from './acp/client'
+import { grokHome } from './grok-home'
 import { getSettings } from './store'
 import { redactSecrets } from './redact'
 import type { AuthStatus, LoginMethod } from '../../shared/types'
-
-function grokHome(): string {
-  return process.env.GROK_HOME || path.join(os.homedir(), '.grok')
-}
 
 function authJsonPath(): string {
   return path.join(grokHome(), 'auth.json')

@@ -11,6 +11,7 @@ import {
   type SessionInfo
 } from '../../shared/types'
 import { isChatWorkspace, normalizePath } from '../../shared/path'
+import { normalizePermissionMode } from './agent-args'
 import { redactPreview, redactValue } from './redact'
 
 /**
@@ -55,10 +56,23 @@ function toStored(settings: AppSettings): StoredSettings {
   return stored
 }
 
-/** Same, for an incoming patch — `alwaysApprove` folds onto the mode instead. */
+/**
+ * Same, for an incoming patch — `alwaysApprove` folds onto the mode instead.
+ *
+ * Keys carrying `undefined` are dropped as well. Spreading them over the stored
+ * settings makes "key present but undefined" erase a persisted value:
+ * `{ alwaysApproveAck: undefined }` — which is what an optional field, an IPC
+ * round-trip or a renderer spread produces by accident — wiped the
+ * acknowledgement and took YOLO down with it. Absent and undefined therefore both
+ * mean "leave it alone"; a deliberate revoke sends `false`, which still lands.
+ */
 function toStoredPatch(partial: Partial<AppSettings>): Partial<StoredSettings> {
   const { alwaysApprove: _derived, ...rest } = partial
-  return rest
+  const patch: Partial<StoredSettings> = { ...rest }
+  for (const key of Object.keys(patch) as Array<keyof StoredSettings>) {
+    if (patch[key] === undefined) delete patch[key]
+  }
+  return patch
 }
 
 /** Re-derive `alwaysApprove` for callers; the renderer reads it off AppSettings. */
@@ -86,9 +100,18 @@ const DEFAULT_STORED_SETTINGS: StoredSettings = toStored(DEFAULT_SETTINGS)
  *
  * A file written by this build has no `alwaysApprove` key at all, so only the
  * ack gate applies to it.
+ *
+ * The mode itself is validated first: the file is user-writable and its
+ * `permissionMode` becomes the value of `--permission-mode`, so an unknown string
+ * must never survive the read (normalizePermissionMode explains what grok does
+ * with one).
  */
 function normalizeStoredSettings(raw: Partial<AppSettings> | undefined): StoredSettings {
-  const settings = toStored({ ...DEFAULT_SETTINGS, ...raw })
+  const merged = toStored({ ...DEFAULT_SETTINGS, ...raw })
+  const settings: StoredSettings = {
+    ...merged,
+    permissionMode: normalizePermissionMode(merged.permissionMode)
+  }
   if (settings.permissionMode !== 'bypassPermissions') return settings
   if (raw?.alwaysApprove === false || !settings.alwaysApproveAck) {
     return { ...settings, permissionMode: 'default' }
@@ -158,8 +181,13 @@ export function getSettings(): AppSettings {
  * carrying only the toggle is the user flipping the switch, so it wins over the
  * stored mode. A patch carrying BOTH and disagreeing with itself resolves
  * towards less access, so no call can turn bypass on as a side effect.
+ *
+ * Exported because the per-start YOLO override (`grocky:start-agent`) is the same
+ * question asked for one boot instead of for the stored settings. It must fold by
+ * the same rule: a second copy of it in agent-manager is a second place for the
+ * toggle and the mode to disagree, which is the drift this collapse removed.
  */
-function requestedPermissionMode(
+export function requestedPermissionMode(
   partial: Partial<AppSettings>,
   stored: PermissionMode
 ): PermissionMode {
@@ -194,7 +222,11 @@ export function setSettings(partial: Partial<AppSettings>): AppSettings {
   // The merged ack is required on top of it so that revoking the ack in this
   // call also drops bypass, instead of leaving a state the next read undoes.
   const ackAllowsBypass = priorAck && !!merged.alwaysApproveAck
-  const requested = requestedPermissionMode(partial, data.settings.permissionMode)
+  // Validate what the patch asked for: the renderer is not the only caller and an
+  // unknown mode would be persisted and later handed to `--permission-mode`.
+  const requested = normalizePermissionMode(
+    requestedPermissionMode(partial, data.settings.permissionMode)
+  )
   merged.permissionMode =
     requested === 'bypassPermissions' && !ackAllowsBypass ? 'default' : requested
 

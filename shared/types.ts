@@ -430,10 +430,15 @@ export interface GrockyApi {
   deleteSession: (sessionId: string) => Promise<SessionInfo[]>
   renameSession: (sessionId: string, title: string) => Promise<SessionInfo | null>
   archiveSession: (sessionId: string, archived?: boolean) => Promise<SessionInfo | null>
+  /**
+   * `empty` and `cancelled` are distinguished on purpose: a single null meant
+   * both, so exporting a session with no transcript showed no dialog and no
+   * message — indistinguishable from a broken menu item.
+   */
   exportTranscript: (
     sessionId: string,
     format?: 'md' | 'json'
-  ) => Promise<{ path: string } | null>
+  ) => Promise<{ ok: true; path: string } | { ok: false; reason: 'empty' | 'cancelled' }>
   listProjectFiles: (
     cwd: string,
     query?: string,

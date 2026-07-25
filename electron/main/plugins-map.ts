@@ -283,6 +283,10 @@ export function mapPlugin(raw: RawPlugin, fallbackStatus: PluginStatus): Plugin 
   // marketplace/skill_count/has_*/components. `category`, `sha`, `commit` and
   // `source_url` are never present — they are read as forward-compat, and both
   // sha and sourceUrl are really filled in by plugins.ts from local state.
+  //
+  // The CLI is a source like any other: its sha goes through the same validator
+  // as the cache's, so an unparseable value cannot reach the trust modal just
+  // because it arrived on the trusted-looking path.
   return {
     name,
     version: typeof raw.version === 'string' ? raw.version : null,
@@ -296,7 +300,7 @@ export function mapPlugin(raw: RawPlugin, fallbackStatus: PluginStatus): Plugin 
     hasAgents,
     hasMcp,
     components,
-    sha: str(raw.sha) ?? str(raw.commit),
+    sha: commitSha(raw.sha) ?? commitSha(raw.commit),
     sourceUrl: str(raw.source_url)
   }
 }
@@ -313,21 +317,42 @@ export function mapPlugins(raw: unknown, fallbackStatus: PluginStatus): Plugin[]
 
 // ── Marketplace cache: pinned commits ──────────────────────────────
 //
-// The catalog has no sha, so the pinned commit the trust modal must show
-// (SKILLS-PLUGINS-SPEC §4.2) comes from the clone the CLI already wrote to disk:
-// `~/.grok/marketplace-cache/<hash>/.grok-plugin/plugin-index.json`, shaped
-// `{version, plugins: {<name>: {sha, version, components}}}`.
+// The CLI catalog has no sha, so the pinned commit the trust modal must show
+// (SKILLS-PLUGINS-SPEC §4.2) comes from the clones the CLI already wrote under
+// `~/.grok/marketplace-cache/<hash>/`. Two catalog layouts were read off a real
+// cache; both are handled, and neither is assumed to be present:
 //
-// `plugins.ts` reads the files; parsing and the clone → marketplace join live
-// here so they stay unit tested. All of it is third-party JSON: bounded,
+//   `.grok-plugin/plugin-index.json`   {version, plugins: {<name>: {sha, …}}}
+//                                      `plugins` is an OBJECT MAP keyed by name.
+//   `.grok-plugin/marketplace.json`    {name, …, plugins: [{name, source, …}]}
+//   `.claude-plugin/marketplace.json`  {name, …, plugins: [{name, source, …}]}
+//                                      `plugins` is an ARRAY; `source` is
+//                                      polymorphic — see `readCatalogArray`.
+//
+// `plugins.ts` reads the bytes and nothing else; every parse, bound and join
+// lives here so it stays unit tested. All of it is third-party JSON: bounded,
 // validated, and dropped without a word when it does not fit.
 
-/** One marketplace clone under ~/.grok/marketplace-cache, as read by plugins.ts. */
+/** The raw bytes of one marketplace clone, handed over by plugins.ts. */
 export interface RawMarketplaceCache {
-  /** The clone's `remote.origin.url`, from `parseGitRemoteUrl`. */
-  url?: string
-  /** Parsed `.grok-plugin/plugin-index.json`. */
-  index: unknown
+  /** Text of the clone's `.git/config`; null when it could not be read. */
+  gitConfig: string | null
+  /** Text of each catalog file looked for in the clone; null where absent. */
+  catalogs: readonly (string | null)[]
+}
+
+/**
+ * What one clone declares about a plugin.
+ *
+ * The commit and the repository it belongs to travel together on purpose: a sha
+ * is only meaningful next to the repo it indexes, and `applyPinnedShas` refuses
+ * to publish one without the other.
+ */
+interface PinnedEntry {
+  sha?: string
+  sourceUrl?: string
+  /** Two catalogs in one clone contradicted each other — the entry is unusable. */
+  conflicted?: boolean
 }
 
 /**
@@ -335,21 +360,63 @@ export interface RawMarketplaceCache {
  * and anything longer are refused rather than displayed: the modal promises the
  * full pinned commit, and showing a value that is not one is worse than showing
  * none at all.
+ *
+ * Every candidate reaches `Plugin.sha` through here, whatever claimed to produce
+ * it — the CLI's own output included.
  */
 const COMMIT_SHA = /^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/
 
-const MAX_INDEX_ENTRIES = 2000
+export function commitSha(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const sha = value.trim()
+  // Length is checked before the pattern so a megabyte of "a" is rejected by a
+  // comparison rather than by a scan.
+  if (sha.length !== 40 && sha.length !== 64) return undefined
+  return COMMIT_SHA.test(sha) ? sha : undefined
+}
+
+const MAX_CATALOG_ENTRIES = 2000
+const MAX_PLUGIN_NAME_LENGTH = 200
 const MAX_GIT_CONFIG_LINES = 500
 const MAX_URL_LENGTH = 2048
 
 /**
- * `remote.origin.url` out of a clone's `.git/config`.
+ * A repository URL taken out of a catalog.
+ *
+ * The accepted value is displayed as the install source and can be handed to
+ * `grok plugin install`, so only the scheme the observed catalogs actually use
+ * is allowed: an `ssh://`, `file://` or scp-style remote would be a different
+ * and unaudited install path arriving from third-party JSON.
+ */
+export function catalogRepoUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const url = value.trim()
+  if (!url || url.length > MAX_URL_LENGTH || CONTROL_CHARS.test(url)) return undefined
+  return /^https:\/\/[^/\s]/i.test(url) ? url : undefined
+}
+
+export interface GitRemote {
+  /** `remote.origin.url`. */
+  url?: string
+  /** The single branch this clone tracks, from origin's fetch refspec. */
+  branch?: string
+}
+
+const BRANCH_NAME = /^[A-Za-z0-9._/-]{1,200}$/
+
+/**
+ * The origin remote out of a clone's `.git/config`.
  *
  * Hand-parsed on purpose: this is a local file the CLI wrote, and spawning git
  * to read it would add a process launch and a second trust surface for nothing.
+ *
+ * The branch comes from the fetch refspec (`+refs/heads/main:…`) rather than from
+ * HEAD: the caches read off disk held a raw object id in HEAD, which names no
+ * branch. A wildcard refspec identifies no single branch and yields undefined.
  */
-export function parseGitRemoteUrl(configText: unknown): string | undefined {
-  if (typeof configText !== 'string') return undefined
+export function parseGitRemote(configText: unknown): GitRemote {
+  if (typeof configText !== 'string') return {}
+  const remote: GitRemote = {}
   let inOrigin = false
   for (const line of configText.split('\n', MAX_GIT_CONFIG_LINES)) {
     const text = line.trim()
@@ -358,13 +425,28 @@ export function parseGitRemoteUrl(configText: unknown): string | undefined {
       continue
     }
     if (!inOrigin) continue
-    const match = /^url\s*=\s*(.+)$/i.exec(text)
-    if (!match) continue
-    const url = match[1].trim()
-    if (url.length > MAX_URL_LENGTH || CONTROL_CHARS.test(url)) return undefined
-    return url || undefined
+
+    const url = /^url\s*=\s*(.+)$/i.exec(text)
+    if (url && remote.url === undefined) {
+      const value = url[1].trim()
+      // A remote we cannot read cleanly makes the whole clone unidentifiable.
+      if (!value || value.length > MAX_URL_LENGTH || CONTROL_CHARS.test(value)) return {}
+      remote.url = value
+      continue
+    }
+
+    const fetch = /^fetch\s*=\s*\+?refs\/heads\/([^:*\s]+):/i.exec(text)
+    if (fetch && remote.branch === undefined) {
+      const branch = fetch[1].trim()
+      if (BRANCH_NAME.test(branch)) remote.branch = branch
+    }
   }
-  return undefined
+  return remote
+}
+
+/** Just the remote URL — the shape most callers want. */
+export function parseGitRemoteUrl(configText: unknown): string | undefined {
+  return parseGitRemote(configText).url
 }
 
 /**
@@ -379,27 +461,202 @@ function normalizeGitUrl(value: unknown): string | undefined {
   return (trimmed.endsWith('.git') ? trimmed.slice(0, -4) : trimmed) || undefined
 }
 
-/** plugin name → pinned sha, from one `plugin-index.json`. Invalid entries are dropped. */
-function mapPluginIndex(raw: unknown): Map<string, string> {
-  const out = new Map<string, string>()
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
-  // `plugins` is an OBJECT MAP keyed by plugin name here, not the array shape
-  // the CLI returns — `asList` would yield [].
-  const plugins = (raw as { plugins?: unknown }).plugins
-  if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) return out
+function catalogName(value: unknown): string | undefined {
+  const name = str(value)?.trim()
+  if (!name || name.length > MAX_PLUGIN_NAME_LENGTH || CONTROL_CHARS.test(name)) return undefined
+  return name
+}
 
-  for (const [name, entry] of Object.entries(plugins as Record<string, unknown>)) {
-    if (out.size >= MAX_INDEX_ENTRIES) break
-    if (!name || name.length > 200 || CONTROL_CHARS.test(name)) continue
-    if (!entry || typeof entry !== 'object') continue
-    const sha = str((entry as { sha?: unknown }).sha)?.trim()
-    if (sha && COMMIT_SHA.test(sha)) out.set(name, sha)
+/**
+ * `{plugins: {<name>: {sha}}}` — the `plugin-index.json` layout.
+ *
+ * It records a commit per plugin and names no repository at all, so entries from
+ * here carry a sha and no URL. On their own that is not enough to display: see
+ * `applyPinnedShas` for why the pair is required.
+ */
+function readCatalogMap(plugins: Record<string, unknown>): Map<string, PinnedEntry> {
+  const out = new Map<string, PinnedEntry>()
+  for (const [rawName, entry] of Object.entries(plugins)) {
+    if (out.size >= MAX_CATALOG_ENTRIES) break
+    const name = catalogName(rawName)
+    if (!name || !entry || typeof entry !== 'object') continue
+    const sha = commitSha((entry as { sha?: unknown }).sha)
+    if (sha) out.set(name, { sha })
   }
   return out
 }
 
 /**
- * Fill in `sha` on catalog entries from the marketplace clones on disk.
+ * `{plugins: [{name, source}]}` — the `marketplace.json` layout, used by both
+ * the `.grok-plugin` and `.claude-plugin` directories.
+ *
+ * `source` is polymorphic. All three object forms below were read off a real
+ * cache, along with a plain-string form:
+ *
+ * - `{source: 'url' | 'git-subdir', url, sha, path?, ref?}` — the sha pins the
+ *   PLUGIN'S OWN repository, the one `url` names. Both are taken together so the
+ *   trust modal never shows a commit beside some other repo's URL.
+ * - `{source: 'github', repo, commit, sha}` — names no URL, and its `commit` and
+ *   `sha` hold two DIFFERENT object ids. Nothing on disk says which of them an
+ *   install checks out, so the entry is marked contradictory: another file in
+ *   the same clone may name the repo, but it cannot resolve the two ids.
+ * - `'./plugins/<name>'` — a subdirectory of the marketplace repo itself, so it
+ *   has no commit of its own and the catalog declares none. The clone's current
+ *   HEAD is only whatever was last fetched rather than a declared pin, so these
+ *   are left unpinned.
+ */
+function readCatalogArray(plugins: readonly unknown[]): Map<string, PinnedEntry> {
+  const out = new Map<string, PinnedEntry>()
+  for (const item of plugins) {
+    if (out.size >= MAX_CATALOG_ENTRIES) break
+    if (!item || typeof item !== 'object') continue
+    const name = catalogName((item as { name?: unknown }).name)
+    if (!name) continue
+
+    const source = (item as { source?: unknown }).source
+    if (!source || typeof source !== 'object' || Array.isArray(source)) continue
+    const raw = source as { url?: unknown; sha?: unknown; commit?: unknown }
+
+    const sha = commitSha(raw.sha)
+    const alternate = commitSha(raw.commit)
+    if (sha && alternate && sha.toLowerCase() !== alternate.toLowerCase()) {
+      out.set(name, { conflicted: true })
+      continue
+    }
+
+    const sourceUrl = catalogRepoUrl(raw.url)
+    // A URL on its own is still worth keeping: a sibling catalog in this clone
+    // may hold the commit it belongs to.
+    if (sha || sourceUrl) out.set(name, { sha, sourceUrl })
+  }
+  return out
+}
+
+/** One catalog file's text → plugin name → what it declares. */
+function readCatalog(text: unknown): Map<string, PinnedEntry> {
+  if (typeof text !== 'string' || !text) return new Map()
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return new Map()
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return new Map()
+
+  const plugins = (raw as { plugins?: unknown }).plugins
+  if (Array.isArray(plugins)) return readCatalogArray(plugins)
+  if (plugins && typeof plugins === 'object') {
+    return readCatalogMap(plugins as Record<string, unknown>)
+  }
+  return new Map()
+}
+
+/**
+ * Fold one catalog's entry into what the clone already declared.
+ *
+ * The layouts overlap — `plugin-index.json` supplies commits, `marketplace.json`
+ * supplies the repository each commit belongs to — so they are merged per plugin
+ * rather than one being preferred. Two files of the same clone naming different
+ * commits (or different repos) for one plugin is a contradiction we cannot
+ * resolve from disk, so the entry is burned instead of picked from.
+ */
+function mergeEntry(into: Map<string, PinnedEntry>, name: string, next: PinnedEntry): void {
+  const prev = into.get(name)
+  if (!prev) {
+    into.set(name, { ...next })
+    return
+  }
+  if (prev.conflicted) return
+  if (next.conflicted) {
+    prev.conflicted = true
+    return
+  }
+
+  if (next.sha) {
+    if (!prev.sha) prev.sha = next.sha
+    else if (prev.sha.toLowerCase() !== next.sha.toLowerCase()) prev.conflicted = true
+  }
+  if (next.sourceUrl) {
+    if (!prev.sourceUrl) prev.sourceUrl = next.sourceUrl
+    else if (normalizeGitUrl(prev.sourceUrl) !== normalizeGitUrl(next.sourceUrl)) {
+      prev.conflicted = true
+    }
+  }
+}
+
+interface ResolvedClone {
+  branch?: string
+  entries: Map<string, PinnedEntry>
+}
+
+function readClone(cache: RawMarketplaceCache): Map<string, PinnedEntry> {
+  const merged = new Map<string, PinnedEntry>()
+  for (const text of cache?.catalogs ?? []) {
+    for (const [name, entry] of readCatalog(text)) {
+      if (!merged.has(name) && merged.size >= MAX_CATALOG_ENTRIES) break
+      mergeEntry(merged, name, entry)
+    }
+  }
+  return merged
+}
+
+/**
+ * Which clone backs a marketplace, when the remote URL alone does not say.
+ *
+ * `readdir` order is not evidence, so two clones of one URL that nothing tells
+ * apart get no attribution at all rather than whichever the filesystem listed
+ * last. The tracked branch is the only other discriminator on disk: a clone that
+ * tracks a branch the marketplace does not use is the wrong checkout and is
+ * dropped, while a clone whose branch could not be read is merely unproven and
+ * stays in the running.
+ */
+function pickClone(
+  clones: readonly ResolvedClone[],
+  branch: string | null | undefined
+): ResolvedClone | undefined {
+  const declared = typeof branch === 'string' && branch.trim() ? branch.trim() : undefined
+  const usable = declared
+    ? clones.filter((c) => c.branch === undefined || c.branch === declared)
+    : clones
+  if (usable.length === 1) return usable[0]
+  const exact = usable.filter((c) => c.branch !== undefined && c.branch === declared)
+  return exact.length === 1 ? exact[0] : undefined
+}
+
+/** marketplace name → what its clone declares, or nothing when it is ambiguous. */
+function resolveClones(
+  caches: readonly RawMarketplaceCache[],
+  marketplaces: readonly MarketplaceSource[]
+): Map<string, Map<string, PinnedEntry>> {
+  const clonesByUrl = new Map<string, ResolvedClone[]>()
+  for (const cache of caches) {
+    const remote = parseGitRemote(cache?.gitConfig)
+    const url = normalizeGitUrl(remote.url)
+    if (!url) continue
+    const entries = readClone(cache)
+    if (!entries.size) continue
+    const clone: ResolvedClone = { branch: remote.branch, entries }
+    const existing = clonesByUrl.get(url)
+    if (existing) existing.push(clone)
+    else clonesByUrl.set(url, [clone])
+  }
+
+  const out = new Map<string, Map<string, PinnedEntry>>()
+  for (const marketplace of marketplaces) {
+    const url = normalizeGitUrl(marketplace?.url)
+    if (!url || !marketplace.name) continue
+    const clones = clonesByUrl.get(url)
+    if (!clones?.length) continue
+    // One clone can back several configured marketplaces pointing at it.
+    const clone = pickClone(clones, marketplace.branch)
+    if (clone) out.set(marketplace.name, clone.entries)
+  }
+  return out
+}
+
+/**
+ * Fill in `sha` — and the URL it pins — on catalog entries from the marketplace
+ * clones on disk.
  *
  * Scoped per marketplace, never globally: the official catalogs ship a dozen
  * colliding names (`vercel`, `stripe`, `sentry`, …), so a name-only lookup would
@@ -408,40 +665,33 @@ function mapPluginIndex(raw: unknown): Map<string, string> {
  * and the clone's own `marketplace.json` name ("xai-official") does not match the
  * configured source name ("xAI Official").
  *
- * Best effort throughout: a clone with no index, no remote, or no matching
- * marketplace simply leaves `sha` undefined.
+ * `sourceUrl` is overwritten deliberately. The catalog's sha pins the plugin's
+ * own repository, while `listAvailablePlugins` backfills `sourceUrl` from the
+ * MARKETPLACE repo; showing those two together reads as a commit the user could
+ * look up in the repo above it, which they cannot. So the pair is published or
+ * neither is: an entry whose repository the clone does not name stays unpinned.
+ *
+ * Best effort throughout: a clone with no catalog, no remote, no matching
+ * marketplace or a contradictory one simply leaves `sha` undefined.
  */
 export function applyPinnedShas(
   plugins: Plugin[],
   caches: readonly RawMarketplaceCache[],
   marketplaces: readonly MarketplaceSource[]
 ): void {
-  const namesByUrl = new Map<string, string[]>()
-  for (const marketplace of marketplaces) {
-    const url = normalizeGitUrl(marketplace.url)
-    if (!url || !marketplace.name) continue
-    const names = namesByUrl.get(url)
-    if (names) names.push(marketplace.name)
-    else namesByUrl.set(url, [marketplace.name])
-  }
-
-  const shasByMarketplace = new Map<string, Map<string, string>>()
-  for (const cache of caches) {
-    const url = normalizeGitUrl(cache.url)
-    if (!url) continue
-    const names = namesByUrl.get(url)
-    if (!names) continue
-    const shas = mapPluginIndex(cache.index)
-    if (!shas.size) continue
-    // One clone can back several configured marketplaces pointing at it.
-    for (const name of names) shasByMarketplace.set(name, shas)
-  }
-  if (!shasByMarketplace.size) return
+  const byMarketplace = resolveClones(caches, marketplaces)
+  if (!byMarketplace.size) return
 
   for (const plugin of plugins) {
-    // A sha the CLI itself reported wins; today it never reports one.
-    if (plugin.sha || !plugin.marketplace) continue
-    plugin.sha = shasByMarketplace.get(plugin.marketplace)?.get(plugin.name)
+    if (!plugin.marketplace) continue
+    const entry = byMarketplace.get(plugin.marketplace)?.get(plugin.name)
+    if (!entry || entry.conflicted || !entry.sha || !entry.sourceUrl) continue
+    // A validated sha the CLI itself reported wins (0.2.111 reports none). Its
+    // repository is unknown, so its URL is left alone unless the clone names the
+    // very same commit — pairing it with a different one is the mistake above.
+    if (plugin.sha && plugin.sha.toLowerCase() !== entry.sha.toLowerCase()) continue
+    plugin.sha = entry.sha
+    plugin.sourceUrl = entry.sourceUrl
   }
 }
 

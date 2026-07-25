@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AuthGate } from './components/AuthGate'
 import { ChatHome } from './components/ChatHome'
 import { Composer } from './components/Composer'
@@ -36,12 +37,34 @@ export function App() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  /**
+   * Viewport coords for the portalled Export menu. The menu cannot live inside
+   * .topbar: that header sets backdrop-filter, which makes it the containing
+   * block for fixed-position descendants, so the dismiss layer's `inset: 0`
+   * would resolve against the header strip instead of the viewport.
+   */
+  const [exportMenuPos, setExportMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const exportBtnRef = useRef<HTMLButtonElement | null>(null)
 
   const surface = g.surface
   /** Main pane is live conversation (not browse home) */
   const inConversation = !g.browsing && (surface === 'chat' || surface === 'project') && !!g.cwd
   const inChat = inConversation && surface === 'chat'
   const inProject = inConversation && surface === 'project'
+
+  /**
+   * The Export menu portals out of .app, so it would otherwise float above a
+   * modal and its Escape handler would compete with the modal's. Closing it
+   * when a modal takes over keeps Escape unambiguous.
+   */
+  const blockingModalOpen =
+    showAuthModal ||
+    showPlugins ||
+    !!g.permission ||
+    g.showYoloConfirm ||
+    g.showArchived ||
+    g.showSettings ||
+    g.showCliInstall
 
   useEffect(() => {
     if (g.auth && !g.auth.authenticated) {
@@ -52,7 +75,24 @@ export function App() {
   // The Export popover belongs to one session — never reopen it on the next one
   useEffect(() => {
     setExportMenuOpen(false)
-  }, [g.sessionId, surface, g.browsing])
+  }, [g.sessionId, surface, g.browsing, blockingModalOpen])
+
+  // Escape closes the menu; resize invalidates the coords it was placed with.
+  useEffect(() => {
+    if (!exportMenuOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      // No preventDefault/stopPropagation — anything else listening for Escape
+      // (modals, the composer) must still see the same keystroke.
+      if (e.key === 'Escape') setExportMenuOpen(false)
+    }
+    const onReflow = () => setExportMenuOpen(false)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('resize', onReflow)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', onReflow)
+    }
+  }, [exportMenuOpen])
 
   const statusClass =
     g.connection === 'ready'
@@ -102,6 +142,18 @@ export function App() {
     if (g.sessionId) void g.exportSession(g.sessionId, format)
   }
 
+  const toggleExportMenu = () => {
+    if (exportMenuOpen) {
+      setExportMenuOpen(false)
+      return
+    }
+    const r = exportBtnRef.current?.getBoundingClientRect()
+    if (!r) return
+    // Right-anchored so the menu hangs under the button, never off-screen
+    setExportMenuPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) })
+    setExportMenuOpen(true)
+  }
+
   /** Opening an archived session is how you say "I want this back". */
   const openArchived = async (s: SessionInfo) => {
     await g.unarchiveSession(s.id)
@@ -115,11 +167,8 @@ export function App() {
     <div className="app">
       <Sidebar
         alwaysApprove={g.yoloActive}
-        models={g.models}
-        currentModel={g.settings?.model}
         authLabel={g.auth?.accountLabel}
         authenticated={g.isAuthenticated}
-        permissionMode={g.permissionMode}
         surface={surface}
         inConversation={inConversation}
         browsing={g.browsing}
@@ -144,9 +193,7 @@ export function App() {
             void g.updateSettings({ alwaysApprove: true })
           }
         }}
-        onChangePermissionMode={(mode) => void g.changePermissionMode(mode)}
         onOpenSettings={() => g.setShowSettings(true)}
-        onChangeModel={(id) => void g.changeModel(id)}
         onLogout={() => void g.logout()}
         onSignIn={() => setShowAuthModal(true)}
       />
@@ -192,46 +239,54 @@ export function App() {
               </button>
             ) : null}
             {inConversation && g.sessionId ? (
-              <div className="topbar-export">
+              <>
                 <button
+                  ref={exportBtnRef}
                   type="button"
                   className="btn btn-ghost btn-sm"
                   aria-haspopup="menu"
                   aria-expanded={exportMenuOpen}
-                  onClick={() => setExportMenuOpen((v) => !v)}
+                  onClick={toggleExportMenu}
                   title="Save this transcript to a file"
                 >
                   Export
                 </button>
-                {exportMenuOpen ? (
-                  <>
-                    <button
-                      type="button"
-                      className="session-menu-backdrop"
-                      aria-label="Close export menu"
-                      onClick={() => setExportMenuOpen(false)}
-                    />
-                    <div className="session-menu" role="menu">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => exportCurrent('md')}
-                      >
-                        <span className="session-menu-ico">↧</span>
-                        Markdown
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => exportCurrent('json')}
-                      >
-                        <span className="session-menu-ico">↧</span>
-                        JSON
-                      </button>
-                    </div>
-                  </>
-                ) : null}
-              </div>
+                {exportMenuOpen && exportMenuPos
+                  ? createPortal(
+                      <>
+                        <button
+                          type="button"
+                          className="session-menu-backdrop"
+                          aria-label="Close export menu"
+                          onClick={() => setExportMenuOpen(false)}
+                        />
+                        <div
+                          className="session-menu session-menu-floating"
+                          role="menu"
+                          style={{ top: exportMenuPos.top, right: exportMenuPos.right }}
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => exportCurrent('md')}
+                          >
+                            <span className="session-menu-ico">↧</span>
+                            Markdown
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => exportCurrent('json')}
+                          >
+                            <span className="session-menu-ico">↧</span>
+                            JSON
+                          </button>
+                        </div>
+                      </>,
+                      document.body
+                    )
+                  : null}
+              </>
             ) : null}
             {inConversation ? (
               <button
@@ -301,15 +356,32 @@ export function App() {
               <code className="path-code export-banner-path">{g.exportNotice.path}</code>
               {g.exportNotice.revealError ? (
                 <span className="export-banner-warn">
-                  Could not open the folder — {g.exportNotice.revealError}
+                  Could not open the folder ({g.exportNotice.revealError}) — the path above
+                  is where the file went.
+                </span>
+              ) : null}
+              {g.exportNotice.copyError ? (
+                <span className="export-banner-warn">
+                  Could not copy ({g.exportNotice.copyError}) — select the path above instead.
                 </span>
               ) : null}
             </div>
             <div className="export-banner-actions">
+              {/* Copy is primary because it always works. Reveal only succeeds for
+                  paths inside the app's allowed roots, and the save dialog defaults
+                  to Documents, which is outside them — so it stays a ghost. */}
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
+                onClick={() => void g.copyExportPath()}
+              >
+                {g.exportNotice.copied ? 'Copied' : 'Copy path'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
                 onClick={() => void g.revealExport()}
+                title="Open the containing folder"
               >
                 Show in folder
               </button>

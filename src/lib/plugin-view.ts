@@ -129,9 +129,21 @@ export function auditPlugin(plugin: Plugin): RiskTag[] {
   return tags
 }
 
-/** What `grok plugin install <SOURCE>` receives. Never derived from free-form catalog prose. */
+/**
+ * What `grok plugin install <SOURCE>` receives. Never derived from free-form catalog prose.
+ *
+ * `<SOURCE>` must be a git URL, a `user/repo` shorthand, or a local path — verified against
+ * `grok plugin install --help` on 0.2.111. There is NO install-by-name form, so a plugin
+ * name is not a usable source: the CLI would read it as a path or a repo shorthand and
+ * install the wrong thing, or nothing. Returning '' instead leaves the trust modal's
+ * confirm button disabled, which is the honest outcome when Grocky cannot name a target.
+ *
+ * For a catalog entry that declares its own repository, `sourceUrl` is that repository —
+ * the same one the pinned commit refers to. Entries that declare none fall back to the
+ * marketplace repo URL, which installs from the marketplace rather than the plugin's
+ * upstream; that asymmetry is why the trust modal shows the source it is about to use.
+ */
 export function installSource(plugin: Plugin): string {
   const url = typeof plugin?.sourceUrl === 'string' ? plugin.sourceUrl.trim() : ''
-  if (url) return url
-  return typeof plugin?.name === 'string' ? plugin.name.trim() : ''
+  return url
 }

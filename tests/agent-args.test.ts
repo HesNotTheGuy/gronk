@@ -4,9 +4,11 @@ import {
   CHAT_RULES,
   CHAT_SYSTEM_PROMPT,
   buildAgentArgs,
+  isAutoApproveActive,
+  normalizePermissionMode,
   type BuildAgentArgsOptions
 } from '../electron/main/agent-args'
-import type { PermissionMode } from '../shared/types'
+import { PERMISSION_MODE_OPTIONS, type PermissionMode } from '../shared/types'
 
 const ALL_MODES: PermissionMode[] = [
   'default',
@@ -51,6 +53,111 @@ test('every permission mode round-trips into argv', () => {
     assert.equal(permissionMode, mode, `${mode} must survive derivation`)
     assert.equal(valueAfter(args, '--permission-mode'), mode)
     assert.equal(args.filter((a) => a === '--permission-mode').length, 1)
+  }
+})
+
+// ── Only a mode grok knows may reach argv ───────────────────────────
+
+// permissionMode is read from a user-writable JSON file and becomes the value of
+// --permission-mode. A mode grok does not recognise makes it fall back to
+// ~/.grok/config.toml (commonly permission_mode = "auto"), silently auto-approving
+// every tool while the UI shows something gated.
+
+test('the mode list used here is the authoritative one from shared/types', () => {
+  assert.deepEqual([...ALL_MODES].sort(), PERMISSION_MODE_OPTIONS.map((o) => o.id).sort())
+})
+
+test('every authoritative mode is accepted unchanged', () => {
+  for (const mode of ALL_MODES) {
+    assert.equal(normalizePermissionMode(mode), mode)
+  }
+})
+
+test('anything not on the list fails safe to the gated default mode', () => {
+  const bogus: unknown[] = [
+    'auto-approve',
+    'yolo',
+    'AUTO',
+    'bypasspermissions',
+    ' default',
+    'default ',
+    '',
+    undefined,
+    null,
+    42,
+    true,
+    {},
+    ['auto']
+  ]
+  for (const value of bogus) {
+    assert.equal(normalizePermissionMode(value), 'default', `${JSON.stringify(value)}`)
+  }
+})
+
+test('a corrupted stored mode never reaches argv, ack or no ack', () => {
+  for (const alwaysApproveAck of [true, false]) {
+    const result = build({
+      permissionMode: 'auto-approve' as unknown as PermissionMode,
+      alwaysApproveAck
+    })
+    assert.equal(result.permissionMode, 'default')
+    assert.equal(valueAfter(result.args, '--permission-mode'), 'default')
+    assert.ok(!result.args.includes('auto-approve'), 'the bogus value must not appear in argv')
+    assert.ok(!result.args.includes('--always-approve'))
+    assert.equal(result.alwaysApprove, false)
+  }
+})
+
+test('argv only ever carries a mode grok knows', () => {
+  const inputs: unknown[] = [...ALL_MODES, undefined, '', 'auto-approve', null, 7]
+  for (const input of inputs) {
+    const { args } = build({
+      permissionMode: input as PermissionMode,
+      alwaysApproveAck: true
+    })
+    const emitted = valueAfter(args, '--permission-mode')
+    assert.ok(
+      ALL_MODES.includes(emitted as PermissionMode),
+      `emitted ${String(emitted)} for input ${JSON.stringify(input)}`
+    )
+  }
+})
+
+// ── The runtime gate follows the posture the child booted with ──────
+
+// Boot posture and the mid-session gate used to be derived independently, so a
+// session could drift from how it was spawned. Both must now agree.
+
+test('a gated boot does not auto-approve when YOLO is switched on mid-session', () => {
+  // The child is still asking for permission; answering for the user would grant
+  // this session more access than it was started with. Applies on the next boot.
+  assert.equal(isAutoApproveActive(false, { alwaysApprove: true, alwaysApproveAck: true }), false)
+})
+
+test('a bypass boot stops auto-approving the moment YOLO is switched off', () => {
+  // De-escalation is always safe to honour immediately, even though the child
+  // keeps its --always-approve until it is respawned.
+  assert.equal(isAutoApproveActive(true, { alwaysApprove: false, alwaysApproveAck: true }), false)
+})
+
+test('auto-approve needs the boot posture, the live toggle and the acknowledgement', () => {
+  assert.equal(isAutoApproveActive(true, { alwaysApprove: true, alwaysApproveAck: true }), true)
+  assert.equal(isAutoApproveActive(true, { alwaysApprove: true, alwaysApproveAck: false }), false)
+  assert.equal(isAutoApproveActive(true, { alwaysApprove: true }), false, 'a revoked ack closes it')
+  assert.equal(isAutoApproveActive(false, { alwaysApprove: false, alwaysApproveAck: true }), false)
+})
+
+test('the gate matches the emitted argv for an unchanged session', () => {
+  for (const mode of ALL_MODES) {
+    const built = build({ permissionMode: mode, alwaysApproveAck: true })
+    assert.equal(
+      isAutoApproveActive(built.alwaysApprove, {
+        alwaysApprove: built.alwaysApprove,
+        alwaysApproveAck: true
+      }),
+      built.args.includes('--always-approve'),
+      `mode ${mode}`
+    )
   }
 })
 

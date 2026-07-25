@@ -333,6 +333,33 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* Rail lists are capped, and the count above them only describes what is drawn.
+   This row is the only thing telling you the rest exist — and where to find them. */
+.sidebar-rail-more {
+  margin: 2px 4px 0;
+  padding: 6px 8px;
+  min-width: 0;
+  text-align: left;
+  white-space: normal;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-4);
+  background: transparent;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  transition:
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.sidebar-rail-more:hover {
+  color: var(--ink-2);
+  border-color: var(--line-2);
+}
+
 .sidebar-rail-body {
   flex: 0 0 auto;
   overflow: visible;
@@ -4651,16 +4678,20 @@ html[data-theme='light'] .auth-card {
 }
 
 /* ---------- Transcript export ----------
-   The session menu (SessionCard) and the topbar control share .session-menu,
-   so the popover only needs a positioned parent here. */
-.topbar-export {
-  position: relative;
+   The session menu (SessionCard) and the topbar control share .session-menu.
+   The topbar copy is portalled onto document.body and placed from the button's
+   rect, because .topbar sets backdrop-filter: a computed backdrop-filter other
+   than `none` makes the header the containing block for fixed-position
+   descendants, so .session-menu-backdrop's `inset: 0` would cover the header
+   strip instead of the viewport and outside clicks would fall through. */
+.session-menu-floating {
+  position: fixed;
+  /* top/right come from inline styles — see toggleExportMenu() in App.tsx */
 }
 
-/* backdrop-filter makes .topbar its own stacking context, so a dropdown inside
-   it would paint under the banners/chat that follow. Lifting the header is
-   cheaper than portalling the menu out of it (see .menu-pop). Still below the
-   modal layer: .main is z-index 2 inside .app, modals sit outside it at 50. */
+/* backdrop-filter already makes .topbar its own stacking context; this keeps
+   the blurred header painting above the banners that animate in beneath it.
+   Still below the modal layer: .main is z-index 2 inside .app, modals at 50. */
 .topbar {
   position: relative;
   z-index: 3;
