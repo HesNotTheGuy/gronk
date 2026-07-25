@@ -201,9 +201,11 @@ export class AgentManager {
 
     // Global flags before `agent` subcommand
     const agentArgs: string[] = []
-    if (permissionMode && permissionMode !== 'default') {
-      agentArgs.push('--permission-mode', permissionMode)
-    }
+    // ALWAYS pass the mode, including 'default'. Omitting it lets the CLI fall back to
+    // ~/.grok/config.toml `permission_mode` (commonly "auto"), which silently auto-approves
+    // every tool while Grocky's UI still shows the gated Default mode. Verified against
+    // grok 0.2.111: no flag => 0 permission requests; `--permission-mode default` => prompts.
+    agentArgs.push('--permission-mode', permissionMode || 'default')
     if (this.surface === 'chat') {
       // Conversational Grok (website/X-style) — still CLI-backed, not a web wrap
       agentArgs.push(

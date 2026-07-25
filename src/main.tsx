@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import './styles.css'
 
 const rootEl = document.getElementById('root')
@@ -24,7 +25,9 @@ try {
   document.documentElement.dataset.platform = window.grocky.platform
   createRoot(rootEl).render(
     <StrictMode>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </StrictMode>
   )
 } catch (err) {
