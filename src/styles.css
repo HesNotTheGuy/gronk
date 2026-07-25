@@ -627,6 +627,14 @@ button {
   padding-right: 150px;
 }
 
+/* macOS: titleBarStyle 'hiddenInset' keeps the traffic lights, positioned at
+   x:16 in createWindow(). They occupy roughly the first 78px of the top-left —
+   exactly where .topbar-left's kicker and title start at x:22. Reserve room so
+   the window buttons never sit on top of the session title. */
+:root[data-platform='darwin'] .topbar {
+  padding-left: 92px;
+}
+
 .topbar-left {
   display: flex;
   flex-direction: column;
@@ -4552,5 +4560,92 @@ html[data-theme='light'] .auth-card {
 
   .mcp-target {
     grid-column: 1 / -1;
+  }
+}
+
+/* ---------- Details modal (read-only, installed plugins) ----------
+   Same footprint as the trust modal so the two read as one family, but it is
+   never install-shaped: no confirm, no danger border, no trust affordance.
+   All colours come from the theme variables, so light mode needs no override
+   here; .details-code rides the existing html[data-theme='light'] .path-code
+   rule because it is applied alongside .path-code. */
+.details-modal {
+  width: min(640px, 100%);
+  max-height: min(86vh, 860px);
+  overflow: auto;
+}
+
+.details-modal h3 {
+  /* Untrusted plugin name — wrap instead of widening the dialog. */
+  overflow-wrap: anywhere;
+}
+
+.details-meta {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 5px 10px;
+  align-items: start;
+  margin: 0;
+  font-size: 12px;
+}
+
+.details-meta dt {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-top: 3px;
+}
+
+.details-meta dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--ink-2);
+  line-height: 1.45;
+  /* Untrusted catalog text — never let it stretch the dialog. */
+  overflow-wrap: anywhere;
+}
+
+.details-code {
+  padding: 6px 8px;
+  font-size: 10px;
+}
+
+.details-desc {
+  /* Untrusted description — same wrapping guarantee as .plugin-desc. */
+  overflow-wrap: anywhere;
+}
+
+.details-counts {
+  margin-bottom: 10px;
+}
+
+.details-inventory {
+  /* Taller than the pre-install list: this is the reason to open the dialog. */
+  max-height: 320px;
+}
+
+.details-actions-spacer {
+  flex: 1;
+}
+
+@media (max-width: 720px) {
+  .details-meta {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .details-meta dd {
+    margin-bottom: 6px;
+  }
+
+  .details-inventory {
+    max-height: 220px;
+  }
+
+  /* Let the actions pack together instead of stranding Close on its own row. */
+  .details-actions-spacer {
+    display: none;
   }
 }

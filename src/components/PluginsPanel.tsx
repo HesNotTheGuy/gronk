@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { McpAddInput, McpServer, MarketplaceSource, Plugin } from '../../shared/types'
 import { McpServersPanel } from './McpServersPanel'
 import { PluginCard } from './PluginCard'
+import { PluginDetailsModal } from './PluginDetailsModal'
 import { PluginTrustModal } from './PluginTrustModal'
 import { plainText } from '../lib/plugin-view'
 
@@ -69,6 +70,7 @@ export function PluginsPanel({
   const [tab, setTab] = useState<Tab>('installed')
   const [query, setQuery] = useState('')
   const [trustFor, setTrustFor] = useState<Plugin | null>(null)
+  const [detailsFor, setDetailsFor] = useState<Plugin | null>(null)
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null)
   const catalogLoaded = useRef(false)
 
@@ -100,6 +102,11 @@ export function PluginsPanel({
   const list = tab === 'marketplace' ? available : installed
   const filtered = list.filter((p) => matches(p, query.trim()))
   const installedNames = new Set(installed.map((p) => p.name))
+  // Re-read the open details entry from the live list so Enable/Disable results
+  // show up without reopening the modal; fall back to the captured snapshot.
+  const detailsPlugin = detailsFor
+    ? installed.find((p) => p.name === detailsFor.name) || detailsFor
+    : null
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Plugins and skills">
@@ -196,7 +203,16 @@ export function PluginsPanel({
                     onInstall={
                       installedNames.has(p.name) ? undefined : (plugin) => setTrustFor(plugin)
                     }
-                    onDetails={p.status === 'available' ? (plugin) => setTrustFor(plugin) : undefined}
+                    onDetails={(plugin) =>
+                      // Catalog entries get the install-shaped trust modal; anything
+                      // already on disk gets the read-only details modal. A catalog
+                      // row whose name is already installed keeps status 'available',
+                      // so match on the installed set too — otherwise Details offers
+                      // "Trust & install" for something the user already has.
+                      plugin.status === 'available' && !installedNames.has(plugin.name)
+                        ? setTrustFor(plugin)
+                        : setDetailsFor(installed.find((i) => i.name === plugin.name) ?? plugin)
+                    }
                     onEnable={onEnable}
                     onDisable={onDisable}
                     onUninstall={(name) => setConfirmUninstall(name)}
@@ -220,6 +236,19 @@ export function PluginsPanel({
           onConfirm={(source, trust) => {
             setTrustFor(null)
             onInstall(source, trust)
+          }}
+        />
+
+        <PluginDetailsModal
+          open={detailsPlugin !== null}
+          plugin={detailsPlugin}
+          busy={busyName !== null}
+          onClose={() => setDetailsFor(null)}
+          onEnable={onEnable}
+          onDisable={onDisable}
+          onUninstall={(name) => {
+            setDetailsFor(null)
+            setConfirmUninstall(name)
           }}
         />
 

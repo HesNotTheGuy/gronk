@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { spawn } from 'node:child_process'
@@ -1072,8 +1072,68 @@ function hardenSession(): void {
   session.defaultSession.setPermissionCheckHandler(() => false)
 }
 
+function setupApplicationMenu(): void {
+  // Electron's stock "File / Edit / View / Window / Help" menu is not ours: it
+  // advertises an unfinished app and its View submenu ships reload + devtools
+  // accelerators we do not want reachable in a packaged build. Windows already
+  // hid it behind the custom title bar; Linux never did, so it goes there too.
+  // Dev devtools are opened explicitly in createWindow(), not from a menu.
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null)
+    return
+  }
+
+  // macOS is the exception: Cmd+X/C/V/A/Z and Cmd+Q are delivered by menu item
+  // *roles*, not by the renderer, so setting a null menu silently kills
+  // copy/paste in every text input and leaves the app unquittable by keyboard.
+  // Keep a minimal role-only menu instead — roles let the OS supply the labels,
+  // accelerators and localization, and none of them navigate or open devtools.
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      // macOS overrides this label with the bundle name; set it for parity anyway.
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { type: 'separator' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      // Cmd+W closes the window but not the app: window-all-closed skips quit on
+      // darwin and the 'activate' handler below rebuilds the window from the dock.
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        { role: 'close' }
+      ]
+    }
+  ]
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
 app.whenReady().then(() => {
   hardenSession()
+  setupApplicationMenu()
   registerIpc()
   createWindow()
 

@@ -71,6 +71,15 @@ export function PluginCard({
             className="btn btn-ghost btn-sm"
             disabled={busy}
             onClick={() => onDetails(plugin)}
+            // Offered for every status. For a catalog entry the container routes
+            // this to the trust modal; for an installed or disabled plugin it
+            // routes to the read-only details modal.
+            aria-label={`Details for ${name}`}
+            title={
+              available
+                ? 'Review the source, risk tags and inventory before installing'
+                : 'Inspect what this plugin contains — read only'
+            }
           >
             Details
           </button>
@@ -81,8 +90,15 @@ export function PluginCard({
             className="btn btn-secondary btn-sm"
             disabled={busy || !onInstall}
             onClick={() => onInstall?.(plugin)}
+            title={
+              onInstall
+                ? undefined
+                : 'Already installed — see the Installed tab to disable or remove it'
+            }
           >
-            {busy ? busyLabel : 'Install…'}
+            {/* The panel withholds onInstall for a catalog row the user already has.
+                Saying "Install…" there invites a click that cannot do anything. */}
+            {busy ? busyLabel : onInstall ? 'Install…' : 'Installed'}
           </button>
         ) : isDisabled ? (
           <button

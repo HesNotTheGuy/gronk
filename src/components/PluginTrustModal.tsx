@@ -67,7 +67,7 @@ export function PluginTrustModal({ open, plugin, busy, onCancel, onConfirm }: Pr
           <code className="path-code">{source || 'unknown source'}</code>
           <div className="section-label">Pinned commit</div>
           <code className="path-code trust-sha">
-            {sha || 'not pinned — this source can change under you'}
+            {sha || 'unknown — the CLI catalog does not report one'}
           </code>
           {plugin.marketplace ? (
             <p className="settings-hint">
@@ -76,9 +76,14 @@ export function PluginTrustModal({ open, plugin, busy, onCancel, onConfirm }: Pr
             </p>
           ) : null}
           {!sha ? (
+            // Verified against grok 0.2.111: `plugin list --available --json` emits no
+            // sha/commit field at all, so this branch is what every entry hits today.
+            // Say what Grocky actually knows — claiming "not pinned" would assert the
+            // source IS mutable, which we have not established either way.
             <p className="settings-hint warn-text">
-              No pinned commit. A mutable branch or tag can silently ship new code on a later
-              install or update.
+              Grocky cannot see which commit this installs. The marketplace may still pin one, but
+              the CLI does not report it — so you cannot confirm here that a later install gets the
+              same code.
             </p>
           ) : null}
           {unverified ? (

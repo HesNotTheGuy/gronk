@@ -12,6 +12,7 @@ import {
   type JsonRpcId,
   type PermissionOption
 } from './acp/client'
+import { buildAgentArgs } from './agent-args'
 import {
   appendPermissionAudit,
   getSettings,
@@ -183,55 +184,19 @@ export class AgentManager {
 
     const model = options?.model ?? settings.model
     this.currentModel = model
-    this.alwaysApprove = !!(options?.alwaysApprove ?? settings.alwaysApprove)
-    // Hard safety: store may refuse alwaysApprove without ack
-    if (this.alwaysApprove && !settings.alwaysApproveAck) {
-      this.alwaysApprove = false
-    }
 
-    // permission-mode is a top-level grok flag (before `agent` subcommand)
-    let permissionMode = settings.permissionMode || 'default'
-    if (this.alwaysApprove) {
-      permissionMode = 'bypassPermissions'
-    } else if (permissionMode === 'bypassPermissions' && !settings.alwaysApproveAck) {
-      permissionMode = 'default'
-    }
-
-    this.surface = options?.surface === 'chat' ? 'chat' : 'project'
-
-    // Global flags before `agent` subcommand
-    const agentArgs: string[] = []
-    // ALWAYS pass the mode, including 'default'. Omitting it lets the CLI fall back to
-    // ~/.grok/config.toml `permission_mode` (commonly "auto"), which silently auto-approves
-    // every tool while Grocky's UI still shows the gated Default mode. Verified against
-    // grok 0.2.111: no flag => 0 permission requests; `--permission-mode default` => prompts.
-    agentArgs.push('--permission-mode', permissionMode || 'default')
-    if (this.surface === 'chat') {
-      // Conversational Grok (website/X-style) — still CLI-backed, not a web wrap
-      agentArgs.push(
-        '--system-prompt-override',
-        [
-          'You are Grok, built by xAI.',
-          'You are in Grocky desktop Chat mode — a general conversation like grok.com or Grok on X.',
-          'Be helpful, witty when appropriate, and clear.',
-          'Answer directly. Do not browse or edit the local filesystem unless the user explicitly asks.',
-          'You may use web search when current information helps.',
-          'You are not limited to coding topics.'
-        ].join(' ')
-      )
-      agentArgs.push(
-        '--rules',
-        'Chat mode: prefer direct answers over tool-heavy exploration. Never modify files unless asked.'
-      )
-    }
-    agentArgs.push('agent')
-    if (model) {
-      agentArgs.push('-m', model)
-    }
-    if (this.alwaysApprove || permissionMode === 'bypassPermissions') {
-      agentArgs.push('--always-approve')
-    }
-    agentArgs.push('stdio')
+    // All permission derivation lives in buildAgentArgs — adopt what it decided
+    // rather than recomputing the downgrades here (they must never drift apart).
+    const built = buildAgentArgs({
+      permissionMode: settings.permissionMode,
+      alwaysApprove: options?.alwaysApprove ?? settings.alwaysApprove,
+      alwaysApproveAck: settings.alwaysApproveAck,
+      model,
+      surface: options?.surface
+    })
+    this.alwaysApprove = built.alwaysApprove
+    this.surface = built.surface
+    const agentArgs = built.args
 
     this.setState('starting')
     this.cwd = normalizeCwd(cwd)
