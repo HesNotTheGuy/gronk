@@ -98,9 +98,13 @@ export function setSettings(partial: Partial<AppSettings>): AppSettings {
     ...partial
   }
 
-  // Keep permissionMode ↔ alwaysApprove in sync
+  // Keep permissionMode ↔ alwaysApprove in sync.
+  // Only `priorAck` (the ack ALREADY on disk) may unlock YOLO. Reading
+  // `merged.alwaysApproveAck` would accept an ack supplied in this same call,
+  // which is exactly the one-shot self-authorization FIX-14 exists to stop.
+  // The UI acknowledges and enables in two separate calls (`confirmYolo`).
   if (partial.permissionMode === 'bypassPermissions') {
-    if (priorAck || merged.alwaysApproveAck) {
+    if (priorAck) {
       merged.alwaysApprove = true
     } else {
       merged.permissionMode = 'default'
@@ -111,7 +115,7 @@ export function setSettings(partial: Partial<AppSettings>): AppSettings {
   }
 
   if (partial.alwaysApprove === true) {
-    if (priorAck || merged.alwaysApproveAck) {
+    if (priorAck) {
       merged.alwaysApprove = true
       merged.permissionMode = 'bypassPermissions'
     } else {

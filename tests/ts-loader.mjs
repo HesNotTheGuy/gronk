@@ -13,10 +13,22 @@
  */
 import { registerHooks } from 'node:module'
 import { existsSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { dirname, join } from 'node:path'
+
+/**
+ * `electron` is a native binary that cannot be imported outside an Electron
+ * process, so main-process modules that only need `app.getPath` are redirected
+ * to a stub. Tests import the same stub to configure it — the module cache makes
+ * both sides the one instance.
+ */
+const ELECTRON_STUB = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), 'stubs', 'electron.ts')).href
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    if (specifier === 'electron') {
+      return { url: ELECTRON_STUB, shortCircuit: true }
+    }
     const relative = specifier.startsWith('./') || specifier.startsWith('../')
     const hasExtension = /\.[a-z0-9]+$/i.test(specifier)
     if (relative && !hasExtension && context.parentURL) {

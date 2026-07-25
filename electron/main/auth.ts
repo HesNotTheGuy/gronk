@@ -99,15 +99,19 @@ function runGrok(
   })
 }
 
-function sanitizeCliText(text: string): string {
+export function sanitizeCliText(text: string): string {
   return redactSecrets(text).trim()
 }
 
 /** FIX-18: never surface emails in accountLabel */
-function parseLoginLabel(modelsOut: string): string | undefined {
+export function parseLoginLabel(modelsOut: string): string | undefined {
   // e.g. "You are logged in with grok.com."
-  const m = modelsOut.match(/You are logged in with\s+(.+?)(?:\.|$)/im)
-  const m2 = modelsOut.match(/Logged in as\s+(.+?)(?:\.|$)/im)
+  // The trailing period is anchored to end-of-line. A lazy `(.+?)(?:\.|$)` stopped
+  // at the FIRST dot, which both truncated "grok.com" to "grok" and — worse — turned
+  // "first.last@corp.com" into "first", so the `@` guard below never fired and a
+  // fragment of the user's email was surfaced as the account label.
+  const m = modelsOut.match(/You are logged in with\s+(.+?)\.?\s*$/im)
+  const m2 = modelsOut.match(/Logged in as\s+(.+?)\.?\s*$/im)
   let label = (m?.[1] || m2?.[1] || '').trim().replace(/\.$/, '')
   if (!label) return undefined
   if (/@/.test(label)) return 'Signed in'
@@ -118,7 +122,7 @@ function parseLoginLabel(modelsOut: string): string | undefined {
   return 'Signed in'
 }
 
-function looksUnauthenticated(stdout: string, stderr: string): boolean {
+export function looksUnauthenticated(stdout: string, stderr: string): boolean {
   const t = `${stdout}\n${stderr}`.toLowerCase()
   return /not logged in|not authenticated|please (run )?grok login|authentication required|unauthorized|invalid api key|no credentials|sign in to continue|login required|auth required|unauthori[sz]ed/.test(
     t
@@ -260,7 +264,7 @@ export async function loginWithCli(method: LoginMethod = 'oauth'): Promise<Login
   }
 }
 
-function extractDeviceHint(text: string): string | undefined {
+export function extractDeviceHint(text: string): string | undefined {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())

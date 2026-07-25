@@ -5,6 +5,16 @@ import { spawn } from 'node:child_process'
 import { agentManager } from './agent-manager'
 import { isChatWorkspace, normalizePath } from '../../shared/path'
 import {
+  assertTrustedSender,
+  encodeSessionCwdKey,
+  IMAGE_EXT_SET,
+  isAllowedExternalUrl,
+  isAppUrl,
+  isPathInside,
+  MAX_IMAGE_BYTES,
+  mimeForImageExt
+} from './ipc-guard'
+import {
   addRecentProject,
   archiveSession,
   deleteSession,
@@ -64,53 +74,13 @@ if (!gotLock) {
 
 let mainWindow: BrowserWindow | null = null
 
-const ALLOWED_EXTERNAL_SCHEMES = new Set(['https:', 'http:', 'mailto:'])
+/** isAppUrl with this process's dev-server env applied. */
+function isAppUrlLocal(target: string): boolean {
+  return isAppUrl(target, process.env.ELECTRON_RENDERER_URL)
+}
 
 function openExternalSafely(target: string): void {
-  try {
-    const url = new URL(target)
-    if (ALLOWED_EXTERNAL_SCHEMES.has(url.protocol)) void shell.openExternal(target)
-  } catch {
-    /* ignore malformed */
-  }
-}
-
-function isLocalDevHost(hostname: string): boolean {
-  return (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '[::1]' ||
-    hostname === '::1'
-  )
-}
-
-function isAppUrl(target: string): boolean {
-  try {
-    const u = new URL(target)
-    if (process.env.ELECTRON_RENDERER_URL) {
-      // Dev: any localhost / 127.0.0.1 page from the Vite server
-      return (u.protocol === 'http:' || u.protocol === 'https:') && isLocalDevHost(u.hostname)
-    }
-    return u.protocol === 'file:'
-  } catch {
-    return false
-  }
-}
-
-function assertTrustedSender(e: Electron.IpcMainInvokeEvent): void {
-  const url = e.senderFrame?.url ?? ''
-  let ok = false
-  try {
-    if (process.env.ELECTRON_RENDERER_URL) {
-      const u = new URL(url)
-      ok = (u.protocol === 'http:' || u.protocol === 'https:') && isLocalDevHost(u.hostname)
-    } else {
-      ok = url.startsWith('file://')
-    }
-  } catch {
-    ok = false
-  }
-  if (!ok) throw new Error(`Rejected IPC from untrusted sender: ${url || '(empty)'}`)
+  if (isAllowedExternalUrl(target)) void shell.openExternal(target)
 }
 
 function assertString(value: unknown, name: string): string {
@@ -284,7 +254,7 @@ function createWindow(): void {
   })
 
   const blockOffOriginNav = (e: Electron.Event, url: string): void => {
-    if (isAppUrl(url)) return
+    if (isAppUrlLocal(url)) return
     e.preventDefault()
     openExternalSafely(url)
   }
@@ -886,59 +856,12 @@ function registerIpc(): void {
   })
 }
 
-const IMAGE_EXT_SET = new Set([
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.gif',
-  '.webp',
-  '.bmp',
-  '.svg'
-])
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024 // 20 MB
-
-function mimeForImageExt(ext: string): string {
-  switch (ext.toLowerCase()) {
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg'
-    case '.png':
-      return 'image/png'
-    case '.gif':
-      return 'image/gif'
-    case '.webp':
-      return 'image/webp'
-    case '.bmp':
-      return 'image/bmp'
-    case '.svg':
-      return 'image/svg+xml'
-    default:
-      return 'application/octet-stream'
-  }
-}
-
-function isPathInside(root: string, target: string): boolean {
-  const nRoot = path.resolve(root)
-  const nTarget = path.resolve(target)
-  if (process.platform === 'win32') {
-    const r = nRoot.toLowerCase()
-    const t = nTarget.toLowerCase()
-    return t === r || t.startsWith(r + '\\')
-  }
-  return nTarget === nRoot || nTarget.startsWith(nRoot + path.sep)
-}
-
 function grokSessionsRoot(): string {
   return path.join(app.getPath('home'), '.grok', 'sessions')
 }
 
 function chatWorkspaceRoot(): string {
   return path.join(app.getPath('userData'), 'chat-workspace')
-}
-
-/** Encode cwd the same way Grok CLI does for session storage folders. */
-function encodeSessionCwdKey(cwd: string): string {
-  return encodeURIComponent(normalizePath(cwd))
 }
 
 function resolveImageCandidates(filePath: string): string[] {

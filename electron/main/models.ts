@@ -50,11 +50,11 @@ export async function listModels(): Promise<ModelInfo[]> {
   })
 }
 
-function defaultModels(): ModelInfo[] {
+export function defaultModels(): ModelInfo[] {
   return [{ id: 'grok-4.5', name: 'Grok 4.5', isDefault: true }]
 }
 
-function parseModelsText(text: string): ModelInfo[] | null {
+export function parseModelsText(text: string): ModelInfo[] | null {
   if (!text.trim()) return null
   const models: ModelInfo[] = []
   const lines = text.split(/\r?\n/)
