@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type {
   AppSettings,
   AuthStatus,
+  CliVersionInfo,
   DataLocation,
   HealthStatus,
   LoginMethod,
@@ -10,6 +11,19 @@ import type {
   PermissionMode
 } from '../../shared/types'
 import { PermissionModeBar } from './PermissionModeBar'
+
+/**
+ * Colour for the CLI-version row.
+ *
+ * `unknown` stays neutral on purpose: we have no evidence the CLI is wrong, only
+ * that we could not read its version, and a red row for that is the cry-wolf the
+ * whole check exists to avoid. Only a real minor/major drift — the kind that can
+ * rename the JSON keys Grocky reads — earns the alarm colour.
+ */
+function cliVersionTone(info: CliVersionInfo | null): string {
+  if (!info || info.status === 'unknown') return ''
+  return info.status === 'ok' ? 'ok' : 'bad'
+}
 
 /** Store size, so the user can see what a move would actually carry. */
 function formatBytes(bytes?: number): string {
@@ -105,6 +119,7 @@ export function SettingsPanel({
   /** Chosen destination awaiting confirmation — a move is never one click. */
   const [pendingTarget, setPendingTarget] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [cliVersion, setCliVersion] = useState<CliVersionInfo | null>(null)
 
   // Closing the panel must not leave a confirmation armed for the next open.
   // Only setState here — never a prop — so this cannot re-fire on prop identity.
@@ -112,6 +127,28 @@ export function SettingsPanel({
     if (!open) {
       setPendingTarget(null)
       setConfirmReset(false)
+    }
+  }, [open])
+
+  // Probed straight from the panel rather than threaded through app state: the
+  // version is only ever shown here, and the main-process probe is cached and
+  // single-flighted, so re-reading it on each open costs nothing. Opening the
+  // panel is also the natural moment to refresh it.
+  useEffect(() => {
+    let cancelled = false
+    if (open) {
+      void window.grocky.getCliVersion().then(
+        (info) => {
+          if (!cancelled) setCliVersion(info)
+        },
+        () => {
+          // A failed probe must not blank out the rest of Settings.
+          if (!cancelled) setCliVersion(null)
+        }
+      )
+    }
+    return () => {
+      cancelled = true
     }
   }, [open])
 
@@ -221,6 +258,20 @@ export function SettingsPanel({
               <span>Grok CLI</span>
               <strong>{health?.grokFound ? 'Found' : 'Missing'}</strong>
             </div>
+            <div
+              className={`health-row ${cliVersionTone(cliVersion)}`}
+              title={
+                cliVersion
+                  ? `Grocky's plugin and MCP output parsing was verified against ${cliVersion.verifiedAgainst}`
+                  : undefined
+              }
+            >
+              <span>CLI version</span>
+              <strong>
+                {cliVersion?.current || '—'}
+                {cliVersion?.current && cliVersion.channel ? ` · ${cliVersion.channel}` : ''}
+              </strong>
+            </div>
             <div className={`health-row ${auth?.authenticated ? 'ok' : 'bad'}`}>
               <span>Auth</span>
               <strong>{auth?.authenticated ? 'OK' : 'Required'}</strong>
@@ -237,6 +288,17 @@ export function SettingsPanel({
                 : 'CLI found — sign in above before opening projects.'
               : 'Install Grok CLI or set a custom binary path below.'}
           </p>
+          {/*
+            Only shown once the CLI is actually present and its version differs
+            by more than a patch. A patch bump classifies as `ok` and prints
+            nothing — the CLI self-updates through those constantly, and nagging
+            about them would train the user to skip the message that matters.
+            The consequence is spelled out rather than the version diff, because
+            an empty plugin list is what the user will actually see.
+          */}
+          {health?.grokFound && cliVersion && cliVersion.status !== 'ok' && cliVersion.message ? (
+            <p className="settings-hint warn-text">{cliVersion.message}</p>
+          ) : null}
           <button type="button" className="btn btn-secondary btn-sm" onClick={onRefreshHealth}>
             Re-check
           </button>

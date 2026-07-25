@@ -24,6 +24,7 @@ import type {
   ProjectContext,
   PromptAttachment,
   SessionInfo,
+  SessionUsage,
   ToolCallInfo
 } from '../../shared/types'
 import {
@@ -98,6 +99,8 @@ export function useGrocky() {
   /** Only set when the store did NOT load cleanly — null means all good. */
   const [storeHealth, setStoreHealth] = useState<StoreHealth | null>(null)
   const [historySource, setHistorySource] = useState<string | null>(null)
+  /** Token/cost totals for the live session — null until the first turn completes. */
+  const [usage, setUsage] = useState<SessionUsage | null>(null)
   const [activePlan, setActivePlan] = useState<ActivePlan | null>(null)
   const [planCollapsed, setPlanCollapsed] = useState(false)
   /** home | chat | project — drives shell navigation */
@@ -156,11 +159,15 @@ export function useGrocky() {
         case 'session':
           setSessionId(event.sessionId)
           setCwd(event.cwd)
+          // Resuming replays this session's completed turns *before* this event
+          // arrives, so only drop the totals when they belong to another session.
+          setUsage((prev) => (prev && prev.sessionId === event.sessionId ? prev : null))
           break
         case 'history-clear':
           setMessages([])
           setHistorySource(null)
           setActivePlan(null)
+          setUsage(null)
           break
         case 'history-done':
           setHistorySource(event.source)
@@ -269,6 +276,9 @@ export function useGrocky() {
         }
         case 'models':
           setModels(event.models)
+          break
+        case 'usage':
+          setUsage(event.usage)
           break
         case 'auth':
           setAuth(event.auth)
@@ -390,6 +400,7 @@ export function useGrocky() {
       setPermission(null)
       setHistorySource(null)
       setActivePlan(null)
+      setUsage(null)
       setSurface('project')
       setBrowsing(false)
       setAgentSurface('project')
@@ -452,6 +463,7 @@ export function useGrocky() {
       setPermission(null)
       setHistorySource(null)
       setActivePlan(null)
+      setUsage(null)
       setSurface('chat')
       setBrowsing(false)
       setAgentSurface('chat')
@@ -520,6 +532,7 @@ export function useGrocky() {
       setBusy(true)
       setHistorySource(null)
       setActivePlan(null)
+      setUsage(null)
       setSessionId(session.id)
       setCwd(session.cwd)
       setSurface(isChat ? 'chat' : 'project')
@@ -1138,6 +1151,7 @@ export function useGrocky() {
       setSessionId(null)
       setCwd(null)
       setActivePlan(null)
+      setUsage(null)
       setPermission(null)
       setBusy(false)
       setConnection('idle')
@@ -1294,6 +1308,7 @@ export function useGrocky() {
     moveDataDir,
     resetDataDir,
     historySource,
+    usage,
     activePlan,
     planCollapsed,
     setPlanCollapsed,

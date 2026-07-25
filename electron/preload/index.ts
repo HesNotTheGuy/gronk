@@ -51,6 +51,7 @@ const api: GrockyApi = {
   logout: () => ipcRenderer.invoke('grocky:logout'),
   installCli: () => ipcRenderer.invoke('grocky:install-cli'),
   getStoreHealth: () => ipcRenderer.invoke('grocky:get-store-health'),
+  getCliVersion: () => ipcRenderer.invoke('grocky:get-cli-version'),
   getDataLocation: () => ipcRenderer.invoke('grocky:get-data-location'),
   chooseDataDir: () => ipcRenderer.invoke('grocky:choose-data-dir'),
   moveDataDir: (target: string) => ipcRenderer.invoke('grocky:move-data-dir', target),

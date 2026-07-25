@@ -16,6 +16,7 @@ import { Sidebar } from './components/Sidebar'
 import { YoloConfirm } from './components/YoloConfirm'
 import { CliInstall } from './components/CliInstall'
 import { PreviewPane } from './components/PreviewPane'
+import { UsageMeter } from './components/UsageMeter'
 import { useGrocky } from './hooks/useGrocky'
 import { folderName, isChatSession } from '../shared/path'
 import type { LoginMethod, SessionInfo } from '../shared/types'
@@ -549,6 +550,11 @@ export function App() {
             ) : null}
 
             {inConversation ? <AgentFleetStrip messages={g.messages} /> : null}
+
+            {/* Directly above the composer: in view whenever the user is about to
+                spend more, and it renders nothing until a turn has completed, so
+                it never greets an empty session. */}
+            {inConversation ? <UsageMeter usage={g.usage} /> : null}
 
             <Composer
               disabled={g.connection !== 'ready'}

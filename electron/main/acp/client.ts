@@ -4,7 +4,12 @@ import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
-import type { PermissionDecision, ToolCallInfo } from '../../../shared/types'
+import type {
+  PermissionDecision,
+  SessionUsage,
+  ToolCallInfo,
+  TurnUsage
+} from '../../../shared/types'
 import { redactSecrets } from '../redact'
 
 const MAX_ACP_LINE_BYTES = 8 * 1024 * 1024 // 8 MB
@@ -551,4 +556,264 @@ function normalizeStatus(status: unknown): ToolCallInfo['status'] {
   if (s.includes('cancel')) return 'cancelled'
   if (s.includes('pending')) return 'pending'
   return 'in_progress'
+}
+
+// ── Usage / cost accounting ────────────────────────────────────────────────
+/**
+ * Nano-USD. The CLI reports cost as an integer `costUsdTicks`; every captured
+ * sample resolves to a plausible sub-dollar amount at 1e9 ticks per USD. The
+ * scale is a guess about a third-party field, so it lives behind one constant —
+ * correcting it must be a one-line change, not a hunt through the UI.
+ */
+export const COST_USD_TICKS_PER_USD = 1_000_000_000
+
+/**
+ * Cap on remembered prompt ids. Dedup only has to defeat a repeat of the same
+ * turn (a replay, or a re-delivered notification), which arrives close to the
+ * original — so a bounded window is enough and a long session cannot grow this
+ * set without limit.
+ */
+const MAX_TRACKED_PROMPT_IDS = 512
+
+/** One `turn_completed` update, parsed. */
+export interface TurnUsageUpdate {
+  /**
+   * `prompt_id` from the update. A turn's usage is a snapshot of that turn, not a
+   * delta, so re-delivery of the same id must not be added twice.
+   */
+  promptId?: string
+  stopReason?: string
+  usage: TurnUsage
+}
+
+/** Third-party numbers: anything not a finite, non-negative number counts as absent. */
+function finiteCount(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return undefined
+  return value
+}
+
+/**
+ * First readable alias wins. The CLI mixes conventions inside a single payload
+ * (`prompt_id` beside `inputTokens`), so neither spelling can be assumed.
+ */
+function pickCount(source: Record<string, unknown>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const v = finiteCount(source[key])
+    if (v !== undefined) return v
+  }
+  return undefined
+}
+
+function pickString(source: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const v = source[key]
+    if (typeof v === 'string' && v) return v
+  }
+  return undefined
+}
+
+/**
+ * Zero ticks means "no cost reported", not "this turn was free" — rendering
+ * $0.00 would state something the payload never said.
+ */
+function costFromTicks(source: Record<string, unknown>): number | undefined {
+  const ticks = pickCount(source, 'costUsdTicks', 'cost_usd_ticks')
+  if (!ticks) return undefined
+  return ticks / COST_USD_TICKS_PER_USD
+}
+
+function parsePerModel(usage: Record<string, unknown>): TurnUsage['perModel'] | undefined {
+  const raw = usage.modelUsage ?? usage.model_usage
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+
+  const out: Record<string, { totalTokens: number; costUsd?: number }> = {}
+  for (const [model, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!model || !value || typeof value !== 'object' || Array.isArray(value)) continue
+    const entry = value as Record<string, unknown>
+    const total =
+      pickCount(entry, 'totalTokens', 'total_tokens') ??
+      (pickCount(entry, 'inputTokens', 'input_tokens') ?? 0) +
+        (pickCount(entry, 'outputTokens', 'output_tokens') ?? 0)
+    const costUsd = costFromTicks(entry)
+    out[model] = { totalTokens: total, ...(costUsd !== undefined ? { costUsd } : {}) }
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+/**
+ * Recognise the CLI's end-of-turn accounting update. Returns null for anything
+ * else, including a `turn_completed` whose `usage` block is missing, not an
+ * object, or carries no readable token count — accounting is secondary, so an
+ * unparseable payload must degrade to "no data", never to zeros or NaN.
+ */
+export function parseTurnUsageFromUpdate(
+  update: Record<string, unknown>
+): TurnUsageUpdate | null {
+  const kind = update.sessionUpdate ?? update.session_update
+  if (kind !== 'turn_completed') return null
+
+  const raw = update.usage
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const usage = raw as Record<string, unknown>
+
+  const inputTokens = pickCount(usage, 'inputTokens', 'input_tokens')
+  const outputTokens = pickCount(usage, 'outputTokens', 'output_tokens')
+  const totalTokens = pickCount(usage, 'totalTokens', 'total_tokens')
+  const cachedReadTokens = pickCount(
+    usage,
+    'cachedReadTokens',
+    'cached_read_tokens',
+    'cacheReadTokens'
+  )
+  const reasoningTokens = pickCount(usage, 'reasoningTokens', 'reasoning_tokens')
+
+  // No token field at all means the shape changed or the block is a stub. Folding
+  // a row of zeros in would inflate the turn count and claim data we do not have.
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    totalTokens === undefined &&
+    cachedReadTokens === undefined &&
+    reasoningTokens === undefined
+  ) {
+    return null
+  }
+
+  const costUsd = costFromTicks(usage)
+  const perModel = parsePerModel(usage)
+  const promptId = pickString(update, 'prompt_id', 'promptId')
+  const stopReason = pickString(update, 'stop_reason', 'stopReason')
+
+  return {
+    ...(promptId !== undefined ? { promptId } : {}),
+    ...(stopReason !== undefined ? { stopReason } : {}),
+    usage: {
+      inputTokens: inputTokens ?? 0,
+      outputTokens: outputTokens ?? 0,
+      totalTokens: totalTokens ?? (inputTokens ?? 0) + (outputTokens ?? 0),
+      cachedReadTokens: cachedReadTokens ?? 0,
+      reasoningTokens: reasoningTokens ?? 0,
+      modelCalls: pickCount(usage, 'modelCalls', 'model_calls') ?? 0,
+      apiDurationMs: pickCount(usage, 'apiDurationMs', 'api_duration_ms') ?? 0,
+      ...(costUsd !== undefined ? { costUsd } : {}),
+      ...(perModel !== undefined ? { perModel } : {})
+    }
+  }
+}
+
+export function emptyTurnUsage(): TurnUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    cachedReadTokens: 0,
+    reasoningTokens: 0,
+    modelCalls: 0,
+    apiDurationMs: 0
+  }
+}
+
+/**
+ * Fold one turn into a running total. `costUsd` stays absent until some turn
+ * actually reports a cost, so "no estimate available" never collapses into $0.
+ */
+export function addTurnUsage(total: TurnUsage, turn: TurnUsage): TurnUsage {
+  const costUsd =
+    total.costUsd === undefined && turn.costUsd === undefined
+      ? undefined
+      : (total.costUsd ?? 0) + (turn.costUsd ?? 0)
+
+  const perModel =
+    total.perModel || turn.perModel
+      ? { ...(total.perModel ?? {}) }
+      : undefined
+  if (perModel && turn.perModel) {
+    for (const [model, entry] of Object.entries(turn.perModel)) {
+      const prev = perModel[model]
+      const prevCost = prev?.costUsd
+      const mergedCost =
+        prevCost === undefined && entry.costUsd === undefined
+          ? undefined
+          : (prevCost ?? 0) + (entry.costUsd ?? 0)
+      perModel[model] = {
+        totalTokens: (prev?.totalTokens ?? 0) + entry.totalTokens,
+        ...(mergedCost !== undefined ? { costUsd: mergedCost } : {})
+      }
+    }
+  }
+
+  return {
+    inputTokens: total.inputTokens + turn.inputTokens,
+    outputTokens: total.outputTokens + turn.outputTokens,
+    totalTokens: total.totalTokens + turn.totalTokens,
+    cachedReadTokens: total.cachedReadTokens + turn.cachedReadTokens,
+    reasoningTokens: total.reasoningTokens + turn.reasoningTokens,
+    modelCalls: total.modelCalls + turn.modelCalls,
+    apiDurationMs: total.apiDurationMs + turn.apiDurationMs,
+    ...(costUsd !== undefined ? { costUsd } : {}),
+    ...(perModel !== undefined ? { perModel } : {})
+  }
+}
+
+/**
+ * Running per-session totals, folded from `turn_completed` updates.
+ *
+ * Kept here rather than inside AgentManager so it can be unit tested without an
+ * Electron process, matching the pure helpers above.
+ */
+export class SessionUsageTracker {
+  // Plain field assignment (no parameter properties) for the same reason as
+  // GrokAcpClient: `node --test` strips types without transforming them.
+  private sessionId: string | null = null
+  private turns = 0
+  private totals: TurnUsage = emptyTurnUsage()
+  private last: TurnUsage | undefined = undefined
+  private seenPromptIds = new Set<string>()
+
+  /** Drop all totals. Pass a session id to start counting for that session. */
+  reset(sessionId: string | null = null): void {
+    this.sessionId = sessionId
+    this.turns = 0
+    this.totals = emptyTurnUsage()
+    this.last = undefined
+    this.seenPromptIds.clear()
+  }
+
+  /** Null until at least one turn has been counted — the UI shows nothing then. */
+  snapshot(): SessionUsage | null {
+    if (!this.sessionId || this.turns === 0) return null
+    return {
+      sessionId: this.sessionId,
+      turns: this.turns,
+      totals: this.totals,
+      ...(this.last !== undefined ? { last: this.last } : {})
+    }
+  }
+
+  /**
+   * Fold a session update in. Returns the new snapshot when the totals changed,
+   * and null when nothing did: not a usage update, unreadable usage, or a
+   * `prompt_id` already counted. A different session id starts fresh.
+   */
+  add(sessionId: string, update: Record<string, unknown>): SessionUsage | null {
+    if (!sessionId) return null
+    const parsed = parseTurnUsageFromUpdate(update)
+    if (!parsed) return null
+
+    if (sessionId !== this.sessionId) this.reset(sessionId)
+
+    if (parsed.promptId) {
+      if (this.seenPromptIds.has(parsed.promptId)) return null
+      this.seenPromptIds.add(parsed.promptId)
+      if (this.seenPromptIds.size > MAX_TRACKED_PROMPT_IDS) {
+        const oldest = this.seenPromptIds.values().next().value
+        if (oldest !== undefined) this.seenPromptIds.delete(oldest)
+      }
+    }
+
+    this.turns += 1
+    this.totals = addTurnUsage(this.totals, parsed.usage)
+    this.last = parsed.usage
+    return this.snapshot()
+  }
 }

@@ -10,6 +10,7 @@ import {
   parseToolCallFromUpdate,
   probeGrokBinary,
   resolveGrokBinary,
+  SessionUsageTracker,
   type JsonRpcId,
   type PermissionOption
 } from './acp/client'
@@ -93,6 +94,8 @@ export class AgentManager {
    * cannot drift from how it was started (see isAutoApproveActive).
    */
   private bootAlwaysApprove = false
+  /** Running token/cost totals for the live session (in memory only, never persisted). */
+  private usage = new SessionUsageTracker()
 
   setWindow(win: BrowserWindow | null): void {
     this.window = win
@@ -375,6 +378,10 @@ export class AgentManager {
       if (!this.client) throw new Error('Agent not running')
 
       this.replayingHistory = true
+      // Resuming re-counts from zero: `needBoot` can be false (same folder, live
+      // process), so without this an earlier session's totals would carry over.
+      // Replayed turn_completed updates then rebuild this session's real total.
+      this.usage.reset()
       // If we already have a local transcript, do not rebuild messages from ACP echo
       this.suppressHistoryReplay = local.length > 0
       this.historyAssistantId = null
@@ -439,6 +446,8 @@ export class AgentManager {
   private async stopProcessOnly(): Promise<void> {
     // No child, no boot posture: the gate must not outlive the process it describes.
     this.bootAlwaysApprove = false
+    // Totals belong to one live session; a new process starts a new accounting run.
+    this.usage.reset()
     this.pendingPermissions.clear()
     this.permissionQueue = []
     if (this.client) {
@@ -926,6 +935,22 @@ export class AgentManager {
     }
   }
 
+  /**
+   * Fold one turn's usage into the session total and push it to the UI.
+   *
+   * Accounting is secondary to the conversation working, so every failure path
+   * here is swallowed: a renamed field upstream must cost the user a number on
+   * screen, never the stream itself.
+   */
+  private trackUsage(sessionId: string, update: Record<string, unknown>): void {
+    try {
+      const usage = this.usage.add(sessionId, update)
+      if (usage) this.emit({ type: 'usage', sessionId, usage })
+    } catch (err) {
+      this.log('usage accounting failed', err)
+    }
+  }
+
   private ensureAssistantId(explicit?: string): string {
     if (explicit) {
       this.activeMessageId = explicit
@@ -959,6 +984,14 @@ export class AgentManager {
     const update = (params.update ?? params) as Record<string, unknown>
     const sessionId = (params.sessionId as string) || this.sessionId || ''
     const kind = (update.sessionUpdate as string) || ''
+
+    // Token/cost accounting. Handled before anything else touches the assistant
+    // message: a turn_completed carries no content, so ensureAssistantId would
+    // otherwise mint an empty history bubble for it.
+    if (kind === 'turn_completed') {
+      this.trackUsage(sessionId, update)
+      return
+    }
 
     // History replay: user messages
     // FIX-R7: live turns already have the user bubble (renderer optimistic + main

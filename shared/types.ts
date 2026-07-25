@@ -250,6 +250,65 @@ export interface MoveDataResult {
   location: DataLocation
 }
 
+// ── Usage / cost ───────────────────────────────────────────────────
+/**
+ * Token and cost accounting for one agent turn.
+ *
+ * The Grok CLI already reports this on the ACP stream as
+ * `sessionUpdate: "turn_completed"` with a `usage` block — Grocky simply did not
+ * handle that update type, so none of it reached the UI.
+ */
+export interface TurnUsage {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  /** Prompt tokens served from cache — cheaper, and the reason cost is not linear in totalTokens. */
+  cachedReadTokens: number
+  reasoningTokens: number
+  /** Model round trips in this turn; a tool-heavy turn makes several. */
+  modelCalls: number
+  apiDurationMs: number
+  /**
+   * Cost in USD, converted from the CLI's `costUsdTicks`.
+   *
+   * Observed: 450344000 ticks alongside 45428 tokens, and 702600000 alongside
+   * 101298 — both resolve to plausible sub-dollar amounts at 1e9 ticks per USD
+   * (nano-USD), which is the conversion used. Treat as an estimate for the user's
+   * own awareness, never as a billing figure.
+   */
+  costUsd?: number
+  /** Per-model breakdown when a turn spans more than one model. */
+  perModel?: Record<string, { totalTokens: number; costUsd?: number }>
+}
+
+/** Running totals for the current session, accumulated from each turn. */
+export interface SessionUsage {
+  sessionId: string
+  turns: number
+  totals: TurnUsage
+  /** Newest turn, so the UI can show "this turn" alongside the running total. */
+  last?: TurnUsage
+}
+
+// ── Grok CLI version ───────────────────────────────────────────────
+export type CliVersionStatus = 'ok' | 'newer-than-verified' | 'older-than-verified' | 'unknown'
+
+/**
+ * The CLI updates itself without asking. Grocky parses its `--json` output
+ * against shapes verified at a specific version, so a field rename upstream
+ * shows up as empty lists rather than an error. This makes the mismatch legible.
+ */
+export interface CliVersionInfo {
+  /** e.g. "0.2.112" — parsed from `grok version --json` */
+  current?: string
+  /** e.g. "stable" */
+  channel?: string
+  /** The version Grocky's JSON parsing was actually verified against. */
+  verifiedAgainst: string
+  status: CliVersionStatus
+  message?: string
+}
+
 /** Where the loaded store actually came from. */
 export type StoreSource = 'file' | 'backup' | 'fresh' | 'unrecoverable'
 
@@ -355,6 +414,7 @@ export type MainToRendererEvent =
       error?: string
     }
   | { type: 'preview-log'; text: string }
+  | { type: 'usage'; sessionId: string; usage: SessionUsage }
 
 // ── Plugins & Skills (Grok CLI plugin system) ──────────────────────
 export type PluginStatus = 'installed' | 'available' | 'disabled'
@@ -532,6 +592,8 @@ export interface GrockyApi {
   revealLocalPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>
   /** Did the transcript store load cleanly, or was it recovered / lost? */
   getStoreHealth: () => Promise<StoreHealth>
+  /** Is the installed Grok CLI a version Grocky's parsing was verified against? */
+  getCliVersion: () => Promise<CliVersionInfo>
   // Data location
   getDataLocation: () => Promise<DataLocation>
   /** Folder picker for a new data directory. Returns null if cancelled. */

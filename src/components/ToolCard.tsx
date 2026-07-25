@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ToolCallInfo } from '../../shared/types'
-import { formatTool } from '../lib/tool-format'
+import { diffMark, formatTool } from '../lib/tool-format'
 import { ImageGallery } from './LocalImage'
 
 function statusLabel(status: ToolCallInfo['status']): string {
@@ -115,15 +115,7 @@ export function ToolCard({
               <pre className="diff-pre">
                 {fmt.diffLines.map((line, i) => (
                   <div key={i} className={`diff-line ${line.type}`}>
-                    <span className="diff-mark">
-                      {line.type === 'add'
-                        ? '+'
-                        : line.type === 'del'
-                          ? '−'
-                          : line.type === 'hunk'
-                            ? '@@'
-                            : ' '}
-                    </span>
+                    <span className="diff-mark">{diffMark(line.type)}</span>
                     {line.text}
                   </div>
                 ))}

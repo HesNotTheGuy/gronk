@@ -36,6 +36,7 @@ import {
   resetDataDir
 } from './data-dir'
 import { resolveGrokBinary } from './acp/client'
+import { getCliVersion, invalidateCliVersionCache } from './cli-version'
 import { listModels } from './models'
 import { exportTranscriptMarkdown, listProjectFiles } from './fs-utils'
 import { assertAuthenticated, getAuthStatus, loginWithCli, logoutWithCli } from './auth'
@@ -438,6 +439,9 @@ function registerIpc(): void {
   ipcMain.handle('grocky:set-settings', (e, partial: Partial<AppSettings>) => {
     assertTrustedSender(e)
     if (!partial || typeof partial !== 'object') throw new Error('Invalid settings')
+    // A different binary is a different CLI, so its cached version is now a
+    // claim about a file the app no longer runs.
+    if ('grokBinary' in partial) invalidateCliVersionCache()
     return setSettings(partial)
   })
 
@@ -777,6 +781,11 @@ function registerIpc(): void {
   ipcMain.handle('grocky:get-store-health', (e) => {
     assertTrustedSender(e)
     return getStoreHealth()
+  })
+
+  ipcMain.handle('grocky:get-cli-version', async (e) => {
+    assertTrustedSender(e)
+    return getCliVersion()
   })
 
   ipcMain.handle('grocky:get-data-location', (e) => {
