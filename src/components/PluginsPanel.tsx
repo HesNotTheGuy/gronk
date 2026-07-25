@@ -72,18 +72,28 @@ export function PluginsPanel({
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null)
   const catalogLoaded = useRef(false)
 
+  // Latest-callback refs. Callers pass inline arrows, so the props get a new
+  // identity every render; depending on them directly made the load effects
+  // re-fire on their own state updates and spun into an infinite render loop.
+  const refreshRef = useRef(onRefresh)
+  const loadCatalogRef = useRef(onLoadCatalog)
   useEffect(() => {
-    if (open) onRefresh()
+    refreshRef.current = onRefresh
+    loadCatalogRef.current = onLoadCatalog
+  })
+
+  useEffect(() => {
+    if (open) refreshRef.current()
     // Re-syncing the catalog on every open would re-run git fetches; only the
     // explicit Refresh button in the Marketplace tab does that again.
     else catalogLoaded.current = false
-  }, [open, onRefresh])
+  }, [open])
 
   useEffect(() => {
     if (!open || tab !== 'marketplace' || catalogLoaded.current) return
     catalogLoaded.current = true
-    onLoadCatalog()
-  }, [open, tab, onLoadCatalog])
+    loadCatalogRef.current()
+  }, [open, tab])
 
   if (!open) return null
 
