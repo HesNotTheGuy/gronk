@@ -13,6 +13,7 @@ import {
   getPermissionAudit,
   getRecentProjects,
   getSettings,
+  getStoreHealth,
   getTranscript,
   listSessions,
   normalizeCwd,
@@ -41,6 +42,14 @@ beforeEach(() => {
 
 function storeFile(): string {
   return path.join(userData, 'grocky-store.json')
+}
+
+function backupFile(): string {
+  return path.join(userData, 'grocky-store.backup.json')
+}
+
+function readStoreFile(file = storeFile()): Record<string, unknown> {
+  return JSON.parse(fs.readFileSync(file, 'utf8'))
 }
 
 /** Settings block exactly as it sits on disk (legacy files may carry extra keys). */
@@ -663,6 +672,141 @@ test('audit entries are redacted and capped at 200', () => {
     })
   }
   assert.equal(getPermissionAudit().length, 200)
+})
+
+// ── Crash safety: the store is rewritten on every message ───────────
+
+// A plain writeFileSync truncates the file before it writes, so a crash, a kill
+// or a power loss mid-write left a half-written store. Reading that used to
+// return empty defaults silently — from the user's seat, "the update wiped my
+// data". Writes are atomic now and the previous copy is kept.
+
+/** Seed sessions + transcript, then one more write so the backup holds it all. */
+function seedWithBackup(): void {
+  upsertSession(session({ id: 's1', title: 'First' }))
+  saveTranscript('s1', [
+    msg({ id: 'm1', role: 'user', text: 'hello' }),
+    msg({ id: 'm2', role: 'assistant', text: 'hi there' })
+  ])
+  setSettings({ theme: 'dark' })
+}
+
+test('a fresh install is not reported as a recovery', () => {
+  const health = getStoreHealth()
+  assert.equal(health.source, 'fresh')
+  assert.equal(health.degraded, false)
+})
+
+test('every write keeps the previous store as a backup', () => {
+  upsertSession(session({ id: 's1', title: 'First' }))
+  const afterFirst = fs.readFileSync(storeFile(), 'utf8')
+  assert.equal(fs.existsSync(backupFile()), false, 'nothing to back up on the first write')
+
+  upsertSession(session({ id: 's2', title: 'Second', updatedAt: 2000 }))
+  assert.equal(fs.readFileSync(backupFile(), 'utf8'), afterFirst)
+  assert.equal((readStoreFile().sessions as unknown[]).length, 2)
+})
+
+test('a truncated store is recovered from the backup, not read as empty', () => {
+  seedWithBackup()
+  // Exactly what a torn writeFileSync leaves behind.
+  fs.writeFileSync(storeFile(), '{\n  "version": 1,\n  "sessi', 'utf8')
+
+  const health = getStoreHealth()
+  assert.equal(health.source, 'backup')
+  assert.equal(health.degraded, true, 'the UI must be able to warn about this')
+  assert.equal(health.corruptPath, storeFile())
+
+  assert.equal(listSessions().length, 1, 'the session came back')
+  assert.equal(listSessions()[0].title, 'First')
+  assert.equal(getTranscript('s1').length, 2, 'and so did its transcript')
+})
+
+test('an interrupted write leaves the previous store readable', () => {
+  seedWithBackup()
+  const good = fs.readFileSync(storeFile(), 'utf8')
+  // A crash between the temp file and the rename leaves a stray temp file; the
+  // store itself is whole because the rename never happened.
+  fs.writeFileSync(
+    path.join(userData, '.grocky-store.json.999.1.abcdef.tmp'),
+    '{ "sessions": [',
+    'utf8'
+  )
+  assert.equal(getStoreHealth().source, 'file')
+  assert.equal(listSessions().length, 1)
+  assert.equal(getTranscript('s1').length, 2)
+  assert.equal(fs.readFileSync(storeFile(), 'utf8'), good, 'the leftover is not the store')
+})
+
+test('a completed write leaves no temp file behind', () => {
+  seedWithBackup()
+  assert.deepEqual(fs.readdirSync(userData).filter((n) => n.endsWith('.tmp')), [])
+})
+
+test('a corrupt store with no backup is reported, not passed off as a fresh install', () => {
+  fs.mkdirSync(userData, { recursive: true })
+  fs.writeFileSync(storeFile(), '{ not json', 'utf8')
+
+  const health = getStoreHealth()
+  assert.equal(health.source, 'unrecoverable')
+  assert.equal(health.degraded, true)
+  assert.equal(health.corruptPath, storeFile())
+  assert.equal(getSettings().permissionMode, 'default', 'the app still opens')
+  // The evidence is left exactly as it was found: overwriting it with defaults
+  // before anyone can look at it destroys the only chance of a manual rescue.
+  assert.equal(fs.readFileSync(storeFile(), 'utf8'), '{ not json')
+})
+
+test('an unreadable store is kept aside when the next save replaces it', () => {
+  fs.mkdirSync(userData, { recursive: true })
+  fs.writeFileSync(storeFile(), '{ not json', 'utf8')
+  getSettings()
+
+  setSettings({ theme: 'light' })
+  const kept = fs.readdirSync(userData).filter((n) => n.startsWith('grocky-store.corrupt-'))
+  assert.equal(kept.length, 1, 'the unreadable bytes are preserved for rescue')
+  assert.equal(fs.readFileSync(path.join(userData, kept[0]), 'utf8'), '{ not json')
+  assert.equal(readStoredSettings().theme, 'light', 'and the save still went through')
+  // The backup is the only other candidate for a rescue — it must not be
+  // overwritten with the unreadable bytes.
+  assert.equal(fs.existsSync(backupFile()), false)
+})
+
+// ── Schema version ──────────────────────────────────────────────────
+
+test('a store with no schema version still loads and is stamped on the next write', () => {
+  fs.mkdirSync(userData, { recursive: true })
+  fs.writeFileSync(
+    storeFile(),
+    JSON.stringify({
+      sessions: [{ id: 's1', cwd: 'C:/work/app', createdAt: 1, updatedAt: 1, title: 'Legacy' }],
+      transcripts: { s1: [{ id: 'm1', role: 'user', text: 'old', createdAt: 1 }] }
+    }),
+    'utf8'
+  )
+  assert.equal(listSessions()[0].title, 'Legacy', 'an unversioned file is the current shape')
+  assert.equal(getTranscript('s1').length, 1)
+
+  setSettings({ theme: 'light' })
+  assert.equal(readStoreFile().version, 1)
+  assert.equal((readStoreFile().sessions as unknown[]).length, 1, 'and nothing was dropped')
+})
+
+test('a write stamps the schema version', () => {
+  setSettings({ theme: 'light' })
+  assert.equal(readStoreFile().version, 1)
+})
+
+// store.ts must route every write through the atomic helper; a single
+// fs.writeFileSync on the store path re-opens the truncation window.
+test('the store is never written with a plain writeFileSync', () => {
+  const source = fs.readFileSync(
+    fileURLToPath(new URL('../electron/main/store.ts', import.meta.url)),
+    'utf8'
+  )
+  assert.ok(source.includes('writeFileAtomicSync'), 'writes must go through the atomic helper')
+  assert.equal(source.includes('fs.writeFileSync'), false)
+  assert.equal(source.includes("app.getPath"), false, 'the path comes from data-dir.ts')
 })
 
 test('the newest audit entry is first', () => {

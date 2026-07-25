@@ -16,6 +16,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { resolveGrokBinary } from './acp/client'
+import { cachedProbe } from './cache'
 import { grokHome } from './grok-home'
 import { getSettings } from './store'
 import { redactSecrets } from './redact'
@@ -126,10 +127,31 @@ export function looksUnauthenticated(stdout: string, stderr: string): boolean {
 }
 
 /**
+ * Every call spawns the CLI and makes an authenticated request to xAI. There are
+ * ten call sites, several on hot paths — starting an agent, restoring a session,
+ * the health panel — and app startup fires three concurrently inside one
+ * Promise.all. Uncached, clicking through sessions meant one network round trip
+ * per click. The TTL is short because sign-in state must not feel stale after the
+ * user signs in or out; the login/logout paths invalidate it explicitly anyway.
+ */
+const AUTH_TTL_MS = 30_000
+
+const authProbe = cachedProbe(() => probeAuthStatus(), { ttlMs: AUTH_TTL_MS })
+
+export function getAuthStatus(): Promise<AuthStatus> {
+  return authProbe.get()
+}
+
+/** Call after anything that changes sign-in state, so the next read is truthful. */
+export function invalidateAuthCache(): void {
+  authProbe.invalidate()
+}
+
+/**
  * Probe auth without exposing secrets. Uses `grok models` as the primary signal
  * (same path the app already needs) and soft signals for method.
  */
-export async function getAuthStatus(): Promise<AuthStatus> {
+async function probeAuthStatus(): Promise<AuthStatus> {
   const binary = resolveBinary()
   if (!binary) {
     return {
@@ -233,6 +255,8 @@ export async function loginWithCli(method: LoginMethod = 'oauth'): Promise<Login
   const timeoutMs = method === 'device' ? 180_000 : 180_000
 
   const { code, stdout, stderr } = await runGrok(args, { timeoutMs })
+  // The CLI just changed sign-in state on disk; the cached probe is now a lie.
+  invalidateAuthCache()
   const safeOut = sanitizeCliText(`${stdout}\n${stderr}`)
 
   // After login CLI exits, re-probe
@@ -283,6 +307,8 @@ export async function logoutWithCli(): Promise<{ ok: boolean; message: string; a
   }
 
   const { code, stdout, stderr } = await runGrok(['logout'], { timeoutMs: 20_000 })
+  // The CLI just changed sign-in state on disk; the cached probe is now a lie.
+  invalidateAuthCache()
   const auth = await getAuthStatus()
   if (code === 0 || !auth.authenticated) {
     return {

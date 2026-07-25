@@ -7,6 +7,8 @@ import type {
   AuthStatus,
   ChatMessage,
   ConnectionState,
+  DataLocation,
+  StoreHealth,
   HealthStatus,
   LoginMethod,
   MainToRendererEvent,
@@ -14,6 +16,7 @@ import type {
   McpAddInput,
   McpServer,
   ModelInfo,
+  MoveDataResult,
   PermissionAuditEntry,
   PermissionMode,
   PermissionRequest,
@@ -87,6 +90,13 @@ export function useGrocky() {
   const [pluginsLoading, setPluginsLoading] = useState(false)
   const [pluginsError, setPluginsError] = useState<string | null>(null)
   const [pluginBusy, setPluginBusy] = useState<string | null>(null)
+  // Data location (transcript store + chat sandbox on disk)
+  const [dataLocation, setDataLocation] = useState<DataLocation | null>(null)
+  const [dataBusy, setDataBusy] = useState(false)
+  const [dataError, setDataError] = useState<string | null>(null)
+  const [dataNotice, setDataNotice] = useState<string | null>(null)
+  /** Only set when the store did NOT load cleanly — null means all good. */
+  const [storeHealth, setStoreHealth] = useState<StoreHealth | null>(null)
   const [historySource, setHistorySource] = useState<string | null>(null)
   const [activePlan, setActivePlan] = useState<ActivePlan | null>(null)
   const [planCollapsed, setPlanCollapsed] = useState(false)
@@ -1003,6 +1013,85 @@ export function useGrocky() {
     }
   }, [])
 
+  // ── Data location ─────────────────────────────────────────────────
+  // Kept out of refreshMeta's Promise.all on purpose: a failure to stat the
+  // store must not take sessions, settings and theme down with it.
+  const refreshDataLocation = useCallback(async () => {
+    try {
+      setDataLocation(await window.grocky.getDataLocation())
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : String(err))
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshDataLocation()
+  }, [refreshDataLocation])
+
+  /**
+   * Read once at startup. A store that failed to parse falls back to defaults, so
+   * without this the app would show an empty session list and no explanation —
+   * exactly what a wiped install looks like. Dismissible, but never auto-hidden:
+   * losing transcripts is worth an interruption.
+   */
+  useEffect(() => {
+    void window.grocky
+      .getStoreHealth()
+      .then((h) => {
+        if (h.degraded) setStoreHealth(h)
+      })
+      .catch(() => {
+        /* a health probe must never be the thing that breaks startup */
+      })
+  }, [])
+
+  const chooseDataDir = useCallback(async (): Promise<string | null> => {
+    setDataError(null)
+    try {
+      return await window.grocky.chooseDataDir()
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : String(err))
+      return null
+    }
+  }, [])
+
+  /** Shared move/reset runner — same busy+error shape as runPluginAction. */
+  const runDataAction = useCallback(
+    async (action: () => Promise<MoveDataResult>) => {
+      setDataBusy(true)
+      setDataError(null)
+      setDataNotice(null)
+      try {
+        const res = await action()
+        setDataLocation(res.location)
+        if (res.ok) {
+          setDataNotice(res.message)
+          // The chat sandbox moved with the store, so cached paths are stale.
+          await refreshMeta()
+        } else {
+          setDataError(res.message)
+        }
+        return res
+      } catch (err) {
+        setDataError(err instanceof Error ? err.message : String(err))
+        return null
+      } finally {
+        setDataBusy(false)
+      }
+    },
+    [refreshMeta]
+  )
+
+  const moveDataDir = useCallback(
+    (target: string) => runDataAction(() => window.grocky.moveDataDir(target)),
+    [runDataAction]
+  )
+
+  const resetDataDir = useCallback(
+    () => runDataAction(() => window.grocky.resetDataDir()),
+    [runDataAction]
+  )
+
   const refreshAuth = useCallback(async () => {
     setAuthBusy(true)
     try {
@@ -1195,6 +1284,15 @@ export function useGrocky() {
     uninstallPlugin,
     addMcpServer,
     removeMcpServer,
+    dataLocation,
+    storeHealth,
+    dismissStoreHealth: () => setStoreHealth(null),
+    dataBusy,
+    dataError,
+    dataNotice,
+    chooseDataDir,
+    moveDataDir,
+    resetDataDir,
     historySource,
     activePlan,
     planCollapsed,

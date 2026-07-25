@@ -217,6 +217,58 @@ export interface AppSettings {
   previewCommand?: string
 }
 
+// ── Data location ──────────────────────────────────────────────────
+/**
+ * Where Grocky keeps the transcript store and the chat sandbox.
+ *
+ * Deliberately NOT part of AppSettings: settings live inside the store, and the
+ * store's own path cannot be read from inside itself. It is resolved from a small
+ * pointer file in the default userData directory instead.
+ */
+export interface DataLocation {
+  /** Directory currently holding grocky-store.json and chat-workspace/ */
+  dataDir: string
+  /** The app's default userData directory — where the pointer file always lives */
+  defaultDir: string
+  /** True when dataDir === defaultDir (no relocation in effect) */
+  isDefault: boolean
+  storePath: string
+  chatWorkspacePath: string
+  /** Size of the transcript store on disk, for the UI to show what would move */
+  storeBytes?: number
+  /**
+   * Chat sandbox paths used before a move. The Grok CLI keys its own session
+   * folders by cwd, so generated images from earlier sessions still live under
+   * the old key — these are probed so a relocation does not orphan them.
+   */
+  previousChatWorkspaces?: string[]
+}
+
+export interface MoveDataResult {
+  ok: boolean
+  message: string
+  location: DataLocation
+}
+
+/** Where the loaded store actually came from. */
+export type StoreSource = 'file' | 'backup' | 'fresh' | 'unrecoverable'
+
+/**
+ * Whether the store loaded cleanly. Surfaced to the UI on purpose: a store that
+ * failed to parse used to fall back to empty defaults silently, which is
+ * indistinguishable from a first run — so a recovered or lost store looked
+ * exactly like "the update wiped my sessions".
+ */
+export interface StoreHealth {
+  source: StoreSource
+  /** True when something was on disk that could not be read as written. */
+  degraded: boolean
+  message?: string
+  /** The unreadable file, kept for manual rescue. Never deleted by the store. */
+  corruptPath?: string
+  schemaVersion: number
+}
+
 export const DEFAULT_SETTINGS: AppSettings = {
   permissionMode: 'default',
   // Derived value for the default mode; the store strips it before writing.
@@ -478,6 +530,16 @@ export interface GrockyApi {
   } | { dataUrl?: undefined; path?: string; mimeType?: undefined; error: string }>
   /** Reveal a local file in the OS file manager (Finder / Explorer). */
   revealLocalPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>
+  /** Did the transcript store load cleanly, or was it recovered / lost? */
+  getStoreHealth: () => Promise<StoreHealth>
+  // Data location
+  getDataLocation: () => Promise<DataLocation>
+  /** Folder picker for a new data directory. Returns null if cancelled. */
+  chooseDataDir: () => Promise<string | null>
+  /** Copy-verify-swap the data directory. Refuses while an agent is running. */
+  moveDataDir: (target: string) => Promise<MoveDataResult>
+  /** Move back to the app's default userData directory. */
+  resetDataDir: () => Promise<MoveDataResult>
   onEvent: (handler: (event: MainToRendererEvent) => void) => () => void
   // Dev preview pane
   previewStart: (cwd: string, command?: string) => Promise<{ ok: boolean; message: string }>

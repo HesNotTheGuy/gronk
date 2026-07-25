@@ -1,4 +1,5 @@
 import { app, BrowserWindow } from 'electron'
+import { chatWorkspacePath } from './data-dir'
 import path from 'node:path'
 import fs from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -38,12 +39,13 @@ import type {
 } from '../../shared/types'
 
 /** Grocky app chat sandbox (same path as grocky:get-chat-workspace). */
-function chatWorkspaceRoot(): string {
-  return path.join(app.getPath('userData'), 'chat-workspace')
-}
-
 function isChatPadCwd(cwd: string): boolean {
-  return isChatWorkspace(cwd, chatWorkspaceRoot())
+  // Ask data-dir for the sandbox path rather than rebuilding it from
+  // app.getPath('userData'). A third copy of this derivation would keep pointing
+  // at the old location after the user relocates their data, and classification
+  // would then only work by accident, via isChatWorkspace's /chat-workspace
+  // suffix fallback.
+  return isChatWorkspace(cwd, chatWorkspacePath())
 }
 
 interface PendingPermission {

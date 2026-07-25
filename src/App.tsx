@@ -347,6 +347,40 @@ export function App() {
           </div>
         ) : null}
 
+        {g.storeHealth ? (
+          <div className="export-banner store-health-banner" role="alert">
+            <div className="export-banner-text">
+              <span className="export-banner-label">
+                {g.storeHealth.source === 'backup'
+                  ? 'Sessions restored from backup'
+                  : 'Saved sessions could not be read'}
+              </span>
+              {/*
+                Say which file, so the user can rescue it by hand. The store never
+                deletes an unreadable file — an empty session list with no
+                explanation is exactly what a wiped install looks like, and that
+                ambiguity is the whole reason this banner exists.
+              */}
+              <span className="export-banner-path">
+                {g.storeHealth.message ||
+                  'The transcript store on disk was unreadable. Nothing has been deleted.'}
+              </span>
+              {g.storeHealth.corruptPath ? (
+                <code className="path-code">{g.storeHealth.corruptPath}</code>
+              ) : null}
+            </div>
+            <div className="btn-row export-banner-actions">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => g.dismissStoreHealth()}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {g.exportNotice ? (
           <div className="export-banner">
             <div className="export-banner-text">
@@ -646,6 +680,10 @@ export function App() {
         health={g.health}
         auth={g.auth}
         authBusy={g.authBusy}
+        dataLocation={g.dataLocation}
+        dataBusy={g.dataBusy}
+        dataError={g.dataError}
+        dataNotice={g.dataNotice}
         onClose={() => g.setShowSettings(false)}
         onChangeModel={(id) => void g.changeModel(id)}
         onToggleYolo={() => {
@@ -658,6 +696,9 @@ export function App() {
         onRefreshHealth={() => void g.refreshHealth()}
         onLogin={(m) => void g.login(m)}
         onLogout={() => void g.logout()}
+        onChooseDataDir={() => g.chooseDataDir()}
+        onMoveDataDir={(target) => void g.moveDataDir(target)}
+        onResetDataDir={() => void g.resetDataDir()}
         onChangePermissionMode={(mode) => void g.changePermissionMode(mode)}
         onOpenPlugins={() => setShowPlugins(true)}
       />

@@ -1,6 +1,5 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { app } from 'electron'
 import {
   DEFAULT_SETTINGS,
   type AppSettings,
@@ -12,6 +11,13 @@ import {
 } from '../../shared/types'
 import { isChatWorkspace, normalizePath } from '../../shared/path'
 import { normalizePermissionMode } from './agent-args'
+import {
+  BACKUP_FILE,
+  STORE_FILE,
+  backupStorePath,
+  storePath,
+  writeFileAtomicSync
+} from './data-dir'
 import { redactPreview, redactValue } from './redact'
 
 /**
@@ -23,7 +29,16 @@ import { redactPreview, redactValue } from './redact'
  */
 type StoredSettings = Omit<AppSettings, 'alwaysApprove'>
 
+/**
+ * Shape of the JSON on disk. Bump only with a matching `migrate` step.
+ *
+ * v1 is everything shipped so far, versioned or not: the field was added after
+ * the fact, so a file without it is already v1 and is stamped on the next write.
+ */
+const SCHEMA_VERSION = 1
+
 interface StoreData {
+  version: number
   settings: StoredSettings
   recentProjects: ProjectContext[]
   sessions: SessionInfo[]
@@ -33,12 +48,22 @@ interface StoreData {
 }
 
 /** Store as read off disk: older files also carried the now-derived field. */
-interface RawStore extends Partial<Omit<StoreData, 'settings'>> {
+interface RawStore extends Partial<Omit<StoreData, 'settings' | 'version'>> {
+  version?: number
   settings?: Partial<AppSettings>
 }
 
-function storePath(): string {
-  return path.join(app.getPath('userData'), 'grocky-store.json')
+/** Where the data actually came from — see getStoreHealth. */
+export type StoreSource = 'file' | 'backup' | 'fresh' | 'unrecoverable'
+
+export interface StoreHealth {
+  source: StoreSource
+  /** True when something was on disk that could not be read as written. */
+  degraded: boolean
+  message?: string
+  /** The unreadable file, kept for manual rescue. Never deleted by the store. */
+  corruptPath?: string
+  schemaVersion: number
 }
 
 /** Resolve + slash-normalize so G:\foo and G:/foo match (main process). */
@@ -119,32 +144,200 @@ function normalizeStoredSettings(raw: Partial<AppSettings> | undefined): StoredS
   return settings
 }
 
-function readStore(): StoreData {
-  try {
-    const raw = fs.readFileSync(storePath(), 'utf8')
-    const data = JSON.parse(raw) as RawStore
-    return {
-      settings: normalizeStoredSettings(data.settings),
-      recentProjects: data.recentProjects ?? [],
-      sessions: data.sessions ?? [],
-      transcripts: data.transcripts ?? {},
-      permissionAudit: data.permissionAudit ?? []
-    }
-  } catch {
-    return {
-      settings: { ...DEFAULT_STORED_SETTINGS },
-      recentProjects: [],
-      sessions: [],
-      transcripts: {},
-      permissionAudit: []
-    }
+function emptyStore(): StoreData {
+  return {
+    version: SCHEMA_VERSION,
+    settings: { ...DEFAULT_STORED_SETTINGS },
+    recentProjects: [],
+    sessions: [],
+    transcripts: {},
+    permissionAudit: []
   }
 }
 
+type ReadOutcome =
+  | { kind: 'missing' }
+  | { kind: 'ok'; raw: RawStore }
+  | { kind: 'bad'; error: string }
+
+/**
+ * Read one store file, keeping "there is nothing here" apart from "there is
+ * something here and it is broken". Collapsing those two is what let a truncated
+ * file look exactly like a fresh install.
+ */
+function readJsonFile(file: string): ReadOutcome {
+  let text: string
+  try {
+    text = fs.readFileSync(file, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' }
+    return { kind: 'bad', error: (err as Error).message }
+  }
+  try {
+    const parsed = JSON.parse(text) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { kind: 'bad', error: 'the store is not a JSON object' }
+    }
+    return { kind: 'ok', raw: parsed as RawStore }
+  } catch (err) {
+    return { kind: 'bad', error: (err as Error).message }
+  }
+}
+
+/**
+ * Migration hook. A future format change adds its step here rather than
+ * scattering "if this key looks old" tests through the readers.
+ *
+ * A file stamped NEWER than this build is read with the fields we know instead
+ * of being rejected: refusing to open would be indistinguishable from data loss
+ * to the user. It is re-stamped on the next write, so keys this build has never
+ * heard of do not survive a downgrade — flagged in the health message rather
+ * than hidden.
+ */
+function migrate(raw: RawStore, from: number): RawStore {
+  if (from === SCHEMA_VERSION) return raw
+  return raw
+}
+
+function fromRaw(raw: RawStore): StoreData {
+  const from = typeof raw.version === 'number' ? raw.version : SCHEMA_VERSION
+  const data = migrate(raw, from)
+  return {
+    version: SCHEMA_VERSION,
+    settings: normalizeStoredSettings(data.settings),
+    recentProjects: data.recentProjects ?? [],
+    sessions: data.sessions ?? [],
+    transcripts: data.transcripts ?? {},
+    permissionAudit: data.permissionAudit ?? []
+  }
+}
+
+let health: StoreHealth = { source: 'fresh', degraded: false, schemaVersion: SCHEMA_VERSION }
+
+/**
+ * Set when the main store could not be parsed. The unreadable bytes are copied
+ * aside on the next write instead of during the read: a read must not mutate the
+ * data directory, and until something is written the file is still sitting there
+ * untouched for anyone who wants to rescue it by hand.
+ */
+let quarantineOnNextWrite: string | null = null
+
+function setHealth(next: Omit<StoreHealth, 'schemaVersion'>): void {
+  health = { ...next, schemaVersion: SCHEMA_VERSION }
+}
+
+/**
+ * Load the store, preferring the main file, then the backup, and only then
+ * empty defaults.
+ *
+ * The old version caught every failure and returned defaults, so a store
+ * truncated by a crash opened the app with zero sessions and no complaint —
+ * from the user's seat, identical to "the update wiped my data". The corrupt
+ * file is never overwritten here: destroying it would take the evidence and the
+ * last chance of a manual rescue with it.
+ */
+function readStore(): StoreData {
+  const file = storePath()
+  const main = readJsonFile(file)
+  if (main.kind === 'ok') {
+    setHealth({ source: 'file', degraded: false })
+    return fromRaw(main.raw)
+  }
+
+  const backupFile = backupStorePath()
+  const backup = readJsonFile(backupFile)
+  if (main.kind === 'bad') quarantineOnNextWrite = file
+
+  if (backup.kind === 'ok') {
+    setHealth({
+      source: 'backup',
+      degraded: true,
+      message:
+        main.kind === 'bad'
+          ? `${STORE_FILE} could not be read (${main.error}). Recovered the previous copy from ${BACKUP_FILE}; anything from the last save may be missing.`
+          : `${STORE_FILE} was missing. Recovered the previous copy from ${BACKUP_FILE}.`,
+      ...(main.kind === 'bad' ? { corruptPath: file } : {})
+    })
+    return fromRaw(backup.raw)
+  }
+
+  if (main.kind === 'missing' && backup.kind === 'missing') {
+    setHealth({ source: 'fresh', degraded: false })
+    return emptyStore()
+  }
+
+  setHealth({
+    source: 'unrecoverable',
+    degraded: true,
+    message:
+      `Could not read ${STORE_FILE}` +
+      (main.kind === 'bad' ? ` (${main.error})` : ' (missing)') +
+      ` or ${BACKUP_FILE}` +
+      (backup.kind === 'bad' ? ` (${backup.error})` : ' (missing)') +
+      '. Starting empty — the unreadable files were left in place.',
+    corruptPath: main.kind === 'bad' ? file : backupFile
+  })
+  return emptyStore()
+}
+
+/**
+ * What is on disk right now, so the UI can warn about a recovery instead of
+ * quietly showing an empty session list.
+ *
+ * Reads rather than reporting the last load: the data directory can move under
+ * the app, and a stale "everything is fine" is the exact failure this whole
+ * mechanism exists to stop.
+ */
+export function getStoreHealth(): StoreHealth {
+  readStore()
+  return health
+}
+
+/** Roll the current store forward into the one retained backup. */
+function refreshBackup(file: string): void {
+  try {
+    if (fs.statSync(file).size === 0) return
+    fs.copyFileSync(file, backupStorePath())
+  } catch {
+    /* no store yet (or it just vanished) — nothing to back up */
+  }
+}
+
+function quarantineUnreadable(file: string): void {
+  try {
+    const kept = path.join(path.dirname(file), `grocky-store.corrupt-${Date.now()}.json`)
+    fs.copyFileSync(file, kept)
+  } catch {
+    /* best effort: failing to keep evidence must not block the save */
+  }
+}
+
+/**
+ * Persist the store without ever exposing a half-written file.
+ *
+ * Two rules do the work: the previous good copy is rolled into the backup first,
+ * and the new copy lands via temp-file + fsync + rename (writeFileAtomicSync).
+ * A crash therefore leaves either the old store or the new one, and the backup
+ * covers the case where the filesystem loses the main file entirely.
+ */
 function writeStore(data: StoreData): void {
-  const dir = path.dirname(storePath())
-  fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(storePath(), JSON.stringify(data, null, 2), 'utf8')
+  const file = storePath()
+  const corrupt = quarantineOnNextWrite
+  quarantineOnNextWrite = null
+
+  // `corrupt !== file` means the data directory moved since that read; the flag
+  // belongs to a store we are no longer writing.
+  if (corrupt && corrupt === file) {
+    // The file about to be replaced could not be parsed. Keep a copy for manual
+    // rescue and leave the backup alone: the backup is either what we just
+    // recovered from or the only other candidate, so overwriting it with the
+    // unreadable bytes would burn the last chance of getting anything back.
+    quarantineUnreadable(file)
+  } else {
+    refreshBackup(file)
+  }
+
+  writeFileAtomicSync(file, JSON.stringify({ ...data, version: SCHEMA_VERSION }, null, 2))
 }
 
 /** Keep one row per session id; prefer newest updatedAt. */

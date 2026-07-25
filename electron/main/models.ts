@@ -1,13 +1,32 @@
 import { spawn } from 'node:child_process'
 import { getSettings } from './store'
 import { resolveGrokBinary } from './acp/client'
+import { cachedProbe } from './cache'
 import type { ModelInfo } from '../../shared/types'
 
 /**
- * List models via `grok models` (no extra npm packages).
- * Falls back to a known-safe default if the CLI is unavailable.
+ * Model list via `grok models` (no extra npm packages), falling back to a
+ * known-safe default when the CLI is unavailable.
+ *
+ * That command spawns a process and makes the same authenticated request to xAI
+ * that the auth probe does, and it was called uncached on every app start. The
+ * model list changes on the order of releases, not clicks, so it tolerates a far
+ * longer TTL than sign-in state does.
  */
-export async function listModels(): Promise<ModelInfo[]> {
+const MODELS_TTL_MS = 5 * 60_000
+
+const modelsProbe = cachedProbe(() => probeModels(), { ttlMs: MODELS_TTL_MS })
+
+export function listModels(): Promise<ModelInfo[]> {
+  return modelsProbe.get()
+}
+
+/** Call when the configured grok binary changes — a different CLI may list different models. */
+export function invalidateModelsCache(): void {
+  modelsProbe.invalidate()
+}
+
+async function probeModels(): Promise<ModelInfo[]> {
   const settings = getSettings()
   const binary = resolveGrokBinary(settings.grokBinary)
   if (!binary) {

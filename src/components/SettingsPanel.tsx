@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import type {
   AppSettings,
   AuthStatus,
+  DataLocation,
   HealthStatus,
   LoginMethod,
   ModelInfo,
@@ -8,6 +10,39 @@ import type {
   PermissionMode
 } from '../../shared/types'
 import { PermissionModeBar } from './PermissionModeBar'
+
+/** Store size, so the user can see what a move would actually carry. */
+function formatBytes(bytes?: number): string {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(1)} KB`
+  return `${(kb / 1024).toFixed(1)} MB`
+}
+
+const ISSUES_URL = 'https://github.com/HesNotTheGuy/grocky/issues/new'
+
+/**
+ * Prefilled report skeleton. Deliberately carries only the OS — no paths, no
+ * account label, no transcript. Anything more would put the user's data in a
+ * public issue before they had a chance to read it.
+ */
+function issueTemplate(platform?: string): string {
+  return [
+    '### What happened',
+    '',
+    '',
+    '### What you expected',
+    '',
+    '',
+    '### Steps to reproduce',
+    '1. ',
+    '2. ',
+    '',
+    '---',
+    `Platform: ${platform || 'unknown'}`
+  ].join('\n')
+}
 
 interface Props {
   open: boolean
@@ -18,6 +53,10 @@ interface Props {
   health: HealthStatus | null
   auth: AuthStatus | null
   authBusy: boolean
+  dataLocation: DataLocation | null
+  dataBusy: boolean
+  dataError: string | null
+  dataNotice: string | null
   onClose: () => void
   onChangeModel: (id: string) => void
   onToggleYolo: () => void
@@ -27,6 +66,10 @@ interface Props {
   onRefreshHealth: () => void
   onLogin: (method: LoginMethod) => void
   onLogout: () => void
+  /** Opens the directory picker; resolves to null when the user cancels. */
+  onChooseDataDir: () => Promise<string | null>
+  onMoveDataDir: (target: string) => void
+  onResetDataDir: () => void
   onChangePermissionMode?: (mode: PermissionMode) => void
   onOpenPlugins?: () => void
 }
@@ -40,6 +83,10 @@ export function SettingsPanel({
   health,
   auth,
   authBusy,
+  dataLocation,
+  dataBusy,
+  dataError,
+  dataNotice,
   onClose,
   onChangeModel,
   onToggleYolo,
@@ -49,14 +96,41 @@ export function SettingsPanel({
   onRefreshHealth,
   onLogin,
   onLogout,
+  onChooseDataDir,
+  onMoveDataDir,
+  onResetDataDir,
   onChangePermissionMode,
   onOpenPlugins
 }: Props) {
+  /** Chosen destination awaiting confirmation — a move is never one click. */
+  const [pendingTarget, setPendingTarget] = useState<string | null>(null)
+  const [confirmReset, setConfirmReset] = useState(false)
+
+  // Closing the panel must not leave a confirmation armed for the next open.
+  // Only setState here — never a prop — so this cannot re-fire on prop identity.
+  useEffect(() => {
+    if (!open) {
+      setPendingTarget(null)
+      setConfirmReset(false)
+    }
+  }, [open])
+
   if (!open) return null
 
   const mode: PermissionMode =
     settings?.permissionMode ||
     (settings?.alwaysApprove ? 'bypassPermissions' : 'default')
+
+  const pickTarget = async () => {
+    const target = await onChooseDataDir()
+    if (target) setPendingTarget(target)
+  }
+
+  const confirmMove = () => {
+    const target = pendingTarget
+    setPendingTarget(null)
+    if (target) onMoveDataDir(target)
+  }
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
@@ -236,6 +310,52 @@ export function SettingsPanel({
           </p>
         </div>
 
+        <div className="settings-block">
+          <div className="section-label">Data location</div>
+          <div className="health-grid">
+            <div className={`health-row ${dataLocation?.isDefault ? 'ok' : ''}`}>
+              <span>Folder</span>
+              <strong>
+                {dataLocation ? (dataLocation.isDefault ? 'Default' : 'Custom') : '—'}
+              </strong>
+            </div>
+            <div className="health-row ok">
+              <span>Transcripts</span>
+              <strong>{formatBytes(dataLocation?.storeBytes)}</strong>
+            </div>
+          </div>
+          {/* A path is user data, not markup — plain text inside a code box. */}
+          <code className="path-code data-path">
+            {dataLocation?.dataDir || 'Reading…'}
+          </code>
+          <p className="settings-hint">
+            Your transcripts and the Chat sandbox live here. Moving them copies everything to
+            the new folder, verifies it, and only then removes the old copy.
+          </p>
+          {dataNotice ? <p className="settings-hint data-ok">{dataNotice}</p> : null}
+          {dataError ? <p className="settings-hint warn-text">{dataError}</p> : null}
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={dataBusy}
+              onClick={() => void pickTarget()}
+            >
+              {dataBusy ? 'Working…' : 'Move…'}
+            </button>
+            {dataLocation && !dataLocation.isDefault ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={dataBusy}
+                onClick={() => setConfirmReset(true)}
+              >
+                Reset to default
+              </button>
+            ) : null}
+          </div>
+        </div>
+
         {onOpenPlugins ? (
           <div className="settings-block">
             <div className="section-label">Plugins &amp; Skills</div>
@@ -285,11 +405,118 @@ export function SettingsPanel({
           )}
         </div>
 
+        <div className="settings-block">
+          <div className="section-label">Help</div>
+          {/*
+            A plain external link, not an IPC call: the window-open handler already
+            routes target=_blank through openExternalSafely, which allows only
+            http/https/mailto. Prefilling the body from `platform` alone keeps the
+            report useful without volunteering paths, account labels or transcripts —
+            the user can see and edit everything before submitting on GitHub.
+          */}
+          <a
+            className="btn btn-secondary btn-sm"
+            href={`${ISSUES_URL}?body=${encodeURIComponent(issueTemplate(health?.platform))}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Report an issue
+          </a>
+          <p className="settings-hint">
+            Opens the Grocky issue tracker in your browser. Nothing is sent automatically — you
+            write and submit the report yourself.
+          </p>
+        </div>
+
         <div className="modal-actions">
           <button type="button" className="btn btn-primary" onClick={onClose}>
             Close
           </button>
         </div>
+
+        {pendingTarget ? (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Confirm data move">
+            <div className="modal data-move-modal">
+              <h3>Move Grocky&apos;s data?</h3>
+              <dl className="data-move-paths">
+                <dt>From</dt>
+                <dd>
+                  <code className="path-code data-path">{dataLocation?.dataDir || '—'}</code>
+                </dd>
+                <dt>To</dt>
+                <dd>
+                  <code className="path-code data-path">{pendingTarget}</code>
+                </dd>
+              </dl>
+              <p className="settings-hint">
+                Your transcripts and the Chat sandbox are copied to the new folder and verified
+                there. Only then are they removed from the old one — nothing is deleted before
+                the copy checks out.
+              </p>
+              <p className="settings-hint warn-text">
+                The app must not have a running agent. Stop the current Chat or Build session
+                first, or the move is refused.
+              </p>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setPendingTarget(null)}
+                >
+                  Cancel
+                </button>
+                <button type="button" className="btn btn-primary" onClick={confirmMove}>
+                  Move data
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {confirmReset ? (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Confirm reset to default">
+            <div className="modal data-move-modal">
+              <h3>Move data back to the default folder?</h3>
+              <dl className="data-move-paths">
+                <dt>From</dt>
+                <dd>
+                  <code className="path-code data-path">{dataLocation?.dataDir || '—'}</code>
+                </dd>
+                <dt>To</dt>
+                <dd>
+                  <code className="path-code data-path">{dataLocation?.defaultDir || '—'}</code>
+                </dd>
+              </dl>
+              <p className="settings-hint">
+                Same operation in reverse: copied to the default folder, verified, and only then
+                removed from the current one.
+              </p>
+              <p className="settings-hint warn-text">
+                The app must not have a running agent. Stop the current Chat or Build session
+                first, or the move is refused.
+              </p>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setConfirmReset(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setConfirmReset(false)
+                    onResetDataDir()
+                  }}
+                >
+                  Move data
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )

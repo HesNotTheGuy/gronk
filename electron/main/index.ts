@@ -21,6 +21,7 @@ import {
   getPermissionAudit,
   getRecentProjects,
   getSettings,
+  getStoreHealth,
   getTranscript,
   listSessions,
   normalizeCwd,
@@ -28,6 +29,12 @@ import {
   saveTranscript,
   setSettings
 } from './store'
+import {
+  chatWorkspacePath,
+  getDataLocation,
+  moveDataDir,
+  resetDataDir
+} from './data-dir'
 import { resolveGrokBinary } from './acp/client'
 import { listModels } from './models'
 import { exportTranscriptMarkdown, listProjectFiles } from './fs-utils'
@@ -62,6 +69,7 @@ import type {
   McpAddInput,
   McpScope,
   McpTransport,
+  MoveDataResult,
   PermissionDecision,
   PromptAttachment,
   SendPromptOptions
@@ -371,6 +379,30 @@ function installGrokCli(): Promise<{
   })
 }
 
+/**
+ * Non-null when a data-directory move must be refused.
+ *
+ * The agent child process runs with the chat sandbox as its cwd and streams into
+ * the transcript store, so copying those files out from under it corrupts them.
+ * The agent is NOT stopped here: that would discard a running conversation
+ * without asking. The user stops it, then retries.
+ *
+ * 'error' / 'stopped' / 'idle' are deliberately not blocked — the child is gone
+ * in those states, and refusing there would strand a user whose agent crashed
+ * with no way to move their data back.
+ */
+function dataMoveRefusal(): MoveDataResult | null {
+  const state = agentManager.getConnectionState()
+  if (state !== 'starting' && state !== 'ready' && state !== 'loading') return null
+  return {
+    ok: false,
+    message:
+      'An agent is still running. Stop the current Chat or Build session first — ' +
+      'moving files while the agent has them open would corrupt your transcripts.',
+    location: getDataLocation()
+  }
+}
+
 function registerIpc(): void {
   ipcMain.handle('grocky:select-folder', async (e) => {
     assertTrustedSender(e)
@@ -421,7 +453,9 @@ function registerIpc(): void {
 
   ipcMain.handle('grocky:get-chat-workspace', (e) => {
     assertTrustedSender(e)
-    const dir = path.join(app.getPath('userData'), 'chat-workspace')
+    // Must come from data-dir: a relocated data directory has to take the chat
+    // sandbox with it, or the agent keeps writing into the old location.
+    const dir = chatWorkspacePath()
     fs.mkdirSync(dir, { recursive: true })
     const readme = path.join(dir, 'README.txt')
     if (!fs.existsSync(readme)) {
@@ -736,6 +770,46 @@ function registerIpc(): void {
     return installGrokCli()
   })
 
+  // ── Data location ───────────────────────────────────────────────────
+  // The move itself lives in data-dir.ts (copy → verify → remove). These
+  // handlers only validate the request and refuse it while an agent is live.
+
+  ipcMain.handle('grocky:get-store-health', (e) => {
+    assertTrustedSender(e)
+    return getStoreHealth()
+  })
+
+  ipcMain.handle('grocky:get-data-location', (e) => {
+    assertTrustedSender(e)
+    return getDataLocation()
+  })
+
+  ipcMain.handle('grocky:choose-data-dir', async (e) => {
+    assertTrustedSender(e)
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Choose a folder for Grocky data',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle('grocky:move-data-dir', async (e, target: unknown) => {
+    assertTrustedSender(e)
+    const dir = assertString(target, 'target')
+    const refusal = dataMoveRefusal()
+    if (refusal) return refusal
+    return moveDataDir(dir)
+  })
+
+  ipcMain.handle('grocky:reset-data-dir', async (e) => {
+    assertTrustedSender(e)
+    // Same file operations as a move, so the same running-agent rule applies.
+    const refusal = dataMoveRefusal()
+    if (refusal) return refusal
+    return resetDataDir()
+  })
+
   ipcMain.handle('grocky:preview-start', (e, cwd: string, command?: string) => {
     assertTrustedSender(e)
     return startPreview(normalizeCwd(assertString(cwd, 'cwd')), assertOptionalString(command, 'command'))
@@ -880,10 +954,6 @@ function grokSessionsRoot(): string {
   return path.join(app.getPath('home'), '.grok', 'sessions')
 }
 
-function chatWorkspaceRoot(): string {
-  return path.join(app.getPath('userData'), 'chat-workspace')
-}
-
 function resolveImageCandidates(filePath: string): string[] {
   const trimmed = filePath.trim().replace(/^["'`]+|["'`]+$/g, '')
   if (!trimmed) return []
@@ -922,12 +992,23 @@ function resolveImageCandidates(filePath: string): string[] {
       }
     }
 
-    // Also try chat workspace encoding (common when surface is chat)
+    // Also try chat workspace encoding (common when surface is chat).
+    // The CLI keys its session folders by cwd, so images generated before a data
+    // move still sit under the OLD chat-workspace key. Probing the previous keys
+    // too is what keeps a relocation from orphaning a user's existing images.
     try {
-      const chatRoot = chatWorkspaceRoot()
-      const encChat = encodeSessionCwdKey(normalizeCwd(chatRoot))
-      const chatSessions = path.join(grokSessionsRoot(), encChat)
-      if (fs.existsSync(chatSessions)) {
+      const location = getDataLocation()
+      const seenKeys = new Set<string>()
+      for (const root of [
+        location.chatWorkspacePath,
+        ...(location.previousChatWorkspaces || [])
+      ]) {
+        if (!root) continue
+        const encChat = encodeSessionCwdKey(normalizeCwd(root))
+        if (seenKeys.has(encChat)) continue
+        seenKeys.add(encChat)
+        const chatSessions = path.join(grokSessionsRoot(), encChat)
+        if (!fs.existsSync(chatSessions)) continue
         for (const d of fs.readdirSync(chatSessions, { withFileTypes: true })) {
           if (d.isDirectory()) candidates.push(path.join(chatSessions, d.name, rel))
         }
@@ -969,7 +1050,9 @@ function isConsentedExportPath(resolved: string): boolean {
 }
 
 function isAllowedImagePath(resolved: string): boolean {
-  const roots: string[] = [grokSessionsRoot(), chatWorkspaceRoot(), app.getPath('userData')]
+  // chatWorkspacePath() follows a relocated data dir; userData stays because the
+  // pointer file and any pre-move leftovers still live there.
+  const roots: string[] = [grokSessionsRoot(), chatWorkspacePath(), app.getPath('userData')]
   const cwd = agentManager.getCwd()
   if (cwd) roots.push(path.resolve(cwd))
   // Recent projects: allow images under any recently opened project cwd

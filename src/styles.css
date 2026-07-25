@@ -4838,3 +4838,73 @@ html[data-theme='light'] .auth-card {
     padding-top: 0;
   }
 }
+
+/* ---------- Data location ----------
+   The only variable-length thing here is an absolute path, and a deep one is
+   easily wider than the dialog. Every path is rendered inside .path-code, which
+   already breaks on any character; these rules make sure its *container* can
+   shrink too, since a grid/flex item defaults to min-content width and would
+   otherwise push the modal wider than the viewport.
+   Colours are theme variables only, and .data-path rides the existing
+   html[data-theme='light'] .path-code rule because it is applied alongside it. */
+.data-path {
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+/* Success counterpart to .warn-text — same construction, different signal. */
+.data-ok {
+  color: color-mix(in srgb, var(--signal) 80%, var(--ink-3));
+}
+
+.data-move-modal h3 {
+  margin-top: 0;
+}
+
+.data-move-paths {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: center;
+  margin: 0 0 12px;
+}
+
+.data-move-paths dt {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.data-move-paths dd {
+  margin: 0;
+  /* Without this the code box takes its min-content width from the path. */
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  /* Narrow enough that a 52px label column is not worth the width it costs. */
+  .data-move-paths {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .data-move-paths dd {
+    margin-bottom: 6px;
+  }
+}
+
+/* Store recovery notice — louder than the export banner because losing
+   transcripts is worth an interruption. Reuses .export-banner's layout. */
+.store-health-banner {
+  border-color: color-mix(in srgb, var(--abort) 45%, var(--line-2));
+}
+
+.store-health-banner .export-banner-label {
+  color: color-mix(in srgb, var(--abort) 80%, var(--ink));
+}
+
+.store-health-banner .path-code {
+  margin-top: 6px;
+}
