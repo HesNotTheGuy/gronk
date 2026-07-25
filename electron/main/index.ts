@@ -23,6 +23,15 @@ import { listModels } from './models'
 import { exportTranscriptMarkdown, listProjectFiles } from './fs-utils'
 import { getAuthStatus, loginWithCli, logoutWithCli } from './auth'
 import { redactSecrets } from './redact'
+import {
+  initPreview,
+  startPreview,
+  stopPreview,
+  setPreviewBounds,
+  setPreviewUrl,
+  reloadPreview,
+  getPreviewStatus
+} from './preview'
 import type {
   AppSettings,
   ChatMessage,
@@ -131,6 +140,17 @@ function createWindow(): void {
   })
 
   agentManager.setWindow(mainWindow)
+  initPreview(mainWindow, (channel, payload) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (channel === 'preview-status') {
+      mainWindow.webContents.send('grocky:event', {
+        type: 'preview-status',
+        ...(payload as Record<string, unknown>)
+      })
+    } else if (channel === 'preview-log') {
+      mainWindow.webContents.send('grocky:event', { type: 'preview-log', text: String(payload) })
+    }
+  })
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
@@ -175,6 +195,7 @@ function createWindow(): void {
   }
 
   mainWindow.on('closed', () => {
+    stopPreview()
     mainWindow = null
     agentManager.setWindow(null)
   })
@@ -607,6 +628,46 @@ function registerIpc(): void {
   ipcMain.handle('grocky:install-cli', async (e) => {
     assertTrustedSender(e)
     return installGrokCli()
+  })
+
+  ipcMain.handle('grocky:preview-start', (e, cwd: string, command?: string) => {
+    assertTrustedSender(e)
+    return startPreview(normalizeCwd(assertString(cwd, 'cwd')), assertOptionalString(command, 'command'))
+  })
+
+  ipcMain.handle('grocky:preview-stop', (e) => {
+    assertTrustedSender(e)
+    stopPreview()
+  })
+
+  ipcMain.handle('grocky:preview-set-bounds', (e, rect: unknown) => {
+    assertTrustedSender(e)
+    if (rect && typeof rect === 'object') {
+      const r = rect as { x?: number; y?: number; width?: number; height?: number }
+      if (
+        typeof r.x === 'number' &&
+        typeof r.y === 'number' &&
+        typeof r.width === 'number' &&
+        typeof r.height === 'number'
+      ) {
+        setPreviewBounds({ x: r.x, y: r.y, width: r.width, height: r.height })
+      }
+    }
+  })
+
+  ipcMain.handle('grocky:preview-set-url', (e, url: string) => {
+    assertTrustedSender(e)
+    setPreviewUrl(assertString(url, 'url'))
+  })
+
+  ipcMain.handle('grocky:preview-reload', (e) => {
+    assertTrustedSender(e)
+    reloadPreview()
+  })
+
+  ipcMain.handle('grocky:preview-status', (e) => {
+    assertTrustedSender(e)
+    return getPreviewStatus()
   })
 }
 

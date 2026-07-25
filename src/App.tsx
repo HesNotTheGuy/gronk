@@ -12,6 +12,7 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
 import { YoloConfirm } from './components/YoloConfirm'
 import { CliInstall } from './components/CliInstall'
+import { PreviewPane } from './components/PreviewPane'
 import { useGrocky } from './hooks/useGrocky'
 import type { LoginMethod } from '../shared/types'
 
@@ -155,6 +156,16 @@ export function App() {
             </div>
           </div>
           <div className="topbar-actions">
+            {inProject ? (
+              <button
+                type="button"
+                className={`btn btn-sm preview-toggle ${g.previewRunning ? 'btn-danger' : 'btn-ghost'}`}
+                onClick={() => g.togglePreview()}
+                title={g.previewRunning ? 'Stop the dev server + preview' : 'Run the dev server + open preview'}
+              >
+                {g.previewRunning ? '■ Preview' : '▶ Preview'}
+              </button>
+            ) : null}
             {inConversation ? (
               <button
                 type="button"
@@ -267,6 +278,7 @@ export function App() {
             onSignIn={() => setShowAuthModal(true)}
           />
         ) : (
+          <div className="conv-row">
           <div className="chat-workspace">
             <div className="chat" ref={g.scrollRef}>
               {g.messages.length === 0 ? (
@@ -343,6 +355,14 @@ export function App() {
               onCancel={() => void g.cancel()}
               onOpenFolder={(path) => openProject(path)}
             />
+          </div>
+          {g.previewRunning && inProject ? (
+            <PreviewPane
+              url={g.previewUrl}
+              error={g.previewError}
+              onStop={() => void g.stopPreview()}
+            />
+          ) : null}
           </div>
         )}
       </main>

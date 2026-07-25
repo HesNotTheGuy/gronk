@@ -48,6 +48,15 @@ const api: GrockyApi = {
   login: (method?: LoginMethod) => ipcRenderer.invoke('grocky:login', method),
   logout: () => ipcRenderer.invoke('grocky:logout'),
   installCli: () => ipcRenderer.invoke('grocky:install-cli'),
+  previewStart: (cwd: string, command?: string) =>
+    ipcRenderer.invoke('grocky:preview-start', cwd, command),
+  previewStop: () => ipcRenderer.invoke('grocky:preview-stop'),
+  previewSetBounds: (rect: { x: number; y: number; width: number; height: number }) => {
+    void ipcRenderer.invoke('grocky:preview-set-bounds', rect)
+  },
+  previewSetUrl: (url: string) => ipcRenderer.invoke('grocky:preview-set-url', url),
+  previewReload: () => ipcRenderer.invoke('grocky:preview-reload'),
+  previewStatus: () => ipcRenderer.invoke('grocky:preview-status'),
   readLocalImage: (filePath: string) => ipcRenderer.invoke('grocky:read-local-image', filePath),
   revealLocalPath: (filePath: string) => ipcRenderer.invoke('grocky:reveal-local-path', filePath),
   onEvent: (handler) => {

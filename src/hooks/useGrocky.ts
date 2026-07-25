@@ -58,6 +58,9 @@ export function useGrocky() {
   const [showCliInstall, setShowCliInstall] = useState(false)
   const [cliInstalling, setCliInstalling] = useState(false)
   const [cliInstallResult, setCliInstallResult] = useState<string | null>(null)
+  const [previewRunning, setPreviewRunning] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const [historySource, setHistorySource] = useState<string | null>(null)
   const [activePlan, setActivePlan] = useState<ActivePlan | null>(null)
   const [planCollapsed, setPlanCollapsed] = useState(false)
@@ -238,6 +241,13 @@ export function useGrocky() {
         case 'error':
           setError(event.message)
           setBusy(false)
+          break
+        case 'preview-status':
+          setPreviewRunning(event.running)
+          setPreviewUrl(event.url)
+          setPreviewError(event.error || null)
+          break
+        case 'preview-log':
           break
         default:
           break
@@ -790,6 +800,23 @@ export function useGrocky() {
     }
   }, [refreshMeta])
 
+  const startPreview = useCallback(async () => {
+    if (!cwd) return
+    setPreviewError(null)
+    const s = await window.grocky.getSettings()
+    const res = await window.grocky.previewStart(cwd, s.previewCommand)
+    if (!res.ok) setPreviewError(res.message)
+  }, [cwd])
+
+  const stopPreview = useCallback(async () => {
+    await window.grocky.previewStop()
+  }, [])
+
+  const togglePreview = useCallback(() => {
+    if (previewRunning) void stopPreview()
+    else void startPreview()
+  }, [previewRunning, startPreview, stopPreview])
+
   const refreshAuth = useCallback(async () => {
     setAuthBusy(true)
     try {
@@ -945,6 +972,12 @@ export function useGrocky() {
     cliInstallResult,
     setCliInstallResult,
     installCli,
+    previewRunning,
+    previewUrl,
+    previewError,
+    startPreview,
+    stopPreview,
+    togglePreview,
     historySource,
     activePlan,
     planCollapsed,

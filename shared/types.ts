@@ -211,6 +211,8 @@ export interface AppSettings {
   alwaysApproveAck?: boolean
   grokBinary?: string
   theme: 'dark' | 'light' | 'system'
+  /** Custom dev command for the preview pane (defaults to `npm run dev`). */
+  previewCommand?: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -290,6 +292,14 @@ export type MainToRendererEvent =
   | { type: 'models'; models: ModelInfo[]; current?: string }
   | { type: 'auth'; auth: AuthStatus }
   | { type: 'error'; message: string; sessionId?: string }
+  | {
+      type: 'preview-status'
+      running: boolean
+      url: string | null
+      cwd: string | null
+      error?: string
+    }
+  | { type: 'preview-log'; text: string }
 
 export interface SendPromptOptions {
   attachments?: PromptAttachment[]
@@ -378,5 +388,17 @@ export interface GrockyApi {
   /** Reveal a local file in the OS file manager (Finder / Explorer). */
   revealLocalPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>
   onEvent: (handler: (event: MainToRendererEvent) => void) => () => void
+  // Dev preview pane
+  previewStart: (cwd: string, command?: string) => Promise<{ ok: boolean; message: string }>
+  previewStop: () => Promise<void>
+  previewSetBounds: (rect: { x: number; y: number; width: number; height: number }) => void
+  previewSetUrl: (url: string) => Promise<void>
+  previewReload: () => Promise<void>
+  previewStatus: () => Promise<{
+    running: boolean
+    url: string | null
+    cwd: string | null
+    error?: string
+  }>
   platform: NodeJS.Platform
 }
