@@ -301,6 +301,84 @@ export type MainToRendererEvent =
     }
   | { type: 'preview-log'; text: string }
 
+// ── Plugins & Skills (Grok CLI plugin system) ──────────────────────
+export type PluginStatus = 'installed' | 'available' | 'disabled'
+
+export interface PluginComponent {
+  name: string
+  description?: string
+}
+
+export interface PluginComponents {
+  skills?: PluginComponent[]
+  mcpServers?: PluginComponent[]
+  commands?: PluginComponent[]
+  agents?: PluginComponent[]
+  hooks?: PluginComponent[]
+}
+
+export interface Plugin {
+  name: string
+  version?: string | null
+  description?: string
+  /** Source marketplace name, e.g. "xAI Official" */
+  marketplace?: string
+  category?: string
+  status: PluginStatus
+  enabled?: boolean
+  /** Derived from components.* (the flat skill_count/has_* fields are unreliable) */
+  skillCount: number
+  hasHooks: boolean
+  hasAgents: boolean
+  hasMcp: boolean
+  components?: PluginComponents
+  /** Pinned commit for marketplace entries — shown in the trust modal */
+  sha?: string
+  sourceUrl?: string
+}
+
+export interface MarketplaceSource {
+  name: string
+  kind: string
+  url?: string
+  branch?: string | null
+}
+
+export type McpTransport = 'stdio' | 'http' | 'sse'
+export type McpScope = 'user' | 'project'
+
+export interface McpServer {
+  name: string
+  transport: McpTransport
+  scope: McpScope
+  commandOrUrl?: string
+  args?: string[]
+  status?: 'ok' | 'error' | 'unknown'
+  detail?: string
+}
+
+export interface PluginActionResult {
+  ok: boolean
+  message: string
+  plugins?: Plugin[]
+}
+
+export interface McpActionResult {
+  ok: boolean
+  message: string
+  servers?: McpServer[]
+}
+
+export interface McpAddInput {
+  name: string
+  commandOrUrl: string
+  transport: McpTransport
+  scope: McpScope
+  args?: string[]
+  env?: Record<string, string>
+  headers?: Record<string, string>
+}
+
 export interface SendPromptOptions {
   attachments?: PromptAttachment[]
 }
@@ -400,5 +478,17 @@ export interface GrockyApi {
     cwd: string | null
     error?: string
   }>
+  // Plugins & Skills
+  listInstalledPlugins: () => Promise<Plugin[]>
+  listAvailablePlugins: () => Promise<Plugin[]>
+  listMarketplaces: () => Promise<MarketplaceSource[]>
+  installPlugin: (source: string, trust: boolean) => Promise<PluginActionResult>
+  enablePlugin: (name: string) => Promise<PluginActionResult>
+  disablePlugin: (name: string) => Promise<PluginActionResult>
+  uninstallPlugin: (name: string) => Promise<PluginActionResult>
+  listMcpServers: () => Promise<McpServer[]>
+  addMcpServer: (input: McpAddInput) => Promise<McpActionResult>
+  removeMcpServer: (name: string, scope?: McpScope) => Promise<McpActionResult>
+  mcpDoctor: (name?: string) => Promise<McpServer[]>
   platform: NodeJS.Platform
 }

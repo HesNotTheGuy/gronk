@@ -47,11 +47,17 @@ export class GrokAcpClient extends EventEmitter {
   private closed = false
   private debug = !!process.env.GROCKY_DEBUG
 
-  constructor(
-    private readonly grokBinary: string,
-    private readonly args: string[] = ['agent', 'stdio']
-  ) {
+  private readonly grokBinary: string
+  private readonly args: string[]
+
+  // Explicit field assignment rather than TS parameter properties: `node --test`
+  // loads this module with strip-only type removal, which rejects `private x` in
+  // a constructor signature. Keeping it plain is what makes the pure exports at
+  // the bottom of this file unit-testable.
+  constructor(grokBinary: string, args: string[] = ['agent', 'stdio']) {
     super()
+    this.grokBinary = grokBinary
+    this.args = args
   }
 
   get pid(): number | undefined {
@@ -467,6 +473,14 @@ export function resolveGrokBinary(override?: string): string | null {
   return null
 }
 
+/**
+ * `Tool` is the CLI's placeholder title, not a real tool name. Both the parser and
+ * the merge step must treat it as absent, otherwise a card renders as "TOOL".
+ */
+export function isGenericToolTitle(title?: string): boolean {
+  return !title || title === 'Tool' || title === 'tool'
+}
+
 /** Grok surfaces the tool identity under `_meta["x.ai/tool"]` (name, kind, label). */
 function xaiToolMeta(update: Record<string, unknown>): Record<string, unknown> | undefined {
   const meta = update._meta as Record<string, unknown> | undefined
@@ -486,8 +500,11 @@ export function parseToolCallFromUpdate(update: Record<string, unknown>): ToolCa
     `tool-${Date.now()}`
 
   // Prefer an explicit title, then the tool's human label / snake-case name from _meta.
+  // A literal "Tool" counts as no title: some updates send the placeholder at the top
+  // level while the real identity sits in _meta, and taking it would show "TOOL" cards.
+  const rawTitle = typeof update.title === 'string' ? update.title.trim() : ''
   const title =
-    (typeof update.title === 'string' && update.title) ||
+    (!isGenericToolTitle(rawTitle) && rawTitle) ||
     (meta && typeof meta.label === 'string' && meta.label) ||
     (meta && typeof meta.name === 'string' && meta.name) ||
     'Tool'
@@ -516,10 +533,9 @@ export function parseToolCallFromUpdate(update: Record<string, unknown>): ToolCa
  */
 export function mergeToolCall(prev: ToolCallInfo | undefined, next: ToolCallInfo): ToolCallInfo {
   if (!prev) return next
-  const generic = (t?: string): boolean => !t || t === 'Tool' || t === 'tool'
   return {
     toolCallId: next.toolCallId || prev.toolCallId,
-    title: !generic(next.title) ? next.title : prev.title,
+    title: !isGenericToolTitle(next.title) ? next.title : prev.title,
     kind: next.kind || prev.kind,
     status: next.status || prev.status,
     rawInput: next.rawInput ?? prev.rawInput,

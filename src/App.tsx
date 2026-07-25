@@ -8,6 +8,7 @@ import { PermissionModal } from './components/PermissionModal'
 import { AgentFleetStrip } from './components/AgentFleet'
 import { PlanPanel } from './components/PlanPanel'
 import { ProjectHome } from './components/ProjectHome'
+import { PluginsPanel } from './components/PluginsPanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
 import { YoloConfirm } from './components/YoloConfirm'
@@ -31,6 +32,7 @@ const CHAT_HINTS = [
 export function App() {
   const g = useGrocky()
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const [showPlugins, setShowPlugins] = useState(false)
 
   const surface = g.surface
   /** Main pane is live conversation (not browse home) */
@@ -443,6 +445,27 @@ export function App() {
         onLogin={(m) => void g.login(m)}
         onLogout={() => void g.logout()}
         onChangePermissionMode={(mode) => void g.changePermissionMode(mode)}
+        onOpenPlugins={() => setShowPlugins(true)}
+      />
+
+      <PluginsPanel
+        open={showPlugins}
+        installed={g.installedPlugins}
+        available={g.availablePlugins}
+        marketplaces={g.marketplaces}
+        mcpServers={g.mcpServers}
+        loading={g.pluginsLoading}
+        error={g.pluginsError}
+        busyName={g.pluginBusy}
+        onClose={() => setShowPlugins(false)}
+        onRefresh={() => void g.refreshPlugins()}
+        onLoadCatalog={() => void g.loadPluginCatalog()}
+        onInstall={(source, trust) => void g.installPlugin(source, trust)}
+        onEnable={(name) => void g.enablePlugin(name)}
+        onDisable={(name) => void g.disablePlugin(name)}
+        onUninstall={(name) => void g.uninstallPlugin(name)}
+        onAddMcp={(input) => void g.addMcpServer(input)}
+        onRemoveMcp={(name) => void g.removeMcpServer(name)}
       />
     </div>
   )

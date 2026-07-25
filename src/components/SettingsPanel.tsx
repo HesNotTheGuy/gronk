@@ -28,6 +28,7 @@ interface Props {
   onLogin: (method: LoginMethod) => void
   onLogout: () => void
   onChangePermissionMode?: (mode: PermissionMode) => void
+  onOpenPlugins?: () => void
 }
 
 export function SettingsPanel({
@@ -48,7 +49,8 @@ export function SettingsPanel({
   onRefreshHealth,
   onLogin,
   onLogout,
-  onChangePermissionMode
+  onChangePermissionMode,
+  onOpenPlugins
 }: Props) {
   if (!open) return null
 
@@ -233,6 +235,21 @@ export function SettingsPanel({
             Override if Grocky cannot find <code>grok</code> on PATH or in ~/.grok/bin.
           </p>
         </div>
+
+        {onOpenPlugins ? (
+          <div className="settings-block">
+            <div className="section-label">Plugins &amp; Skills</div>
+            <div className="btn-row">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenPlugins}>
+                Manage plugins…
+              </button>
+            </div>
+            <p className="settings-hint">
+              Browse marketplaces, install skills, and configure MCP servers. Plugin code runs on
+              your machine with your permissions — outside Grocky&apos;s file protections.
+            </p>
+          </div>
+        ) : null}
 
         <div className="settings-block">
           <div className="settings-row">

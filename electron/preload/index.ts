@@ -5,6 +5,8 @@ import type {
   GrockyApi,
   LoginMethod,
   MainToRendererEvent,
+  McpAddInput,
+  McpScope,
   PermissionDecision,
   SendPromptOptions
 } from '../../shared/types'
@@ -57,6 +59,19 @@ const api: GrockyApi = {
   previewSetUrl: (url: string) => ipcRenderer.invoke('grocky:preview-set-url', url),
   previewReload: () => ipcRenderer.invoke('grocky:preview-reload'),
   previewStatus: () => ipcRenderer.invoke('grocky:preview-status'),
+  listInstalledPlugins: () => ipcRenderer.invoke('grocky:plugin-list'),
+  listAvailablePlugins: () => ipcRenderer.invoke('grocky:plugin-available'),
+  listMarketplaces: () => ipcRenderer.invoke('grocky:plugin-marketplaces'),
+  installPlugin: (source: string, trust: boolean) =>
+    ipcRenderer.invoke('grocky:plugin-install', source, trust),
+  enablePlugin: (name: string) => ipcRenderer.invoke('grocky:plugin-enable', name),
+  disablePlugin: (name: string) => ipcRenderer.invoke('grocky:plugin-disable', name),
+  uninstallPlugin: (name: string) => ipcRenderer.invoke('grocky:plugin-uninstall', name),
+  listMcpServers: () => ipcRenderer.invoke('grocky:mcp-list'),
+  addMcpServer: (input: McpAddInput) => ipcRenderer.invoke('grocky:mcp-add', input),
+  removeMcpServer: (name: string, scope?: McpScope) =>
+    ipcRenderer.invoke('grocky:mcp-remove', name, scope),
+  mcpDoctor: (name?: string) => ipcRenderer.invoke('grocky:mcp-doctor', name),
   readLocalImage: (filePath: string) => ipcRenderer.invoke('grocky:read-local-image', filePath),
   revealLocalPath: (filePath: string) => ipcRenderer.invoke('grocky:reveal-local-path', filePath),
   onEvent: (handler) => {

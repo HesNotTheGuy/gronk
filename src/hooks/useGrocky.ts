@@ -10,10 +10,14 @@ import type {
   HealthStatus,
   LoginMethod,
   MainToRendererEvent,
+  MarketplaceSource,
+  McpAddInput,
+  McpServer,
   ModelInfo,
   PermissionAuditEntry,
   PermissionMode,
   PermissionRequest,
+  Plugin,
   ProjectContext,
   PromptAttachment,
   SessionInfo,
@@ -61,6 +65,14 @@ export function useGrocky() {
   const [previewRunning, setPreviewRunning] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  // Plugins & Skills (lazy — catalog calls hit the network / git caches)
+  const [installedPlugins, setInstalledPlugins] = useState<Plugin[]>([])
+  const [availablePlugins, setAvailablePlugins] = useState<Plugin[]>([])
+  const [marketplaces, setMarketplaces] = useState<MarketplaceSource[]>([])
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([])
+  const [pluginsLoading, setPluginsLoading] = useState(false)
+  const [pluginsError, setPluginsError] = useState<string | null>(null)
+  const [pluginBusy, setPluginBusy] = useState<string | null>(null)
   const [historySource, setHistorySource] = useState<string | null>(null)
   const [activePlan, setActivePlan] = useState<ActivePlan | null>(null)
   const [planCollapsed, setPlanCollapsed] = useState(false)
@@ -817,6 +829,108 @@ export function useGrocky() {
     else void startPreview()
   }, [previewRunning, startPreview, stopPreview])
 
+  // ── Plugins & Skills ──────────────────────────────────────────────
+  const refreshPlugins = useCallback(async () => {
+    setPluginsLoading(true)
+    setPluginsError(null)
+    try {
+      const [inst, mkts, servers] = await Promise.all([
+        window.grocky.listInstalledPlugins(),
+        window.grocky.listMarketplaces(),
+        window.grocky.listMcpServers()
+      ])
+      setInstalledPlugins(inst)
+      setMarketplaces(mkts)
+      setMcpServers(servers)
+    } catch (err) {
+      setPluginsError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPluginsLoading(false)
+    }
+  }, [])
+
+  /** Slower: syncs marketplace git caches. Called on first open of the Marketplace tab. */
+  const loadPluginCatalog = useCallback(async () => {
+    setPluginsLoading(true)
+    setPluginsError(null)
+    try {
+      setAvailablePlugins(await window.grocky.listAvailablePlugins())
+    } catch (err) {
+      setPluginsError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPluginsLoading(false)
+    }
+  }, [])
+
+  const runPluginAction = useCallback(
+    async (name: string, action: () => Promise<{ ok: boolean; message: string; plugins?: Plugin[] }>) => {
+      setPluginBusy(name)
+      setPluginsError(null)
+      try {
+        const res = await action()
+        if (!res.ok) setPluginsError(res.message)
+        if (res.plugins) setInstalledPlugins(res.plugins)
+        else await refreshPlugins()
+      } catch (err) {
+        setPluginsError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setPluginBusy(null)
+      }
+    },
+    [refreshPlugins]
+  )
+
+  const installPlugin = useCallback(
+    (source: string, trust: boolean) =>
+      runPluginAction(source, () => window.grocky.installPlugin(source, trust)),
+    [runPluginAction]
+  )
+  const enablePlugin = useCallback(
+    (name: string) => runPluginAction(name, () => window.grocky.enablePlugin(name)),
+    [runPluginAction]
+  )
+  const disablePlugin = useCallback(
+    (name: string) => runPluginAction(name, () => window.grocky.disablePlugin(name)),
+    [runPluginAction]
+  )
+  const uninstallPlugin = useCallback(
+    (name: string) => runPluginAction(name, () => window.grocky.uninstallPlugin(name)),
+    [runPluginAction]
+  )
+
+  const addMcpServer = useCallback(
+    async (input: McpAddInput) => {
+      setPluginBusy(input.name)
+      setPluginsError(null)
+      try {
+        const res = await window.grocky.addMcpServer(input)
+        if (!res.ok) setPluginsError(res.message)
+        if (res.servers) setMcpServers(res.servers)
+        else setMcpServers(await window.grocky.listMcpServers())
+      } catch (err) {
+        setPluginsError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setPluginBusy(null)
+      }
+    },
+    []
+  )
+
+  const removeMcpServer = useCallback(async (name: string) => {
+    setPluginBusy(name)
+    setPluginsError(null)
+    try {
+      const res = await window.grocky.removeMcpServer(name)
+      if (!res.ok) setPluginsError(res.message)
+      if (res.servers) setMcpServers(res.servers)
+      else setMcpServers(await window.grocky.listMcpServers())
+    } catch (err) {
+      setPluginsError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPluginBusy(null)
+    }
+  }, [])
+
   const refreshAuth = useCallback(async () => {
     setAuthBusy(true)
     try {
@@ -978,6 +1092,21 @@ export function useGrocky() {
     startPreview,
     stopPreview,
     togglePreview,
+    installedPlugins,
+    availablePlugins,
+    marketplaces,
+    mcpServers,
+    pluginsLoading,
+    pluginsError,
+    pluginBusy,
+    refreshPlugins,
+    loadPluginCatalog,
+    installPlugin,
+    enablePlugin,
+    disablePlugin,
+    uninstallPlugin,
+    addMcpServer,
+    removeMcpServer,
     historySource,
     activePlan,
     planCollapsed,

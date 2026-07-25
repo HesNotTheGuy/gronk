@@ -6,10 +6,20 @@
  * (FIX-R1) — that corrupts session restore. Transcripts are local user data.
  */
 
+/**
+ * The `(?:Bearer|Basic|...)\s+` group matters: without it `Authorization: Bearer <token>`
+ * matched only up to the scheme word, so `\S+` consumed "Bearer" and the token itself
+ * survived redaction (found by tests/redact.test.ts). Same for `Basic`/`Token`/`Digest`.
+ */
+const AUTH_SCHEME = '(?:Bearer|Basic|Token|Digest|JWT)'
+
 const SECRET_PATTERNS: RegExp[] = [
   /\b(xai|sk|gsk|ghp|gho|ghu|ghs|ghr)[-_][A-Za-z0-9._-]{8,}\b/gi,
   /\b(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b/g,
-  /\b(access_token|refresh_token|api[_-]?key|authorization|password|secret|bearer)\s*[:=]\s*\S+/gi,
+  new RegExp(
+    `\\b(access_token|refresh_token|api[_-]?key|authorization|password|secret|bearer)\\s*[:=]\\s*(?:${AUTH_SCHEME}\\s+)?\\S+`,
+    'gi'
+  ),
   /\bBearer\s+[A-Za-z0-9._\-+=/]{12,}\b/gi,
   /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g
 ]
@@ -24,7 +34,9 @@ export function redactSecrets(text: string): string {
       }
       if (/^eyJ/i.test(match)) return '[redacted-jwt]'
       if (/=/.test(match) || /:/.test(match)) {
-        return match.replace(/([:=]\s*)\S+/i, '$1[redacted]')
+        // Replace the ENTIRE tail, not just the first token — `Authorization: Bearer xyz`
+        // must not leave `xyz` behind.
+        return match.replace(/([:=]\s*)[\s\S]+$/, '$1[redacted]')
       }
       return '[redacted]'
     })
