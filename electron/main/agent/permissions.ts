@@ -64,6 +64,14 @@ export function parsePermissionRequest(
     (typeof toolCall.rawInput === 'string' ? toolCall.rawInput.slice(0, 80) : null) ||
     'Allow tool?'
 
+  // One resolution for both surfaces. The dialog and the card describe the same
+  // request, so they must not disagree: the card previously omitted the
+  // top-level `params.rawInput` fallback, meaning a request that carried its
+  // input only there showed the payload in the approval dialog and nothing on
+  // the card afterwards. Unified toward the fuller chain — under-reporting what
+  // a tool did is the worse failure.
+  const resolvedRawInput = toolCall.rawInput ?? toolCall.input ?? params.rawInput
+
   return {
     pending: {
       requestId,
@@ -71,18 +79,14 @@ export function parsePermissionRequest(
       toolCallId,
       title,
       kind: toolCall.kind as string | undefined,
-      rawInput: toolCall.rawInput ?? toolCall.input ?? params.rawInput
+      rawInput: resolvedRawInput
     },
-    // The card shows only what the tool call itself declared. The dialog's
-    // rawInput has one more fallback (a top-level `rawInput` on the request), so
-    // the two can differ — kept as-is rather than unified, since which of the two
-    // is right is a product question, not a refactor one.
     toolCallPatch: toolCallId
       ? {
           toolCallId,
           title,
           status: 'pending',
-          rawInput: toolCall.rawInput ?? toolCall.input
+          rawInput: resolvedRawInput
         }
       : null
   }

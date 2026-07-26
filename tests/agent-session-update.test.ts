@@ -160,8 +160,20 @@ test('an empty assistant chunk still opens the message but emits nothing', () =>
   assert.deepEqual(routed.action, { type: 'noop' })
 })
 
-test('an unknown update kind is assistant-scoped with nothing to do', () => {
+// An unrecognised kind must not open an assistant message. It used to be
+// assistant-scoped with a noop, which still resolved an assistant id and, during
+// replay, left an empty bubble in restored history for every update type the CLI
+// adds that this does not know about.
+test('an unknown update kind is ignored, not assistant-scoped', () => {
   const routed = route({ sessionUpdate: 'available_commands_update' })
+  assert.equal(routed.assistantScoped, false)
+  assert.deepEqual(routed.action, { type: 'ignore' })
+})
+
+// A KNOWN kind carrying nothing still opens the bubble: an empty agent chunk
+// means the assistant turn has started, even before any text arrives.
+test('a known kind with an empty payload stays assistant-scoped', () => {
+  const routed = route({ sessionUpdate: 'agent_message_chunk' })
   assert.equal(routed.assistantScoped, true)
   assert.deepEqual(routed.action, { type: 'noop' })
 })

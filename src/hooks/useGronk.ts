@@ -269,20 +269,29 @@ export function useGronk() {
             })
           )
           break
-        case 'message-done':
+        case 'message-done': {
           setBusy(false)
-          setMessages((prev) => {
-            const next = prev.map((m) =>
-              m.id === event.messageId ? { ...m, streaming: false } : m
-            )
-            if (event.sessionId) {
-              void window.gronk.saveTranscript(event.sessionId, next)
-            }
-            return next
-          })
+          setMessages((prev) =>
+            prev.map((m) => (m.id === event.messageId ? { ...m, streaming: false } : m))
+          )
+          // The save deliberately sits OUTSIDE the updater. React may call an
+          // updater more than once for a single dispatch — it does so on every
+          // render in development — so an IPC write in there ran twice per turn.
+          // Updaters have to be pure; messagesRef holds the same list, written
+          // by the effect that mirrors messages.
+          const doneSessionId = event.sessionId
+          if (doneSessionId) {
+            queueMicrotask(() => {
+              const settled = messagesRef.current.map((m) =>
+                m.id === event.messageId ? { ...m, streaming: false } : m
+              )
+              void window.gronk.saveTranscript(doneSessionId, settled)
+            })
+          }
           void refreshSessions()
           void refreshAudit()
           break
+        }
         case 'permission-request':
           setPermission(event.request)
           break

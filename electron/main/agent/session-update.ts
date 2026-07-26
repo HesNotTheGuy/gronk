@@ -139,7 +139,13 @@ export function routeSessionUpdate(
     return { ...base, action: { type: 'plan', plan: update } }
   }
 
-  return { ...base, action: { type: 'noop' } }
+  // An unrecognised kind is NOT assistant-scoped. A `noop` here still resolved an
+  // assistant id, which during replay opened an empty bubble and emitted a
+  // message event for it — so any update type the CLI adds later (
+  // `available_commands_update`, say) silently littered restored history with
+  // blank messages. A known kind with an empty payload keeps its `noop`, because
+  // an empty agent chunk really does mean an assistant turn has started.
+  return { sessionId, assistantScoped: false, action: { type: 'ignore' } }
 }
 
 /**

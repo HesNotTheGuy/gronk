@@ -348,6 +348,12 @@ export class AgentManager {
     if (!targetCwd) throw new Error('No project folder for session')
 
     const settings = getSettings()
+    // Captured before the transition below. needsAgentBoot asks whether the
+    // agent was already unusable, and reading this.state after setState made it
+    // permanently 'loading', so the error/idle/stopped arms never fired. A live
+    // client left in 'error' (the client error handler sets that state without
+    // nulling it) would then be reused instead of respawned.
+    const stateBeforeLoad = this.state
     this.setState('loading')
     this.emit({ type: 'history-clear', sessionId })
 
@@ -362,7 +368,7 @@ export class AgentManager {
       // Fresh agent process bound to this project, then load (not new)
       const needBoot = needsAgentBoot({
         hasClient: !!this.client,
-        state: this.state,
+        state: stateBeforeLoad,
         currentCwd: this.cwd ? normalizeCwd(this.cwd) : null,
         targetCwd
       })
@@ -495,12 +501,17 @@ export class AgentManager {
       throw new Error('Agent is not ready')
     }
 
-    const messageId = randomUUID()
-    this.activeMessageId = messageId
     const attachments = options?.attachments ?? []
 
-    // Build ACP content blocks: files as path context, images as image blocks
+    // Build ACP content blocks: files as path context, images as image blocks.
+    // This runs BEFORE activeMessageId is set because it throws on an empty
+    // prompt: pointing the manager at a message id first meant a rejected send
+    // left tool-call updates attaching to a message that was never created,
+    // until the next prompt happened to reset it.
     const { blocks: promptBlocks, text: fullText } = buildPromptPayload(text, attachments)
+
+    const messageId = randomUUID()
+    this.activeMessageId = messageId
 
     const { user, assistant } = buildTurnMessages({
       userId: randomUUID(),

@@ -68,15 +68,17 @@ test('the tool card patch marks the call as awaiting consent', () => {
   })
 })
 
-// Documented difference, preserved from the original inline code: the dialog has
-// one extra fallback that the card does not.
-test('a top-level rawInput reaches the dialog but not the tool card', () => {
+// Both surfaces describe the same request, so they must resolve rawInput the same
+// way. The card used to omit the top-level fallback, so a request carrying its
+// input only there showed a payload in the approval dialog and nothing on the
+// card afterwards.
+test('a top-level rawInput reaches the dialog AND the tool card', () => {
   const parsed = parsePermissionRequest(1, {
     toolCall: { toolCallId: 't1' },
     rawInput: { path: 'a.ts' }
   })
   assert.deepEqual(parsed.pending.rawInput, { path: 'a.ts' })
-  assert.equal(parsed.toolCallPatch?.rawInput, undefined)
+  assert.deepEqual(parsed.toolCallPatch?.rawInput, { path: 'a.ts' })
 })
 
 // ── queue ──────────────────────────────────────────────────────────────────
