@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { BrowserWindow } from 'electron'
 import { chatWorkspacePath } from './data-dir'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -6,15 +6,30 @@ import { randomUUID } from 'node:crypto'
 import {
   GrokAcpClient,
   isAllowedGrokBasename,
-  mergeToolCall,
-  parseToolCallFromUpdate,
   probeGrokBinary,
   resolveGrokBinary,
   SessionUsageTracker,
-  type JsonRpcId,
-  type PermissionOption
+  type JsonRpcId
 } from './acp/client'
 import { buildAgentArgs, isAutoApproveActive } from './agent-args'
+import { MAX_FS_READ_BYTES, resolveInsideJail, sliceLines } from './agent/fs-bridge'
+import {
+  canAppendHistoryUserChunk,
+  historySource,
+  needsAgentBoot,
+  planHistoryReplay
+} from './agent/history'
+import {
+  parsePermissionRequest,
+  PermissionQueue,
+  type PendingPermission
+} from './agent/permissions'
+import {
+  buildPromptPayload,
+  buildTurnMessages,
+  sessionTitleFromPrompt
+} from './agent/prompt'
+import { routeSessionUpdate, upsertToolCall } from './agent/session-update'
 import {
   appendPermissionAudit,
   getSettings,
@@ -35,8 +50,7 @@ import type {
   MainToRendererEvent,
   ModelInfo,
   PermissionDecision,
-  PermissionRequest,
-  ToolCallInfo
+  PermissionRequest
 } from '../../shared/types'
 
 /** Gronk app chat sandbox (same path as gronk:get-chat-workspace). */
@@ -49,21 +63,14 @@ function isChatPadCwd(cwd: string): boolean {
   return isChatWorkspace(cwd, chatWorkspacePath())
 }
 
-interface PendingPermission {
-  requestId: JsonRpcId
-  options: PermissionOption[]
-  toolCallId?: string
-  title: string
-  kind?: string
-  rawInput?: unknown
-  /** When set, resolve ACP fs/write after user decision */
-  fsWrite?: { path: string; content: string }
-}
-
-const MAX_FS_READ_BYTES = 4 * 1024 * 1024 // 4 MB
-
 /**
  * Owns the lifecycle of one `grok agent stdio` process and maps ACP events → renderer IPC.
+ *
+ * Coordinator only: the decisions it used to make inline now live in `./agent/*`
+ * as pure functions (update routing, history restore, prompt building, the
+ * filesystem jail) plus one small stateful queue for pending permissions. This
+ * class keeps the process, the window and the live transcript, and applies what
+ * those modules return.
  */
 export class AgentManager {
   private client: GrokAcpClient | null = null
@@ -73,8 +80,7 @@ export class AgentManager {
   private activeMessageId: string | null = null
   private window: BrowserWindow | null = null
   /** FIX-9: one pending permission per request id (queue display FIFO) */
-  private pendingPermissions = new Map<string, PendingPermission>()
-  private permissionQueue: string[] = []
+  private permissions = new PermissionQueue()
   /** When true, session/update chunks rebuild history instead of live turn */
   private replayingHistory = false
   /**
@@ -245,11 +251,13 @@ export class AgentManager {
     this.replayingHistory = false
     this.historyAssistantId = null
     this.activeMessageId = null
-    this.pendingPermissions.clear()
-    this.permissionQueue = []
+    this.permissions.clear()
 
     this.client.on('stderr', (line) => this.log('stderr', line))
     this.client.on('error', (err) => this.setState('error', err.message))
+    // Surface the exit and stand down — deliberately no respawn. A crash loop
+    // would keep spending the user's quota with nothing on screen to stop it, so
+    // the next process only ever starts from an explicit user action.
     this.client.on('exit', (code) => {
       if (this.state !== 'stopped' && this.state !== 'idle') {
         this.setState('error', `Agent process exited (code ${code ?? '?'})`)
@@ -257,8 +265,7 @@ export class AgentManager {
       this.client = null
       this.sessionId = null
       this.bootAlwaysApprove = false
-      this.pendingPermissions.clear()
-      this.permissionQueue = []
+      this.permissions.clear()
     })
     this.client.on('notification', (method, params) => {
       this.handleNotification(method, params)
@@ -346,25 +353,19 @@ export class AgentManager {
 
     // Prefer local transcript immediately for snappy UI (already de-duped in getTranscript)
     const local = getTranscript(sessionId)
-    if (local.length > 0) {
-      for (const m of local) {
-        this.emit({
-          type: 'user-message',
-          sessionId,
-          message: { ...m, streaming: false, fromHistory: true }
-        })
-      }
+    const plan = planHistoryReplay(local)
+    for (const message of plan.messages) {
+      this.emit({ type: 'user-message', sessionId, message })
     }
 
     try {
       // Fresh agent process bound to this project, then load (not new)
-      const needBoot =
-        !this.client ||
-        this.state === 'error' ||
-        this.state === 'idle' ||
-        this.state === 'stopped' ||
-        !this.cwd ||
-        normalizeCwd(this.cwd) !== targetCwd
+      const needBoot = needsAgentBoot({
+        hasClient: !!this.client,
+        state: this.state,
+        currentCwd: this.cwd ? normalizeCwd(this.cwd) : null,
+        targetCwd
+      })
 
       if (needBoot) {
         // No alwaysApprove override: bootAgent reads the stored permission mode,
@@ -383,9 +384,9 @@ export class AgentManager {
       // Replayed turn_completed updates then rebuild this session's real total.
       this.usage.reset()
       // If we already have a local transcript, do not rebuild messages from ACP echo
-      this.suppressHistoryReplay = local.length > 0
+      this.suppressHistoryReplay = plan.suppressHistoryReplay
       this.historyAssistantId = null
-      this.liveMessages = local.map((m) => ({ ...m, streaming: false, fromHistory: true }))
+      this.liveMessages = plan.messages
 
       // ACP requires absolute path; Windows paths with backslashes are fine.
       // Prefer native absolute form for the CLI.
@@ -400,12 +401,7 @@ export class AgentManager {
       this.setState('ready')
       this.emit({ type: 'session', sessionId: this.sessionId, cwd: targetCwd })
 
-      const source =
-        local.length > 0
-          ? 'local'
-          : this.liveMessages.length > 0
-            ? 'acp'
-            : 'empty'
+      const source = historySource(local.length, this.liveMessages.length)
 
       this.persistLiveTranscript()
       this.emit({ type: 'history-done', sessionId: this.sessionId, source })
@@ -448,8 +444,7 @@ export class AgentManager {
     this.bootAlwaysApprove = false
     // Totals belong to one live session; a new process starts a new accounting run.
     this.usage.reset()
-    this.pendingPermissions.clear()
-    this.permissionQueue = []
+    this.permissions.clear()
     if (this.client) {
       await this.client.dispose()
       this.client = null
@@ -458,20 +453,10 @@ export class AgentManager {
     this.activeMessageId = null
   }
 
-  private permKey(id: JsonRpcId): string {
-    return String(id)
-  }
-
   private emitFrontPermission(): void {
-    const front = this.permissionQueue[0]
-    if (!front) {
-      this.emit({ type: 'permission-request', request: null })
-      return
-    }
-    const p = this.pendingPermissions.get(front)
+    const p = this.permissions.front()
     if (!p) {
-      this.permissionQueue.shift()
-      this.emitFrontPermission()
+      this.emit({ type: 'permission-request', request: null })
       return
     }
     const request: PermissionRequest = {
@@ -515,53 +500,17 @@ export class AgentManager {
     const attachments = options?.attachments ?? []
 
     // Build ACP content blocks: files as path context, images as image blocks
-    const promptBlocks: Array<{ type: string; text?: string; data?: string; mimeType?: string }> =
-      []
-    const filePaths = attachments
-      .filter((a) => a.kind === 'file' && a.path)
-      .map((a) => a.path as string)
-    let fullText = text.trim()
-    if (filePaths.length) {
-      const ctx = filePaths.map((p) => `- ${p}`).join('\n')
-      fullText = fullText
-        ? `${fullText}\n\nAttached files:\n${ctx}`
-        : `Please inspect these files:\n${ctx}`
-    }
-    if (fullText) {
-      promptBlocks.push({ type: 'text', text: fullText })
-    }
-    for (const img of attachments.filter((a) => a.kind === 'image' && a.data)) {
-      promptBlocks.push({
-        type: 'image',
-        data: img.data,
-        mimeType: img.mimeType || 'image/png'
-      })
-    }
-    if (promptBlocks.length === 0) {
-      throw new Error('Empty prompt')
-    }
+    const { blocks: promptBlocks, text: fullText } = buildPromptPayload(text, attachments)
 
-    const userMsg: ChatMessage = {
-      id: randomUUID(),
-      role: 'user',
-      text: fullText || text,
-      createdAt: Date.now(),
-      attachments: attachments.map((a) => ({
-        ...a,
-        // Don't persist huge base64 in local cache via liveMessages → save strips later
-        data: a.kind === 'image' ? undefined : a.data
-      }))
-    }
-    this.liveMessages.push(userMsg)
-    this.liveMessages.push({
-      id: messageId,
-      role: 'assistant',
-      text: '',
-      thought: '',
-      toolCalls: [],
-      createdAt: Date.now(),
-      streaming: true
+    const { user, assistant } = buildTurnMessages({
+      userId: randomUUID(),
+      assistantId: messageId,
+      text: fullText,
+      rawText: text,
+      attachments,
+      now: Date.now()
     })
+    this.liveMessages.push(user, assistant)
     this.persistLiveTranscript()
 
     if (this.sessionId && this.cwd) {
@@ -572,7 +521,7 @@ export class AgentManager {
         cwd: this.cwd,
         surface: this.surface,
         ...(!prev?.title
-          ? { title: (fullText || text).slice(0, 60) || path.basename(this.cwd) }
+          ? { title: sessionTitleFromPrompt(fullText || text, path.basename(this.cwd)) }
           : {}),
         createdAt: Date.now(),
         updatedAt: Date.now()
@@ -642,14 +591,13 @@ export class AgentManager {
   async cancelPrompt(): Promise<void> {
     if (!this.client || !this.sessionId) return
 
-    for (const p of this.pendingPermissions.values()) {
+    for (const p of this.permissions.all()) {
       this.client.respondToRequest(p.requestId, {
         outcome: { outcome: 'cancelled' }
       })
       this.recordAuditFor(p, 'cancelled')
     }
-    this.pendingPermissions.clear()
-    this.permissionQueue = []
+    this.permissions.clear()
     this.emit({ type: 'permission-request', request: null })
 
     try {
@@ -662,8 +610,7 @@ export class AgentManager {
   respondPermission(requestId: number | string, decision: PermissionDecision): void {
     if (!this.client) return
 
-    const key = this.permKey(requestId)
-    const pending = this.pendingPermissions.get(key)
+    const pending = this.permissions.take(requestId)
     if (!pending) {
       this.log('permission decision for unknown requestId', requestId)
       return
@@ -675,7 +622,7 @@ export class AgentManager {
     if (pending.fsWrite) {
       if (decision === 'allow-once' || decision === 'allow-always') {
         try {
-          const safe = this.resolveInsideJail(pending.fsWrite.path)
+          const safe = resolveInsideJail(this.cwd, pending.fsWrite.path)
           if (!safe) {
             this.client.respondError(pending.requestId, -32000, 'Path outside project root is not allowed')
             this.recordAuditFor(pending, 'reject-once')
@@ -699,8 +646,6 @@ export class AgentManager {
       this.recordAuditFor(pending, decision)
     }
 
-    this.pendingPermissions.delete(key)
-    this.permissionQueue = this.permissionQueue.filter((k) => k !== key)
     this.emitFrontPermission()
   }
 
@@ -761,80 +706,29 @@ export class AgentManager {
   }
 
   private handlePermissionRequest(id: JsonRpcId, p: Record<string, unknown>): void {
-    const toolCall = (p.toolCall ?? p.tool_call ?? {}) as Record<string, unknown>
-    const options = (Array.isArray(p.options) ? p.options : []) as PermissionOption[]
+    const { pending, toolCallPatch } = parsePermissionRequest(id, p)
 
-    const toolCallId =
-      (toolCall.toolCallId as string) ||
-      (toolCall.tool_call_id as string) ||
-      (toolCall.id as string)
-
-    const title =
-      (toolCall.title as string) ||
-      (p.title as string) ||
-      (typeof toolCall.rawInput === 'string' ? toolCall.rawInput.slice(0, 80) : null) ||
-      'Allow tool?'
-
-    const pending: PendingPermission = {
-      requestId: id,
-      options,
-      toolCallId,
-      title,
-      kind: toolCall.kind as string | undefined,
-      rawInput: toolCall.rawInput ?? toolCall.input ?? p.rawInput
-    }
-
-    if (toolCallId && this.activeMessageId && this.sessionId) {
+    // Show the gated call on the tool card before the prompt is answered, so the
+    // user can see what they are being asked about without reading the dialog.
+    if (toolCallPatch && this.activeMessageId && this.sessionId) {
       this.emit({
         type: 'tool-call-update',
         sessionId: this.sessionId,
         messageId: this.activeMessageId,
-        toolCallId,
-        patch: {
-          toolCallId,
-          title,
-          status: 'pending',
-          rawInput: toolCall.rawInput ?? toolCall.input
-        }
+        toolCallId: toolCallPatch.toolCallId,
+        patch: toolCallPatch
       })
     }
 
     if (this.autoApproveActive()) {
       this.log('auto-approving permission', id)
-      this.client?.respondPermission(id, 'allow-once', options)
+      this.client?.respondPermission(id, 'allow-once', pending.options)
       this.recordAuditFor(pending, 'auto-allow')
       return
     }
 
-    const key = this.permKey(id)
-    this.pendingPermissions.set(key, pending)
-    if (!this.permissionQueue.includes(key)) this.permissionQueue.push(key)
+    this.permissions.add(pending)
     this.emitFrontPermission()
-  }
-
-  /** FIX-5: realpath-aware jail; refuse when no project root */
-  private resolveInsideJail(filePath: string): string | null {
-    if (!this.cwd) return null
-    let root: string
-    try {
-      root = fs.realpathSync(path.resolve(this.cwd))
-    } catch {
-      return null
-    }
-    const resolved = path.resolve(root, filePath)
-    let probe = resolved
-    while (!fs.existsSync(probe) && path.dirname(probe) !== probe) {
-      probe = path.dirname(probe)
-    }
-    let realProbe: string
-    try {
-      realProbe = fs.realpathSync(probe)
-    } catch {
-      return null
-    }
-    const real = realProbe + resolved.slice(probe.length)
-    if (real === root || real.startsWith(root + path.sep)) return real
-    return null
   }
 
   private handleFsRead(id: JsonRpcId, p: Record<string, unknown>): void {
@@ -844,7 +738,7 @@ export class AgentManager {
         this.client?.respondError(id, -32602, 'path required')
         return
       }
-      const safe = this.resolveInsideJail(filePath)
+      const safe = resolveInsideJail(this.cwd, filePath)
       if (!safe) {
         this.client?.respondError(id, -32000, 'Path outside project root is not allowed')
         return
@@ -861,16 +755,10 @@ export class AgentManager {
         return
       }
 
-      let content = fs.readFileSync(safe, 'utf8')
+      const content = fs.readFileSync(safe, 'utf8')
       const line = typeof p.line === 'number' ? p.line : undefined
       const limit = typeof p.limit === 'number' ? p.limit : undefined
-      if (line !== undefined || limit !== undefined) {
-        const lines = content.split(/\r?\n/)
-        const start = Math.max(0, (line ?? 1) - 1)
-        const end = limit !== undefined ? start + limit : lines.length
-        content = lines.slice(start, end).join('\n')
-      }
-      this.client?.respondToRequest(id, { content })
+      this.client?.respondToRequest(id, { content: sliceLines(content, line, limit) })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       this.client?.respondError(id, -32000, message)
@@ -885,7 +773,7 @@ export class AgentManager {
         this.client?.respondError(id, -32602, 'path required')
         return
       }
-      const safe = this.resolveInsideJail(filePath)
+      const safe = resolveInsideJail(this.cwd, filePath)
       if (!safe) {
         this.client?.respondError(id, -32000, 'Path outside project root is not allowed')
         return
@@ -910,9 +798,7 @@ export class AgentManager {
         return
       }
 
-      const key = this.permKey(id)
-      this.pendingPermissions.set(key, pending)
-      if (!this.permissionQueue.includes(key)) this.permissionQueue.push(key)
+      this.permissions.add(pending)
       this.emitFrontPermission()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -980,118 +866,52 @@ export class AgentManager {
     return messageId
   }
 
+  /** Apply one routed session/update. Routing itself lives in ./agent/session-update. */
   private handleSessionUpdate(params: Record<string, unknown>): void {
-    const update = (params.update ?? params) as Record<string, unknown>
-    const sessionId = (params.sessionId as string) || this.sessionId || ''
-    const kind = (update.sessionUpdate as string) || ''
+    const routed = routeSessionUpdate(params, {
+      sessionId: this.sessionId,
+      replayingHistory: this.replayingHistory,
+      suppressHistoryReplay: this.suppressHistoryReplay
+    })
+    const { sessionId, action } = routed
 
-    // Token/cost accounting. Handled before anything else touches the assistant
-    // message: a turn_completed carries no content, so ensureAssistantId would
-    // otherwise mint an empty history bubble for it.
-    if (kind === 'turn_completed') {
-      this.trackUsage(sessionId, update)
+    if (action.type === 'ignore') return
+
+    if (action.type === 'usage') {
+      this.trackUsage(sessionId, action.update)
       return
     }
 
-    // History replay: user messages
-    // FIX-R7: live turns already have the user bubble (renderer optimistic + main
-    // sendPrompt). The agent echoes the prompt as user_message_chunk — ignore it.
-    // Only rebuild user turns while replaying session/load history, and only when
-    // we did not already load a full local transcript.
-    if (kind === 'user_message_chunk') {
-      if (!this.replayingHistory || this.suppressHistoryReplay) return
-      const content = update.content as { text?: string } | string | undefined
-      const text =
-        typeof content === 'string'
-          ? content
-          : content?.text || (update.text as string) || ''
-      if (!text) return
-      const messageId =
-        (update.messageId as string) || (update.id as string) || randomUUID()
-      // Append to last user or create
-      const last = this.liveMessages[this.liveMessages.length - 1]
-      if (last?.role === 'user' && last.fromHistory && last.streaming !== false) {
-        last.text += text
-        this.emit({
-          type: 'message-chunk',
-          sessionId,
-          messageId: last.id,
-          text
-        })
-      } else {
-        const msg: ChatMessage = {
-          id: messageId,
-          role: 'user',
-          text,
-          createdAt: Date.now(),
-          fromHistory: this.replayingHistory
-        }
-        this.liveMessages.push(msg)
-        this.emit({ type: 'user-message', sessionId, message: msg })
-      }
-      // Close prior assistant grouping when user speaks in history
-      this.historyAssistantId = null
+    if (action.type === 'history-user-chunk') {
+      this.appendHistoryUserChunk(sessionId, action.text, action.messageId)
       return
     }
 
-    // Skip assistant/thought history rebuild when local transcript is authoritative
-    if (
-      this.suppressHistoryReplay &&
-      (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk')
-    ) {
-      return
-    }
+    // Everything below is assistant-scoped, and resolving the id is what opens a
+    // replayed turn's bubble — so it happens for all of them, including a `noop`.
+    const messageId = this.ensureAssistantId(routed.explicitMessageId)
 
-    const messageId = this.ensureAssistantId(
-      (update.messageId as string) || undefined
-    )
+    switch (action.type) {
+      case 'text':
+        this.patchAssistant(messageId, (m) => ({ ...m, text: m.text + action.text }))
+        this.emit({ type: 'message-chunk', sessionId, messageId, text: action.text })
+        return
 
-    if (kind === 'agent_message_chunk') {
-      const content = update.content as { text?: string } | string | undefined
-      const text =
-        typeof content === 'string'
-          ? content
-          : content?.text || (update.text as string) || ''
-      if (text) {
-        this.patchAssistant(messageId, (m) => ({ ...m, text: m.text + text }))
-        this.emit({ type: 'message-chunk', sessionId, messageId, text })
-      }
-      return
-    }
-
-    if (kind === 'agent_thought_chunk') {
-      const content = update.content as { text?: string } | string | undefined
-      const text =
-        typeof content === 'string'
-          ? content
-          : content?.text || (update.text as string) || ''
-      if (text) {
+      case 'thought':
         this.patchAssistant(messageId, (m) => ({
           ...m,
-          thought: (m.thought || '') + text
+          thought: (m.thought || '') + action.text
         }))
-        this.emit({ type: 'thought-chunk', sessionId, messageId, text })
-      }
-      return
-    }
+        this.emit({ type: 'thought-chunk', sessionId, messageId, text: action.text })
+        return
 
-    if (kind === 'tool_call' || kind === 'tool_call_update') {
-      const parsed = parseToolCallFromUpdate(update)
-      if (parsed) {
-        // Preserve title/kind/rawInput across Grok's late status-only updates.
-        let merged = parsed
-        this.patchAssistant(messageId, (m) => {
-          const tools = [...(m.toolCalls || [])]
-          const idx = tools.findIndex((t) => t.toolCallId === parsed.toolCallId)
-          if (idx >= 0) {
-            merged = mergeToolCall(tools[idx], parsed)
-            tools[idx] = merged
-          } else {
-            tools.push(parsed)
-          }
-          return { ...m, toolCalls: tools }
-        })
-        if (kind === 'tool_call') {
+      case 'tool-call': {
+        // The emitted call is the merged one: Grok's late status-only updates
+        // carry a placeholder title that must not reach the renderer.
+        const current = this.liveMessages.find((m) => m.id === messageId)
+        const { toolCalls, merged } = upsertToolCall(current?.toolCalls, action.toolCall)
+        this.patchAssistant(messageId, (m) => ({ ...m, toolCalls }))
+        if (action.initial) {
           this.emit({ type: 'tool-call', sessionId, messageId, toolCall: merged })
         } else {
           this.emit({
@@ -1102,14 +922,41 @@ export class AgentManager {
             patch: merged
           })
         }
+        return
       }
-      return
-    }
 
-    if (kind === 'plan') {
-      this.emit({ type: 'plan', sessionId, messageId, plan: update })
-      return
+      case 'plan':
+        this.emit({ type: 'plan', sessionId, messageId, plan: action.plan })
+        return
+
+      default:
+        return
     }
+  }
+
+  /** Rebuild one replayed user turn: extend the open bubble, or start a new one. */
+  private appendHistoryUserChunk(
+    sessionId: string,
+    text: string,
+    messageId?: string
+  ): void {
+    const last = this.liveMessages[this.liveMessages.length - 1]
+    if (canAppendHistoryUserChunk(last)) {
+      last.text += text
+      this.emit({ type: 'message-chunk', sessionId, messageId: last.id, text })
+    } else {
+      const msg: ChatMessage = {
+        id: messageId || randomUUID(),
+        role: 'user',
+        text,
+        createdAt: Date.now(),
+        fromHistory: this.replayingHistory
+      }
+      this.liveMessages.push(msg)
+      this.emit({ type: 'user-message', sessionId, message: msg })
+    }
+    // Close prior assistant grouping when user speaks in history
+    this.historyAssistantId = null
   }
 }
 

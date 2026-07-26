@@ -1,148 +1,53 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ActivePlan,
-  ActivityCalendar,
   AgentSurface,
-  AppSettings,
   AppSurface,
-  AuthStatus,
   ChatMessage,
   ConnectionState,
-  DataLocation,
-  StoreHealth,
-  HealthStatus,
-  LoginMethod,
   MainToRendererEvent,
-  MarketplaceSource,
-  McpAddInput,
-  McpServer,
-  ModelInfo,
-  MoveDataResult,
-  PermissionAuditEntry,
-  PermissionMode,
   PermissionRequest,
-  Plugin,
-  ProjectContext,
   PromptAttachment,
   SessionInfo,
   SessionUsage,
   ToolCallInfo
 } from '../../shared/types'
-import {
-  folderName,
-  isChatSession,
-  isChatWorkspace,
-  isWorkspaceSession,
-  pathsEqual
-} from '../../shared/path'
+import { folderName, isChatWorkspace, pathsEqual } from '../../shared/path'
 import {
   createAssistantPlaceholder,
   createUserMessage,
   hasAssistantReplyAfter
 } from '../lib/messages'
 import { parsePlan } from '../lib/plan'
-import { applyTheme } from '../lib/theme'
+import { useAppSettings } from './useAppSettings'
+import { useAuth } from './useAuth'
+import { useCliInstall } from './useCliInstall'
+import { useDataLocation } from './useDataLocation'
+import { useExportNotice } from './useExportNotice'
+import { usePlugins } from './usePlugins'
+import { usePreview } from './usePreview'
+import { useSessionCatalog } from './useSessionCatalog'
 
-/** A year of squares — the window the main process defaults to. */
-export const ACTIVITY_CALENDAR_DAYS = 365
-
-export interface ActivityCalendarState {
-  calendar: ActivityCalendar | null
-  loading: boolean
-  /** Set only when the read failed; the panel says so instead of showing nothing. */
-  error: string | null
-  refresh: () => Promise<void>
-}
+// ActivityCalendar.tsx imports these from this module. Re-exported so splitting
+// the file changes no component's import path.
+export { ACTIVITY_CALENDAR_DAYS, useActivityCalendar } from './useActivityCalendar'
+export type { ActivityCalendarState } from './useActivityCalendar'
 
 /**
- * Per-day activity for the Home heatmap.
- *
- * A hook of its own rather than another field on useGronk(): building the
- * calendar re-reads every stored transcript, and folding it into refreshMeta
- * would pay that cost on every settings change, session rename and login — for a
- * panel that is only on screen on Home. Mounting the panel is the event that
- * needs the data, so mounting the panel is what fetches it.
+ * Composes the focused hooks in this directory into the single object the app
+ * talks to. The shape it returns is the public surface; `tests/use-gronk-surface.test.ts`
+ * pins it member by member.
  */
-export function useActivityCalendar(days: number = ACTIVITY_CALENDAR_DAYS): ActivityCalendarState {
-  const [calendar, setCalendar] = useState<ActivityCalendar | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    try {
-      setCalendar(await window.gronk.getActivityCalendar(days))
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLoading(false)
-    }
-  }, [days])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  return { calendar, loading, error, refresh }
-}
-
-/** Last transcript written to disk — drives the "saved to…" banner. */
-interface ExportNotice {
-  path: string
-  format: 'md' | 'json'
-  /** Main refuses to reveal paths outside its allowed roots; show why inline */
-  revealError?: string
-  /** Path is on the clipboard — the banner swaps its label to confirm */
-  copied?: boolean
-  /** Clipboard write refused (no permission / not focused); tell the user */
-  copyError?: string
-}
-
 export function useGronk() {
+  // ── The live conversation: the state this file still owns ──────────
   const [connection, setConnection] = useState<ConnectionState>('idle')
   const [cwd, setCwd] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [recentProjects, setRecentProjects] = useState<ProjectContext[]>([])
-  const [sessions, setSessions] = useState<SessionInfo[]>([])
-  const [settings, setSettingsState] = useState<AppSettings | null>(null)
   const [permission, setPermission] = useState<PermissionRequest | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [grokPath, setGrokPath] = useState<string | null>(null)
-  const [models, setModels] = useState<ModelInfo[]>([])
-  const [audit, setAudit] = useState<PermissionAuditEntry[]>([])
-  const [health, setHealth] = useState<HealthStatus | null>(null)
-  const [auth, setAuth] = useState<AuthStatus | null>(null)
-  const [authBusy, setAuthBusy] = useState(false)
-  const [authMessage, setAuthMessage] = useState<string | null>(null)
-  const [deviceHint, setDeviceHint] = useState<string | null>(null)
-  const [showYoloConfirm, setShowYoloConfirm] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showArchived, setShowArchived] = useState(false)
-  const [exportNotice, setExportNotice] = useState<ExportNotice | null>(null)
-  const [showCliInstall, setShowCliInstall] = useState(false)
-  const [cliInstalling, setCliInstalling] = useState(false)
-  const [cliInstallResult, setCliInstallResult] = useState<string | null>(null)
-  const [previewRunning, setPreviewRunning] = useState(false)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [previewError, setPreviewError] = useState<string | null>(null)
-  // Plugins & Skills (lazy — catalog calls hit the network / git caches)
-  const [installedPlugins, setInstalledPlugins] = useState<Plugin[]>([])
-  const [availablePlugins, setAvailablePlugins] = useState<Plugin[]>([])
-  const [marketplaces, setMarketplaces] = useState<MarketplaceSource[]>([])
-  const [mcpServers, setMcpServers] = useState<McpServer[]>([])
-  const [pluginsLoading, setPluginsLoading] = useState(false)
-  const [pluginsError, setPluginsError] = useState<string | null>(null)
-  const [pluginBusy, setPluginBusy] = useState<string | null>(null)
-  // Data location (transcript store + chat sandbox on disk)
-  const [dataLocation, setDataLocation] = useState<DataLocation | null>(null)
-  const [dataBusy, setDataBusy] = useState(false)
-  const [dataError, setDataError] = useState<string | null>(null)
-  const [dataNotice, setDataNotice] = useState<string | null>(null)
-  /** Only set when the store did NOT load cleanly — null means all good. */
-  const [storeHealth, setStoreHealth] = useState<StoreHealth | null>(null)
   const [historySource, setHistorySource] = useState<string | null>(null)
   /** Token/cost totals for the live session — null until the first turn completes. */
   const [usage, setUsage] = useState<SessionUsage | null>(null)
@@ -155,17 +60,93 @@ export function useGronk() {
    * (chat list / project tabs) instead of the live conversation.
    */
   const [browsing, setBrowsing] = useState(true)
-  const [chatWorkspacePath, setChatWorkspacePath] = useState<string | null>(null)
   const [agentSurface, setAgentSurface] = useState<AgentSurface | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const stickToBottom = useRef(true)
   const messagesRef = useRef<ChatMessage[]>([])
 
+  // ── Hooks that need nothing from the conversation ──────────────────
+  // Plugins, marketplaces and MCP servers own themselves entirely; the preview
+  // only ever needs to know which folder to serve.
+  const plugins = usePlugins()
+  const preview = usePreview(cwd)
+
+  /**
+   * Forward handles for the two callbacks the sub-hooks need from the composer.
+   *
+   * Both are circular: `refreshMeta` writes into state owned by hooks declared
+   * below it while two of those hooks have to call it, and `restartAgent` is
+   * built from `openProject`/`openChat`, which are declared after the hook that
+   * needs them. Something has to be referenced before it is defined, and these
+   * refs are that seam.
+   *
+   * Their identity never changes, which is the real point: a sub-hook can put
+   * one straight into a dependency array and its effects will not re-fire every
+   * render. That is the exact shape of the "Maximum update depth exceeded" loop
+   * this app has shipped before. Usual caveat for the pattern — call them from
+   * effects and event handlers, never during render.
+   */
+  const refreshMetaImpl = useRef<() => Promise<void>>(async () => {})
+  const refreshMeta = useCallback(() => refreshMetaImpl.current(), [])
+  const restartAgentImpl = useRef<() => Promise<void>>(async () => {})
+  const restartAgent = useCallback(() => restartAgentImpl.current(), [])
+
+  const dataDir = useDataLocation(refreshMeta)
+  const cliInstall = useCliInstall(refreshMeta)
+  const exportState = useExportNotice(setError)
+
+  /**
+   * Everything about the current conversation, gone. Only `useState` dispatches,
+   * so its identity is stable and useAuth can depend on it safely.
+   */
+  const clearLiveSession = useCallback(() => {
+    setMessages([])
+    setSessionId(null)
+    setCwd(null)
+    setActivePlan(null)
+    setUsage(null)
+    setPermission(null)
+    setBusy(false)
+    setConnection('idle')
+  }, [])
+
+  // `setAuth` is peeled off: it is how the flows below hand this hook an
+  // AuthStatus they already fetched. It is not part of the public surface.
+  const { setAuth, ...authState } = useAuth({ refreshMeta, clearLiveSession })
+
+  // Same peeling: `hydrate` is refreshMeta's write-through, and the rest are how
+  // the live-session flows below keep the browse lists honest.
+  const {
+    hydrate: hydrateCatalog,
+    refreshSessions,
+    setSessions,
+    setChatWorkspacePath,
+    chatWorkspacePath,
+    ...catalog
+  } = useSessionCatalog()
+
+  const {
+    hydrate: hydrateSettings,
+    refreshAudit,
+    ...settingsState
+  } = useAppSettings({ cwd, connection, restartAgent, setAuth })
+
   useEffect(() => {
     messagesRef.current = messages
   }, [messages])
 
-  const refreshMeta = useCallback(async () => {
+  /**
+   * Stays in the composer, and stays one `Promise.all`, deliberately.
+   *
+   * It writes into three separate concerns — settings/health, the session
+   * catalog, and auth — so it belongs to none of them. Splitting it into a
+   * refresh per hook would turn one round of IPC into three and give up the
+   * property every caller relies on: after `await refreshMeta()` the whole
+   * picture is consistent, in a single React commit, instead of the UI tearing
+   * through three intermediate states. The price is the two `hydrate` functions
+   * and `setAuth` — write-throughs those hooks expose for this function alone.
+   */
+  refreshMetaImpl.current = async () => {
     const [projects, sess, s, path, modelList, auditList, healthStatus, authStatus, chatPath] =
       await Promise.all([
         window.gronk.getRecentProjects(),
@@ -178,17 +159,16 @@ export function useGronk() {
         window.gronk.getAuthStatus(),
         window.gronk.getChatWorkspacePath()
       ])
-    setRecentProjects(projects)
-    setSessions(sess)
-    setSettingsState(s)
-    setGrokPath(path)
-    setModels(modelList)
-    setAudit(auditList)
-    setHealth(healthStatus)
+    hydrateCatalog({ recentProjects: projects, sessions: sess, chatWorkspacePath: chatPath })
+    hydrateSettings({
+      settings: s,
+      grokPath: path,
+      models: modelList,
+      audit: auditList,
+      health: healthStatus
+    })
     setAuth(authStatus)
-    setChatWorkspacePath(chatPath)
-    applyTheme(s.theme)
-  }, [])
+  }
 
   useEffect(() => {
     void refreshMeta()
@@ -217,7 +197,7 @@ export function useGronk() {
         case 'history-done':
           setHistorySource(event.source)
           setBusy(false)
-          void window.gronk.listSessions().then(setSessions)
+          void refreshSessions()
           break
         case 'user-message':
           setMessages((prev) => {
@@ -300,8 +280,8 @@ export function useGronk() {
             }
             return next
           })
-          void window.gronk.listSessions().then(setSessions)
-          void window.gronk.getPermissionAudit().then(setAudit)
+          void refreshSessions()
+          void refreshAudit()
           break
         case 'permission-request':
           setPermission(event.request)
@@ -319,43 +299,24 @@ export function useGronk() {
           }
           break
         }
-        case 'models':
-          setModels(event.models)
-          break
         case 'usage':
           setUsage(event.usage)
-          break
-        case 'auth':
-          setAuth(event.auth)
-          if (event.auth.authenticated) setAuthMessage(null)
           break
         case 'error':
           setError(event.message)
           setBusy(false)
           break
-        case 'preview-status':
-          setPreviewRunning(event.running)
-          setPreviewUrl(event.url)
-          setPreviewError(event.error || null)
-          break
-        case 'preview-log':
-          break
+        // 'models' is useAppSettings', 'auth' is useAuth's, and both preview
+        // events are usePreview's. Each of those hooks subscribes to onEvent
+        // itself — it hands out independent subscriptions — so this handler only
+        // sees the events that belong to the live conversation.
         default:
           break
       }
     })
 
     return unsub
-  }, [refreshMeta])
-
-  // Theme: system preference changes
-  useEffect(() => {
-    if (!settings || settings.theme !== 'system') return
-    const mq = window.matchMedia('(prefers-color-scheme: light)')
-    const handler = () => applyTheme('system')
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [settings?.theme])
+  }, [refreshMeta, refreshSessions, refreshAudit])
 
   // Smart scroll: only stick when near bottom
   useEffect(() => {
@@ -529,6 +490,16 @@ export function useGronk() {
     },
     [chatWorkspacePath, cwd, connection, refreshMeta, agentSurface]
   )
+
+  /**
+   * Backing implementation for the `restartAgent` handle above. Every caller
+   * wants the same thing — the agent respawned on whichever surface is live,
+   * with a new session — and each applies its own guard before asking.
+   */
+  restartAgentImpl.current = async () => {
+    if (agentSurface === 'chat') await openChat({ forceNew: true })
+    else if (cwd) await openProject(cwd, { forceNew: true })
+  }
 
   const newChat = useCallback(async () => {
     if (agentSurface === 'chat' || surface === 'chat') {
@@ -728,89 +699,16 @@ export function useGronk() {
       if (!permission) return
       await window.gronk.respondPermission(permission.requestId, decision)
       setPermission(null)
-      void window.gronk.getPermissionAudit().then(setAudit)
+      void refreshAudit()
     },
-    [permission]
+    [permission, refreshAudit]
   )
 
-  const updateSettings = useCallback(async (partial: Partial<AppSettings>) => {
-    // FIX-14: re-confirm YOLO every enable (not only first install)
-    if (
-      partial.alwaysApprove === true ||
-      partial.permissionMode === 'bypassPermissions'
-    ) {
-      setShowYoloConfirm(true)
-      return await window.gronk.getSettings()
-    }
-    const next = await window.gronk.setSettings(partial)
-    setSettingsState(next)
-    if (partial.theme) applyTheme(next.theme)
-    if (partial.grokBinary !== undefined) {
-      const path = await window.gronk.getGrokPath()
-      setGrokPath(path)
-      const h = await window.gronk.getHealth()
-      setHealth(h)
-    }
-    return next
-  }, [])
-
-  const confirmYolo = useCallback(async () => {
-    // Two-step so store guard sees priorAck (FIX-14)
-    await window.gronk.setSettings({ alwaysApproveAck: true })
-    const next = await window.gronk.setSettings({
-      alwaysApprove: true,
-      permissionMode: 'bypassPermissions'
-    })
-    setSettingsState(next)
-    setShowYoloConfirm(false)
-    if (cwd && connection === 'ready') {
-      if (agentSurface === 'chat') await openChat({ forceNew: true })
-      else await openProject(cwd, { forceNew: true })
-    }
-  }, [cwd, connection, openProject, openChat, agentSurface])
-
-  const changePermissionMode = useCallback(
-    async (mode: PermissionMode) => {
-      if (mode === 'bypassPermissions') {
-        setShowYoloConfirm(true)
-        return
-      }
-      const next = await window.gronk.setSettings({
-        permissionMode: mode,
-        alwaysApprove: false
-      })
-      setSettingsState(next)
-      // Restart agent so CLI gets the new mode
-      if (cwd && (connection === 'ready' || connection === 'error')) {
-        if (agentSurface === 'chat') await openChat({ forceNew: true })
-        else await openProject(cwd, { forceNew: true })
-      }
-    },
-    [cwd, connection, openProject, openChat, agentSurface]
-  )
-
-  const cancelYolo = useCallback(() => {
-    setShowYoloConfirm(false)
-  }, [])
-
-  const changeModel = useCallback(
-    async (modelId: string) => {
-      const next = await window.gronk.setSettings({ model: modelId })
-      setSettingsState(next)
-      if (cwd) {
-        if (agentSurface === 'chat') await openChat({ forceNew: true })
-        else await openProject(cwd, { forceNew: true })
-      }
-    },
-    [cwd, openProject, openChat, agentSurface]
-  )
-
-  const renameSession = useCallback(async (id: string, title: string) => {
-    await window.gronk.renameSession(id, title)
-    const sess = await window.gronk.listSessions()
-    setSessions(sess)
-  }, [])
-
+  /**
+   * Deleting or archiving the session that is on screen has to empty the
+   * conversation and respawn the agent, so these two stay here rather than in
+   * useSessionCatalog with their read-only siblings.
+   */
   const deleteSession = useCallback(
     async (id: string) => {
       const sess = await window.gronk.deleteSession(id)
@@ -820,11 +718,10 @@ export function useGronk() {
         setSessionId(null)
         setActivePlan(null)
         setHistorySource(null)
-        if (agentSurface === 'chat') await openChat({ forceNew: true })
-        else if (cwd) await openProject(cwd, { forceNew: true })
+        await restartAgent()
       }
     },
-    [sessionId, cwd, openProject, openChat, agentSurface]
+    [sessionId, setSessions, restartAgent]
   )
 
   const archiveSession = useCallback(
@@ -837,383 +734,11 @@ export function useGronk() {
         setSessionId(null)
         setActivePlan(null)
         setHistorySource(null)
-        if (agentSurface === 'chat') await openChat({ forceNew: true })
-        else if (cwd) await openProject(cwd, { forceNew: true })
+        await restartAgent()
       }
     },
-    [sessionId, cwd, openProject, openChat, agentSurface]
+    [sessionId, setSessions, restartAgent]
   )
-
-  /** Put an archived session back into the normal lists. */
-  const unarchiveSession = useCallback(async (id: string) => {
-    await window.gronk.archiveSession(id, false)
-    const sess = await window.gronk.listSessions()
-    setSessions(sess)
-  }, [])
-
-  const exportSession = useCallback(async (id: string, format: 'md' | 'json' = 'md') => {
-    try {
-      const result = await window.gronk.exportTranscript(id, format)
-      if (!result.ok) {
-        // A cancel is the user's own choice — stay silent. An empty transcript is
-        // not, and would otherwise read as a dead menu item.
-        if (result.reason === 'empty') {
-          setError('Nothing to export yet — this session has no saved transcript.')
-        }
-        return
-      }
-      setExportNotice({ path: result.path, format })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }, [])
-
-  const revealExport = useCallback(async () => {
-    if (!exportNotice) return
-    const res = await window.gronk.revealLocalPath(exportNotice.path)
-    // Keep the notice up either way — the path itself is the answer to "where?"
-    setExportNotice((prev) =>
-      prev
-        ? {
-            ...prev,
-            revealError: res.ok ? undefined : res.error || 'Could not open the folder'
-          }
-        : prev
-    )
-  }, [exportNotice])
-
-  /**
-   * Reveal is gated on main's allowed roots and the save dialog defaults to
-   * Documents, which is outside them — so copying the path is the action the
-   * banner can actually promise.
-   */
-  const copyExportPath = useCallback(async () => {
-    if (!exportNotice) return
-    try {
-      await navigator.clipboard.writeText(exportNotice.path)
-      setExportNotice((prev) =>
-        prev ? { ...prev, copied: true, copyError: undefined } : prev
-      )
-    } catch (err) {
-      setExportNotice((prev) =>
-        prev
-          ? {
-              ...prev,
-              copied: false,
-              copyError: err instanceof Error ? err.message : String(err)
-            }
-          : prev
-      )
-    }
-  }, [exportNotice])
-
-  const dismissExport = useCallback(() => setExportNotice(null), [])
-
-  const pickBinary = useCallback(async () => {
-    const path = await window.gronk.selectFile({
-      title: 'Select grok binary',
-      filters:
-        window.gronk.platform === 'win32'
-          ? [{ name: 'Executable', extensions: ['exe'] }]
-          : undefined
-    })
-    if (path) await updateSettings({ grokBinary: path })
-  }, [updateSettings])
-
-  const clearBinary = useCallback(async () => {
-    // Empty string clears override (Electron IPC drops `undefined` keys)
-    const next = await window.gronk.setSettings({ grokBinary: '' })
-    setSettingsState(next)
-    const path = await window.gronk.getGrokPath()
-    setGrokPath(path)
-    setHealth(await window.gronk.getHealth())
-  }, [])
-
-  const refreshHealth = useCallback(async () => {
-    const h = await window.gronk.getHealth()
-    setHealth(h)
-    setGrokPath(h.grokPath)
-    setAuth(h.auth)
-  }, [])
-
-  const installCli = useCallback(async () => {
-    setCliInstalling(true)
-    setCliInstallResult(null)
-    try {
-      const res = await window.gronk.installCli()
-      setCliInstallResult(res.message)
-      await refreshMeta()
-      return res
-    } catch (err) {
-      setCliInstallResult(err instanceof Error ? err.message : String(err))
-      return null
-    } finally {
-      setCliInstalling(false)
-    }
-  }, [refreshMeta])
-
-  const startPreview = useCallback(async () => {
-    if (!cwd) return
-    setPreviewError(null)
-    const s = await window.gronk.getSettings()
-    const res = await window.gronk.previewStart(cwd, s.previewCommand)
-    if (!res.ok) setPreviewError(res.message)
-  }, [cwd])
-
-  const stopPreview = useCallback(async () => {
-    await window.gronk.previewStop()
-  }, [])
-
-  const togglePreview = useCallback(() => {
-    if (previewRunning) void stopPreview()
-    else void startPreview()
-  }, [previewRunning, startPreview, stopPreview])
-
-  // ── Plugins & Skills ──────────────────────────────────────────────
-  const refreshPlugins = useCallback(async () => {
-    setPluginsLoading(true)
-    setPluginsError(null)
-    try {
-      const [inst, mkts, servers] = await Promise.all([
-        window.gronk.listInstalledPlugins(),
-        window.gronk.listMarketplaces(),
-        window.gronk.listMcpServers()
-      ])
-      setInstalledPlugins(inst)
-      setMarketplaces(mkts)
-      setMcpServers(servers)
-    } catch (err) {
-      setPluginsError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setPluginsLoading(false)
-    }
-  }, [])
-
-  /** Slower: syncs marketplace git caches. Called on first open of the Marketplace tab. */
-  const loadPluginCatalog = useCallback(async () => {
-    setPluginsLoading(true)
-    setPluginsError(null)
-    try {
-      setAvailablePlugins(await window.gronk.listAvailablePlugins())
-    } catch (err) {
-      setPluginsError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setPluginsLoading(false)
-    }
-  }, [])
-
-  const runPluginAction = useCallback(
-    async (name: string, action: () => Promise<{ ok: boolean; message: string; plugins?: Plugin[] }>) => {
-      setPluginBusy(name)
-      setPluginsError(null)
-      try {
-        const res = await action()
-        if (!res.ok) setPluginsError(res.message)
-        if (res.plugins) setInstalledPlugins(res.plugins)
-        else await refreshPlugins()
-      } catch (err) {
-        setPluginsError(err instanceof Error ? err.message : String(err))
-      } finally {
-        setPluginBusy(null)
-      }
-    },
-    [refreshPlugins]
-  )
-
-  const installPlugin = useCallback(
-    (source: string, trust: boolean) =>
-      runPluginAction(source, () => window.gronk.installPlugin(source, trust)),
-    [runPluginAction]
-  )
-  const enablePlugin = useCallback(
-    (name: string) => runPluginAction(name, () => window.gronk.enablePlugin(name)),
-    [runPluginAction]
-  )
-  const disablePlugin = useCallback(
-    (name: string) => runPluginAction(name, () => window.gronk.disablePlugin(name)),
-    [runPluginAction]
-  )
-  const uninstallPlugin = useCallback(
-    (name: string) => runPluginAction(name, () => window.gronk.uninstallPlugin(name)),
-    [runPluginAction]
-  )
-
-  const addMcpServer = useCallback(
-    async (input: McpAddInput) => {
-      setPluginBusy(input.name)
-      setPluginsError(null)
-      try {
-        const res = await window.gronk.addMcpServer(input)
-        if (!res.ok) setPluginsError(res.message)
-        if (res.servers) setMcpServers(res.servers)
-        else setMcpServers(await window.gronk.listMcpServers())
-      } catch (err) {
-        setPluginsError(err instanceof Error ? err.message : String(err))
-      } finally {
-        setPluginBusy(null)
-      }
-    },
-    []
-  )
-
-  const removeMcpServer = useCallback(async (name: string) => {
-    setPluginBusy(name)
-    setPluginsError(null)
-    try {
-      const res = await window.gronk.removeMcpServer(name)
-      if (!res.ok) setPluginsError(res.message)
-      if (res.servers) setMcpServers(res.servers)
-      else setMcpServers(await window.gronk.listMcpServers())
-    } catch (err) {
-      setPluginsError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setPluginBusy(null)
-    }
-  }, [])
-
-  // ── Data location ─────────────────────────────────────────────────
-  // Kept out of refreshMeta's Promise.all on purpose: a failure to stat the
-  // store must not take sessions, settings and theme down with it.
-  const refreshDataLocation = useCallback(async () => {
-    try {
-      setDataLocation(await window.gronk.getDataLocation())
-    } catch (err) {
-      setDataError(err instanceof Error ? err.message : String(err))
-    }
-  }, [])
-
-  useEffect(() => {
-    void refreshDataLocation()
-  }, [refreshDataLocation])
-
-  /**
-   * Read once at startup. A store that failed to parse falls back to defaults, so
-   * without this the app would show an empty session list and no explanation —
-   * exactly what a wiped install looks like. Dismissible, but never auto-hidden:
-   * losing transcripts is worth an interruption.
-   */
-  useEffect(() => {
-    void window.gronk
-      .getStoreHealth()
-      .then((h) => {
-        if (h.degraded) setStoreHealth(h)
-      })
-      .catch(() => {
-        /* a health probe must never be the thing that breaks startup */
-      })
-  }, [])
-
-  const chooseDataDir = useCallback(async (): Promise<string | null> => {
-    setDataError(null)
-    try {
-      return await window.gronk.chooseDataDir()
-    } catch (err) {
-      setDataError(err instanceof Error ? err.message : String(err))
-      return null
-    }
-  }, [])
-
-  /** Shared move/reset runner — same busy+error shape as runPluginAction. */
-  const runDataAction = useCallback(
-    async (action: () => Promise<MoveDataResult>) => {
-      setDataBusy(true)
-      setDataError(null)
-      setDataNotice(null)
-      try {
-        const res = await action()
-        setDataLocation(res.location)
-        if (res.ok) {
-          setDataNotice(res.message)
-          // The chat sandbox moved with the store, so cached paths are stale.
-          await refreshMeta()
-        } else {
-          setDataError(res.message)
-        }
-        return res
-      } catch (err) {
-        setDataError(err instanceof Error ? err.message : String(err))
-        return null
-      } finally {
-        setDataBusy(false)
-      }
-    },
-    [refreshMeta]
-  )
-
-  const moveDataDir = useCallback(
-    (target: string) => runDataAction(() => window.gronk.moveDataDir(target)),
-    [runDataAction]
-  )
-
-  const resetDataDir = useCallback(
-    () => runDataAction(() => window.gronk.resetDataDir()),
-    [runDataAction]
-  )
-
-  const refreshAuth = useCallback(async () => {
-    setAuthBusy(true)
-    try {
-      const a = await window.gronk.getAuthStatus()
-      setAuth(a)
-      setAuthMessage(a.message || null)
-    } finally {
-      setAuthBusy(false)
-    }
-  }, [])
-
-  const login = useCallback(async (method: LoginMethod = 'oauth') => {
-    setAuthBusy(true)
-    setAuthMessage(
-      method === 'device'
-        ? 'Device login started — complete the code in your browser…'
-        : 'Browser login started — complete sign-in in the window that opens…'
-    )
-    setDeviceHint(null)
-    try {
-      const result = await window.gronk.login(method)
-      setAuth(result.auth)
-      setAuthMessage(result.message)
-      if (result.deviceHint) setDeviceHint(result.deviceHint)
-      if (result.ok) {
-        await refreshMeta()
-      }
-      return result
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      setAuthMessage(msg)
-      return null
-    } finally {
-      setAuthBusy(false)
-    }
-  }, [refreshMeta])
-
-  const logout = useCallback(async () => {
-    setAuthBusy(true)
-    setDeviceHint(null)
-    try {
-      // Clear live session UI immediately
-      setMessages([])
-      setSessionId(null)
-      setCwd(null)
-      setActivePlan(null)
-      setUsage(null)
-      setPermission(null)
-      setBusy(false)
-      setConnection('idle')
-
-      const result = await window.gronk.logout()
-      setAuth(result.auth)
-      setAuthMessage(result.message)
-      await refreshMeta()
-      return result
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      setAuthMessage(msg)
-      return null
-    } finally {
-      setAuthBusy(false)
-    }
-  }, [refreshMeta])
 
   const projectName = useMemo(() => {
     if (!cwd) return null
@@ -1221,144 +746,47 @@ export function useGronk() {
     return folderName(cwd)
   }, [cwd, agentSurface])
 
-  const uniqueSessions = useMemo(() => {
-    const seen = new Set<string>()
-    const out: SessionInfo[] = []
-    for (const s of sessions) {
-      if (!s.id || seen.has(s.id)) continue
-      seen.add(s.id)
-      out.push(s)
-    }
-    return out
-  }, [sessions])
-
-  const activeSessions = useMemo(
-    () => uniqueSessions.filter((s) => !s.archived),
-    [uniqueSessions]
-  )
-
-  /** Hidden from every normal list — only the Archived panel reads this. */
-  const archivedSessions = useMemo(
-    () =>
-      uniqueSessions
-        .filter((s) => s.archived)
-        .sort((a, b) => (b.archivedAt || b.updatedAt) - (a.archivedAt || a.updatedAt)),
-    [uniqueSessions]
-  )
-
-  const chatSessions = useMemo(
-    () => activeSessions.filter((s) => isChatSession(s, chatWorkspacePath)),
-    [activeSessions, chatWorkspacePath]
-  )
-
   /**
-   * Workspace (folder) sessions only.
-   * App Chat is stored under userData/chat-workspace and never listed here.
+   * The app's public surface. Each spread is one focused hook's contribution;
+   * the named entries are what this file still owns — the live conversation,
+   * shell navigation, and the Settings panel toggle.
+   *
+   * `tests/use-gronk-surface.test.ts` pins every member here. Losing one is
+   * silent otherwise: TypeScript is happy, the build is happy, and a screen
+   * quietly stops working.
    */
-  const projectOnlySessions = useMemo(
-    () => activeSessions.filter((s) => isWorkspaceSession(s, chatWorkspacePath)),
-    [activeSessions, chatWorkspacePath]
-  )
-
-  /** Workspace folders only — strip chat sandbox if it ever landed in recent */
-  const workspaceProjects = useMemo(
-    () => recentProjects.filter((p) => !isChatWorkspace(p.cwd, chatWorkspacePath)),
-    [recentProjects, chatWorkspacePath]
-  )
-
-  const yoloActive = !!(
-    (settings?.alwaysApprove && settings?.alwaysApproveAck) ||
-    (settings?.permissionMode === 'bypassPermissions' && settings?.alwaysApproveAck)
-  )
-  const permissionMode: PermissionMode =
-    settings?.permissionMode || (yoloActive ? 'bypassPermissions' : 'default')
-  const isAuthenticated = !!auth?.authenticated
-
   return {
     connection,
     cwd,
     projectName,
     sessionId,
     messages,
-    recentProjects: workspaceProjects,
-    sessions: uniqueSessions,
-    chatSessions,
-    /** Folder agent sessions only (never app Chat) */
-    projectOnlySessions,
-    archivedSessions,
+    ...catalog,
+    chatWorkspacePath,
     surface,
     browsing,
     agentSurface,
-    chatWorkspacePath,
     openChat,
     goHome,
     goChat,
     goProjects,
-    settings,
     permission,
     error,
     busy,
-    grokPath,
-    models,
-    audit,
-    health,
-    auth,
-    authBusy,
-    authMessage,
-    deviceHint,
-    isAuthenticated,
-    showYoloConfirm,
+    ...settingsState,
+    ...authState,
     showSettings,
     setShowSettings,
-    showArchived,
-    setShowArchived,
-    exportNotice,
-    revealExport,
-    copyExportPath,
-    dismissExport,
-    showCliInstall,
-    setShowCliInstall,
-    cliInstalling,
-    cliInstallResult,
-    setCliInstallResult,
-    installCli,
-    previewRunning,
-    previewUrl,
-    previewError,
-    startPreview,
-    stopPreview,
-    togglePreview,
-    installedPlugins,
-    availablePlugins,
-    marketplaces,
-    mcpServers,
-    pluginsLoading,
-    pluginsError,
-    pluginBusy,
-    refreshPlugins,
-    loadPluginCatalog,
-    installPlugin,
-    enablePlugin,
-    disablePlugin,
-    uninstallPlugin,
-    addMcpServer,
-    removeMcpServer,
-    dataLocation,
-    storeHealth,
-    dismissStoreHealth: () => setStoreHealth(null),
-    dataBusy,
-    dataError,
-    dataNotice,
-    chooseDataDir,
-    moveDataDir,
-    resetDataDir,
+    ...exportState,
+    ...cliInstall,
+    ...preview,
+    ...plugins,
+    ...dataDir,
     historySource,
     usage,
     activePlan,
     planCollapsed,
     setPlanCollapsed,
-    yoloActive,
-    permissionMode,
     scrollRef,
     openProject,
     newChat,
@@ -1367,22 +795,8 @@ export function useGronk() {
     retryPrompt,
     cancel,
     respondPermission,
-    updateSettings,
-    confirmYolo,
-    cancelYolo,
-    changeModel,
-    changePermissionMode,
-    renameSession,
     deleteSession,
     archiveSession,
-    unarchiveSession,
-    exportSession,
-    pickBinary,
-    clearBinary,
-    refreshHealth,
-    refreshAuth,
-    login,
-    logout,
     setError,
     refreshMeta
   }
