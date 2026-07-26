@@ -16,7 +16,7 @@ import {
 function turnCompleted(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     sessionUpdate: 'turn_completed',
-    prompt_id: '5d55a944-0000-4000-8000-000000000001',
+    prompt_id: '11111111-2222-4333-8444-555555555555',
     stop_reason: 'end_turn',
     usage: {
       inputTokens: 44861,
@@ -45,7 +45,7 @@ function turnCompleted(overrides: Record<string, unknown> = {}): Record<string, 
 test('the real turn_completed payload parses field for field', () => {
   const parsed = parseTurnUsageFromUpdate(turnCompleted())
   assert.ok(parsed)
-  assert.equal(parsed.promptId, '5d55a944-0000-4000-8000-000000000001')
+  assert.equal(parsed.promptId, '11111111-2222-4333-8444-555555555555')
   assert.equal(parsed.stopReason, 'end_turn')
   assert.equal(parsed.usage.inputTokens, 44861)
   assert.equal(parsed.usage.outputTokens, 567)
