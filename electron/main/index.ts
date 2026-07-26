@@ -36,6 +36,7 @@ import {
   resetDataDir
 } from './data-dir'
 import { resolveGrokBinary } from './acp/client'
+import { clampCalendarDays, getActivityCalendar } from './activity'
 import { getCliVersion, invalidateCliVersionCache } from './cli-version'
 import { listModels } from './models'
 import { exportTranscriptMarkdown, listProjectFiles } from './fs-utils'
@@ -786,6 +787,15 @@ function registerIpc(): void {
   ipcMain.handle('gronk:get-cli-version', async (e) => {
     assertTrustedSender(e)
     return getCliVersion()
+  })
+
+  ipcMain.handle('gronk:get-activity-calendar', (e, days?: unknown) => {
+    assertTrustedSender(e)
+    // Clamped rather than rejected: `days` only sizes a read-only window over the
+    // user's own store, so a nonsense value is a caller bug, not an attack, and
+    // failing the Home panel over it would be the worse outcome. The clamp is
+    // what stops "1e9 days" from building a billion-element array.
+    return getActivityCalendar(clampCalendarDays(days))
   })
 
   ipcMain.handle('gronk:get-data-location', (e) => {

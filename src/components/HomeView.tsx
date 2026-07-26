@@ -6,6 +6,7 @@ import {
   sessionFrequencyLabel,
   sessionHeat
 } from '../lib/activity'
+import { ActivityCalendar } from './ActivityCalendar'
 import { SessionCard } from './SessionCard'
 
 interface Props {
@@ -105,6 +106,12 @@ export function HomeView({
 
       {/* Single scrollable feed — one panel so sections never overlay each other */}
       <section className="home-feed">
+        {/* Fetches its own data — no props, so Home does not have to thread the
+            calendar through every parent that renders it. */}
+        <div className="home-feed-block">
+          <ActivityCalendar />
+        </div>
+
         <div className="home-feed-block">
           <div className="browse-panel-head">
             <div className="section-label">Folders</div>

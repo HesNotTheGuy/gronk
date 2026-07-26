@@ -6,32 +6,41 @@
 :root {
   color-scheme: dark;
 
+  /* Surfaces carry a faint cool cast rather than neutral grey — a white-phosphor
+     tube is never truly neutral, and the tint is what stops black-on-black
+     panels from reading as flat dead space. */
   --void: #000000;
-  --void-2: #050505;
-  --panel: #0a0a0a;
-  --panel-2: #0f0f0f;
-  --raised: #141414;
-  --hover: #1a1a1a;
-  --line: #1c1c1c;
-  --line-2: #2a2a2a;
-  --line-hot: #3d3d3d;
+  --void-2: #030405;
+  --panel: #07090a;
+  --panel-2: #0c0f10;
+  --raised: #121516;
+  --hover: #171b1c;
+  --line: #191d1e;
+  --line-2: #262b2c;
+  --line-hot: #39403f;
 
-  --ink: #f2f2f2;
-  --ink-2: #a3a3a3;
-  --ink-3: #666666;
-  /* FIX-U1: was #3d3d3d (~1.9:1 on black) — same as --line-hot borders; unreadable for text.
-     ~#7c7c7c ≈ 4.4:1 on #000 for secondary paths/timestamps/counts. */
-  --ink-4: #7c7c7c;
+  --ink: #dfe9e7;
+  --ink-2: #9fadab;
+  --ink-3: #66716f;
+  /* FIX-U1: must stay ≥4.5:1 on black — this is secondary path/timestamp/count
+     text, not decoration. #7d8a88 ≈ 5.8:1. Do not darken it for aesthetics. */
+  --ink-4: #7d8a88;
 
-  /* Hard white + mars/ignition amber — no purple SaaS */
+  /* White phosphor night vision: the accent is the BRIGHTEST thing, not the most
+     saturated. Hierarchy is luminance, the way it is down a real tube — so
+     --ignite sits above --ink instead of competing with it on hue, and the glow
+     does the work the orange used to do. */
   --flare: #ffffff;
-  --ignite: #ff4d00;
-  --ignite-dim: rgba(255, 77, 0, 0.14);
-  --ignite-glow: rgba(255, 77, 0, 0.45);
-  --signal: #00e5a0;
-  --signal-dim: rgba(0, 229, 160, 0.15);
-  --warn: #ffb020;
-  --abort: #ff2d55;
+  --ignite: #eafffb;
+  --ignite-dim: rgba(234, 255, 251, 0.1);
+  --ignite-glow: rgba(234, 255, 251, 0.38);
+  /* State colours survive, but pulled far down in saturation so they read as
+     tinted luminance. Fully monochrome would be truer to the reference and
+     would also delete the only non-positional signal that something failed. */
+  --signal: #a7d8cb;
+  --signal-dim: rgba(167, 216, 203, 0.14);
+  --warn: #d8cfae;
+  --abort: #e2a3a3;
 
   --user-pad: #0e0e0e;
   --tool-pad: #080808;
@@ -123,7 +132,7 @@ button {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 80% 50% at 70% -10%, rgba(255, 77, 0, 0.07), transparent 55%),
+    radial-gradient(ellipse 80% 50% at 70% -10%, rgba(234, 255, 251, 0.05), transparent 55%),
     radial-gradient(ellipse 50% 40% at 0% 100%, rgba(255, 255, 255, 0.03), transparent 50%),
     linear-gradient(180deg, #050505 0%, #000 40%, #000 100%);
 }
@@ -2100,7 +2109,7 @@ button {
 .perm-mode-btn.danger.active {
   color: #ffc4a8;
   border-color: color-mix(in srgb, var(--ignite) 70%, var(--abort));
-  background: linear-gradient(90deg, rgba(255, 77, 0, 0.22), rgba(255, 45, 85, 0.12));
+  background: linear-gradient(90deg, rgba(234, 255, 251, 0.20), rgba(234, 255, 251, 0.04));
 }
 
 .perm-mode-btn:disabled {
@@ -2365,7 +2374,7 @@ button {
 .yolo-banner {
   margin: 0;
   padding: 8px 22px;
-  background: linear-gradient(90deg, rgba(255, 77, 0, 0.2), rgba(255, 45, 85, 0.12));
+  background: linear-gradient(90deg, rgba(234, 255, 251, 0.18), rgba(234, 255, 251, 0.04));
   border-bottom: 1px solid color-mix(in srgb, var(--ignite) 50%, transparent);
   color: #ffc4a8;
   font-family: var(--font-mono);
@@ -2610,7 +2619,7 @@ html[data-theme='light'] body {
 
 html[data-theme='light'] .app::before {
   background:
-    radial-gradient(ellipse 80% 50% at 70% -10%, rgba(255, 77, 0, 0.05), transparent 55%),
+    radial-gradient(ellipse 80% 50% at 70% -10%, rgba(234, 255, 251, 0.04), transparent 55%),
     linear-gradient(180deg, #f7f7f4 0%, #f0f0ec 100%);
 }
 

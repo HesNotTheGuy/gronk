@@ -52,6 +52,8 @@ const api: GronkApi = {
   installCli: () => ipcRenderer.invoke('gronk:install-cli'),
   getStoreHealth: () => ipcRenderer.invoke('gronk:get-store-health'),
   getCliVersion: () => ipcRenderer.invoke('gronk:get-cli-version'),
+  getActivityCalendar: (days?: number) =>
+    ipcRenderer.invoke('gronk:get-activity-calendar', days),
   getDataLocation: () => ipcRenderer.invoke('gronk:get-data-location'),
   chooseDataDir: () => ipcRenderer.invoke('gronk:choose-data-dir'),
   moveDataDir: (target: string) => ipcRenderer.invoke('gronk:move-data-dir', target),

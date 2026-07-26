@@ -250,6 +250,33 @@ export interface MoveDataResult {
   location: DataLocation
 }
 
+// ── Activity calendar ──────────────────────────────────────────────
+/** One day's worth of work, for the contribution-style heatmap. */
+export interface DayActivity {
+  /** Local calendar day, `YYYY-MM-DD`. Local, not UTC: a day boundary the user
+   *  does not recognise makes their own history look wrong. */
+  date: string
+  /** Prompts the user sent that day — the honest measure of work done. */
+  userTurns: number
+  /** All messages, user and assistant. */
+  messages: number
+  /** Distinct sessions touched. */
+  sessions: number
+}
+
+export interface ActivityCalendar {
+  days: DayActivity[]
+  /** Inclusive range actually covered, `YYYY-MM-DD`. */
+  from: string
+  to: string
+  /** Highest userTurns in the range — the scale the heatmap normalises against. */
+  peak: number
+  totalUserTurns: number
+  /** Consecutive days with activity ending today (or yesterday). */
+  currentStreak: number
+  longestStreak: number
+}
+
 // ── Usage / cost ───────────────────────────────────────────────────
 /**
  * Token and cost accounting for one agent turn.
@@ -594,6 +621,8 @@ export interface GronkApi {
   getStoreHealth: () => Promise<StoreHealth>
   /** Is the installed Grok CLI a version Gronk's parsing was verified against? */
   getCliVersion: () => Promise<CliVersionInfo>
+  /** Per-day activity for the contribution heatmap. `days` defaults to 365. */
+  getActivityCalendar: (days?: number) => Promise<ActivityCalendar>
   // Data location
   getDataLocation: () => Promise<DataLocation>
   /** Folder picker for a new data directory. Returns null if cancelled. */
