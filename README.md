@@ -46,7 +46,7 @@ npm run setup
 ```
 
 Bare `npm install` is discouraged. npm supply chain worms run in package
-lifecycle scripts. See [SECURITY.md](SECURITY.md).
+lifecycle scripts. See [docs/supply-chain.md](docs/supply-chain.md).
 
 ## Building installers
 
@@ -96,6 +96,9 @@ be relocated from Settings.
 - Every IPC handler validates its sender and arguments.
 
 ## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues go through
+[SECURITY.md](SECURITY.md), not the issue tracker.
 
 ```bash
 npm run verify   # typecheck and tests
