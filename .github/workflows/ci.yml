@@ -11,20 +11,29 @@ permissions:
 
 jobs:
   verify:
-    name: typecheck + tests (${{ matrix.os }})
+    name: typecheck + tests (${{ matrix.os }}, node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         # Gronk ships on all three; path handling and process-kill differ per OS.
         os: [ubuntu-latest, windows-latest, macos-latest]
+        # 22.18 is the floor declared in package.json "engines", so it is the
+        # version every platform is held to.
+        node: ['22.18']
+        # ...plus one job on current Node. Both directions have to be covered:
+        # a Node 22 linker bug once broke the suite on the floor while it passed
+        # on the maintainer's Node 24, and only CI saw it. The reverse is just as
+        # possible, so neither end of the supported range goes untested.
+        include:
+          - os: ubuntu-latest
+            node: '24'
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          # Native TypeScript type stripping (used by `npm test`) needs Node 22.18+.
-          node-version: '22.18'
+          node-version: ${{ matrix.node }}
           cache: npm
 
       # `npm ci` installs exactly what package-lock.json pins and runs no

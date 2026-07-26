@@ -480,7 +480,7 @@ export function Sidebar({
             />
           </div>
         ) : null}
-        <div className="version-tag">v0.2.0</div>
+        <div className="version-tag">v{__APP_VERSION__}</div>
       </div>
     </aside>
   )

@@ -3,9 +3,31 @@
   "version": "0.1.0",
   "description": "Desktop app for the Grok Build CLI. Runs your local grok binary over ACP.",
   "main": "out/main/index.js",
-  "author": "Gronk",
+  "author": {
+    "name": "HesNotTheGuy",
+    "email": "273315530+HesNotTheGuy@users.noreply.github.com"
+  },
   "license": "Apache-2.0",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HesNotTheGuy/gronk.git"
+  },
+  "homepage": "https://github.com/HesNotTheGuy/gronk#readme",
+  "bugs": {
+    "url": "https://github.com/HesNotTheGuy/gronk/issues"
+  },
+  "keywords": [
+    "electron",
+    "grok",
+    "acp",
+    "agent-client-protocol",
+    "coding-agent",
+    "desktop"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "setup": "node ./scripts/setup.mjs",
     "security-check": "node ./scripts/security-check.mjs",
@@ -37,6 +59,7 @@
     "electron": "36.4.0",
     "electron-builder": "26.0.12",
     "electron-vite": "3.1.0",
+    "esbuild": "0.25.12",
     "jsdom": "^29.1.1",
     "typescript": "5.8.3",
     "vite": "6.3.3"

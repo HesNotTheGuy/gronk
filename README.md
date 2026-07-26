@@ -68,7 +68,7 @@ macOS installers can only be built on macOS. If you do not have a Mac, run the
 - Token and cost usage per session
 - Activity heatmap of your own work
 - Plugins, skills and MCP servers, managed from Settings
-- Session restore, search, rename, export
+- Session restore, rename, archive, export
 - Attached dev server preview
 - Model picker and permission modes
 - File mentions, image paste, drag and drop

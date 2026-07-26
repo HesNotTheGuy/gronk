@@ -5,10 +5,29 @@
  * effects, and read the DOM. That is roughly forty lines, and the alternative is
  * a dependency tree larger than the app's entire runtime.
  */
-import { JSDOM } from 'jsdom'
+import { createRequire } from 'node:module'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { ReactElement } from 'react'
+import type { JSDOM as JSDOMInstance } from 'jsdom'
+
+/**
+ * jsdom is require()d, not imported, and that is load-bearing.
+ *
+ * Node 22 mislinks CommonJS that is reached through the ESM loader whenever any
+ * `load` hook is registered — and ts-loader.mjs must register one to compile
+ * .tsx. With a hook present, Node materialises jsdom's source instead of handing
+ * it to the classic CJS loader, which puts it on an async ModuleJob whose
+ * runSync() runs before linking finishes. The first ESM-only package jsdom pulls
+ * in then dies with `ERR_VM_MODULE_LINK_FAILURE: request for './fallback/
+ * encoding.js' is not in cache`. A resolve-only hook is fine; a bare
+ * pass-through `load` hook is enough to trigger it.
+ *
+ * createRequire keeps jsdom on the CJS loader, which links synchronously. Node
+ * 22.22.3 and 24.8.0 fix the underlying bug, but the project's documented floor
+ * is 22.18, so the suite has to pass there.
+ */
+const { JSDOM } = createRequire(import.meta.url)('jsdom') as typeof import('jsdom')
 
 export interface Mounted {
   container: HTMLElement
@@ -22,14 +41,14 @@ export interface Mounted {
   click: (target: Element) => Promise<void>
 }
 
-let dom: JSDOM | null = null
+let dom: JSDOMInstance | null = null
 
 /**
  * jsdom is installed onto globalThis once per process. React reads `window` and
  * `document` at module scope, so a fresh DOM per test would leave React bound to
  * a stale one.
  */
-export function ensureDom(): JSDOM {
+export function ensureDom(): JSDOMInstance {
   if (dom) return dom
   dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'http://localhost/',

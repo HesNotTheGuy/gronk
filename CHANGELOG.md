@@ -26,7 +26,7 @@ private repository, so there is no earlier entry to compare against.
 - Token and cost accounting per session.
 - Activity heatmap covering your own work.
 - Plugins, skills and MCP servers, managed from Settings.
-- Session restore, search, rename and export.
+- Session restore, rename, archive and export.
 - Attached preview for a dev server you are already running.
 - File mentions, image paste, drag and drop.
 - Relocatable data directory. The store moves from Settings, and an install
