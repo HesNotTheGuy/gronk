@@ -4,7 +4,7 @@
   "description": "Desktop GUI for Grok Build CLI — Claude Code-style app over ACP",
   "main": "out/main/index.js",
   "author": "Gronk",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "private": true,
   "scripts": {
     "safe-install": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/safe-npm-install.ps1",
@@ -21,7 +21,8 @@
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:linux": "npm run build && electron-builder --linux",
-    "icon": "node ./scripts/make-icon.mjs"
+    "icon": "node ./scripts/make-icon.mjs",
+    "notices": "node ./scripts/make-notices.mjs"
   },
   "dependencies": {
     "react": "19.2.7",
@@ -47,7 +48,10 @@
     },
     "files": [
       "out/**/*",
-      "package.json"
+      "package.json",
+      "THIRD-PARTY-NOTICES.md",
+      "LICENSE",
+      "NOTICE"
     ],
     "mac": {
       "category": "public.app-category.developer-tools",

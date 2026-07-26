@@ -1,0 +1,34 @@
+Gronk
+Copyright 2026 HesNotTheGuy
+
+This product includes software developed by the Gronk project.
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file, or
+http://www.apache.org/licenses/LICENSE-2.0
+
+--------------------------------------------------------------------------------
+
+Scope
+
+This licence covers only the source code in this repository — the Gronk
+application itself.
+
+The Grok Build CLI is NOT part of Gronk and is NOT redistributed here. Gronk
+launches whichever `grok` binary the user installed themselves, as a separate
+process, and communicates with it over stdio. Users obtain, install and
+authenticate that CLI under xAI's own terms, using their own account. Nothing in
+this project grants any rights to it.
+
+Gronk is an independent project. It is not affiliated with, endorsed by, or
+sponsored by xAI. "Grok" is a trademark of xAI, used here solely to describe the
+software this application connects to.
+
+--------------------------------------------------------------------------------
+
+Third-party software
+
+Packages compiled into the distributed application are listed with their full
+licence text in THIRD-PARTY-NOTICES.md.
+
+The Electron runtime and Chromium ship their own notices inside the packaged
+application (LICENSE.electron.txt and LICENSES.chromium.html).

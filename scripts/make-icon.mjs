@@ -6,9 +6,9 @@
  * node's built-in zlib. Regenerate with `npm run icon` after changing the
  * design constants below.
  *
- * Design: a white-phosphor intensifier aperture — a glowing core inside a thin
- * ring. Deliberately not a terminal prompt: OpenAI Codex already uses >_ for an
- * AI coding tool, so that glyph would read as derivative here.
+ * Design: a rim-lit stone in white phosphor. Deliberately not a terminal prompt:
+ * OpenAI Codex already uses >_ for an AI coding tool, so that glyph would read
+ * as derivative here.
  */
 import { deflateSync } from 'node:zlib'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -91,6 +91,83 @@ function roundedRectDistance(px, py, halfW, halfH, radius) {
   return outside + Math.min(Math.max(qx, qy), 0) - radius
 }
 
+/** Distance from a point to a line segment — gives strokes with round caps. */
+function segmentDistance(px, py, ax, ay, bx, by) {
+  const vx = bx - ax
+  const vy = by - ay
+  const wx = px - ax
+  const wy = py - ay
+  const len2 = vx * vx + vy * vy
+  const t = len2 === 0 ? 0 : Math.min(1, Math.max(0, (wx * vx + wy * vy) / len2))
+  return Math.hypot(px - (ax + t * vx), py - (ay + t * vy))
+}
+
+/** Ray-casting point-in-polygon. Vertices are [x, y] pairs. */
+function pointInPolygon(px, py, poly) {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i]
+    const [xj, yj] = poly[j]
+    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+/** Distance to the nearest polygon edge, unsigned. */
+function polygonEdgeDistance(px, py, poly) {
+  let best = Infinity
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const d = segmentDistance(px, py, poly[j][0], poly[j][1], poly[i][0], poly[i][1])
+    if (d < best) best = d
+  }
+  return best
+}
+
+/**
+ * An irregular stone, in normalised units (multiplied by size at draw time).
+ * Asymmetric on purpose — a symmetric outline reads as a gem or a shield, not a
+ * rock somebody picked up.
+ */
+const ROCK = [
+  [-0.335, 0.055],
+  [-0.25, -0.15],
+  [-0.05, -0.275],
+  [0.145, -0.22],
+  [0.325, -0.02],
+  [0.265, 0.185],
+  [0.02, 0.265],
+  [-0.235, 0.215]
+]
+
+/**
+ * Fracture planes, not spokes. Radiating every seam from one interior point made
+ * a pie chart, and two near-parallel seams read as stripes. One plane cutting
+ * clean across with a second branching off it splits the body into three unequal
+ * faces, which is how stone actually breaks.
+ */
+const ROCK_MAIN_SEAM = [[-0.05, -0.275], [0.245, 0.21]]
+const ROCK_BRANCH_SEAM = [[0.075, -0.035], [-0.245, 0.19]]
+const ROCK_FACETS = [ROCK_MAIN_SEAM, ROCK_BRANCH_SEAM]
+
+/** Which side of a line a point falls on. Sign only; magnitude is unused. */
+function sideOfLine(px, py, [ax, ay], [bx, by]) {
+  return (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+}
+
+/**
+ * Per-face brightness, implying a single light source up and to the left. Flat
+ * fill made the shape read as a polygon; it is the brightness *step* across a
+ * seam that makes it read as a solid object with faces.
+ */
+function faceShade(nx, ny) {
+  // Positive side of the main seam is the upper-left of the body — checked
+  // numerically, not by eye, because the first version lit the wrong face.
+  if (sideOfLine(nx, ny, ROCK_MAIN_SEAM[0], ROCK_MAIN_SEAM[1]) > 0) {
+    return sideOfLine(nx, ny, ROCK_BRANCH_SEAM[0], ROCK_BRANCH_SEAM[1]) > 0 ? 0.44 : 0.28
+  }
+  return 0.15
+}
+
 function drawIcon(size) {
   const rgba = Buffer.alloc(size * size * 4)
   const c = (size - 1) / 2
@@ -101,22 +178,22 @@ function drawIcon(size) {
   const tileHalf = size * 0.5
   const tileRadius = size * 0.22
 
-  // An intensifier aperture: thin ring, glowing core, nothing else.
+  // A rock, lit by phosphor.
   //
   // NOT a `>_` prompt. OpenAI Codex already uses that glyph for an AI coding
   // tool, so a prompt mark here would read as derivative of a direct competitor
   // no matter how the tile around it is styled.
-  // Optical sizing: proportions that look right at 256px fall apart at 16px,
-  // where a 0.028 ring is under half a pixel and smears into a grey blob. The
-  // ring thickens and the core grows as the canvas shrinks, so the mark stays
-  // readable in a taskbar instead of only in a preview.
+  //
+  // Optical sizing: what reads at 256px turns to mush at 16px. The seams are the
+  // first thing to go — below ~40px they are thinner than a pixel and just
+  // dirty the silhouette — leaving a solid stone, which still reads.
   const small = 1 - Math.min(1, Math.max(0, (size - 16) / 48))
-  const ringRadius = size * (0.315 - 0.025 * small)
-  const ringHalf = size * (0.028 + 0.032 * small)
-  const coreRadius = size * (0.085 + 0.05 * small)
-  // Bloom must die BEFORE the ring. Letting it reach across filled the middle
-  // with flat grey and the whole thing read as a camera lens.
-  const bloomRadius = size * (0.21 - 0.03 * small)
+  const edgeHalf = size * (0.016 + 0.020 * small)
+  const seamHalf = size * (0.011 + 0.010 * small)
+  const showSeams = size >= 40
+  // Faces dim together at small sizes so the silhouette stays readable once the
+  // seams drop out and the shading has nothing left to describe.
+  const bodyScale = 1 - 0.25 * small
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -128,16 +205,31 @@ function drawIcon(size) {
       const tileA = 1 - smoothstep(-aa, aa, tileD)
       if (tileA <= 0) continue
 
-      const r = Math.hypot(dx, dy)
+      // Work in normalised units so the polygon constants are size-independent.
+      const nx = dx / size
+      const ny = dy / size
+      const naa = aa / size
 
-      const ring = 1 - smoothstep(ringHalf - aa, ringHalf + aa, Math.abs(r - ringRadius))
-      const core = 1 - smoothstep(coreRadius - aa, coreRadius + aa, r)
-      // Falls to nothing well inside the ring, so the gap between core and ring
-      // stays black and the core reads as a light source rather than a disc.
-      const bloom = 0.30 * (1 - smoothstep(coreRadius, bloomRadius, r))
+      const inside = pointInPolygon(nx, ny, ROCK)
+      const edgeD = polygonEdgeDistance(nx, ny, ROCK)
+
+      const body = inside ? faceShade(nx, ny) * bodyScale : 0
+      const edge = 1 - smoothstep(edgeHalf / size - naa, edgeHalf / size + naa, edgeD)
+
+      let seams = 0
+      if (showSeams && inside) {
+        let best = Infinity
+        for (const [a, b] of ROCK_FACETS) {
+          const d = segmentDistance(nx, ny, a[0], a[1], b[0], b[1])
+          if (d < best) best = d
+        }
+        // Seams are dimmer than the rim: they are creases catching light, not
+        // the lit edge itself, and at full brightness they shatter the shape.
+        seams = 0.62 * (1 - smoothstep(seamHalf / size - naa, seamHalf / size + naa, best))
+      }
 
       // Brightest element wins; summing overlapping alpha blows out to a blob.
-      const lit = Math.min(1, Math.max(Math.max(ring, core), bloom))
+      const lit = Math.min(1, Math.max(Math.max(body, edge), seams))
 
       const i = (y * size + x) * 4
       rgba[i] = Math.round(PHOSPHOR[0] * lit)

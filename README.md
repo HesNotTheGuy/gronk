@@ -124,6 +124,28 @@ User data lives under Electron `userData` as `gronk-store.json` (recent projects
 - Desktop notifications when the agent finishes
 - Auto-update packaging
 
-## License
 
-MIT
+## Licence and attribution
+
+Gronk is licensed under the [Apache License 2.0](LICENSE). That covers **only the
+code in this repository** — the app itself.
+
+Apache-2.0 is permissive: you may use, modify and ship Gronk commercially,
+including in closed-source products. It also grants patent rights explicitly and
+does **not** grant rights to the Gronk name or logo — a fork is free to exist,
+but not to call itself Gronk. Attribution details are in [NOTICE](NOTICE).
+
+**The Grok CLI is not part of Gronk and is not redistributed here.** Gronk
+launches whichever `grok` binary you installed yourself, as a separate process,
+and talks to it over stdio. You obtain, install, and sign in to that CLI under
+xAI's own terms, with your own account. Nothing in this project grants you any
+rights to it.
+
+Gronk is an independent project. It is **not affiliated with, endorsed by, or
+sponsored by xAI.** "Grok" is a trademark of xAI, used here only to describe
+what this app connects to.
+
+Packages that Gronk bundles into the application are credited in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) (regenerate with `npm run
+notices`). The Electron runtime and Chromium ship their own notices inside the
+packaged app.
