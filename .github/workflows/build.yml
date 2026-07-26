@@ -1,0 +1,85 @@
+name: Build installers
+
+# Run this to get installers for platforms you cannot build locally — macOS
+# installers in particular can ONLY be produced on macOS, so a GitHub-hosted
+# runner is the way to get one without owning a Mac.
+#
+# Trigger manually from the Actions tab, or push a v* tag.
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Which platforms to build
+        type: choice
+        default: all
+        options: [all, macos, windows, linux]
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            # Universal so it runs on both Apple Silicon and Intel. A default
+            # build only targets the runner's own architecture, which would
+            # leave Intel Mac users unable to open it.
+            script: dist:mac -- --universal
+            artifact: 'release/*.dmg release/*.zip'
+            key: macos
+          - name: Windows
+            os: windows-latest
+            script: dist:win
+            artifact: 'release/*.exe'
+            key: windows
+          - name: Linux
+            os: ubuntu-latest
+            script: dist:linux
+            artifact: |
+              release/*.AppImage
+              release/*.deb
+            key: linux
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+          cache: npm
+
+      # Installs exactly what the lockfile pins and runs no dependency lifecycle
+      # scripts (SECURITY.md). electron-builder fetches its own binaries after.
+      - run: npm ci --ignore-scripts
+
+      - name: Build
+        if: >-
+          github.event_name == 'push' ||
+          github.event.inputs.platforms == 'all' ||
+          github.event.inputs.platforms == matrix.key
+        run: npm run ${{ matrix.script }}
+        env:
+          # There is no signing certificate in this repo. Without this,
+          # electron-builder tries to auto-discover a macOS identity and fails
+          # the build rather than producing an unsigned app.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload
+        if: >-
+          github.event_name == 'push' ||
+          github.event.inputs.platforms == 'all' ||
+          github.event.inputs.platforms == matrix.key
+        uses: actions/upload-artifact@v4
+        with:
+          name: gronk-${{ matrix.key }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
