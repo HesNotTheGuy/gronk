@@ -18,9 +18,9 @@ the same way: **verify before executing install scripts**.
 
 ## How we install here
 
-```powershell
+```bash
 # From repo root — preferred
-.\scripts\safe-npm-install.ps1
+npm run setup
 ```
 
 That script:
@@ -33,8 +33,8 @@ That script:
 
 Scan only (no install):
 
-```powershell
-.\scripts\check-deps-security.ps1
+```bash
+npm run security-check
 ```
 
 ## What is NOT on our allowlist
@@ -53,7 +53,7 @@ packages with long history, multiple maintainers, and no surprising install scri
 1. `npm view <name> name version maintainers time.created time.modified`
 2. Confirm maintainers look legitimate (not a brand-new account on a famous name)
 3. Prefer **exact versions** in `package.json` for anything security-sensitive
-4. Run `.\scripts\check-deps-security.ps1` after install
+4. Run `npm run security-check` after install
 5. Never use `-AllowScripts` unless you have read the install script
 
 ## If you already ran a dirty install
@@ -63,7 +63,7 @@ Assume secrets on the machine may be burned:
 1. Delete `node_modules` and the lockfile
 2. Rotate npm tokens, cloud keys, SSH keys, and GitHub PATs used on that box
 3. Search GitHub for unexpected public repos / branches named like `Shai-Hulud`
-4. Reinstall only via `.\scripts\safe-npm-install.ps1`
+4. Reinstall only via `npm run setup`
 
 ## Agent / AI policy for this repo
 

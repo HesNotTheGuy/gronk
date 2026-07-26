@@ -38,11 +38,11 @@ npm ci --ignore-scripts
 npm run dev
 ```
 
-On Windows, prefer the guarded installer, which installs with scripts disabled,
-scans, then fetches only the Electron binary:
+Or use the guarded install, which disables lifecycle scripts, scans what landed
+against a known-malware dataset, then fetches only the Electron binary:
 
-```powershell
-npm run safe-install
+```bash
+npm run setup
 ```
 
 Bare `npm install` is discouraged. npm supply chain worms run in package
