@@ -11,3 +11,12 @@ Thumbs.db
 *.local
 .vite
 .cache
+
+# Local working notes — kept on disk, never published.
+# Agent handoff docs, review rounds, and internal specs: they carry real session
+# titles, local paths and a list of what is deliberately not covered yet, none of
+# which belongs in a public repo.
+HANDOFF.md
+REVIEW-NOTES.md
+SECURITY-FIXES.md
+SKILLS-PLUGINS-SPEC.md
