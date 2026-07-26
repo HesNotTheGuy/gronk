@@ -1,0 +1,26 @@
+version: 2
+
+# Dependency bumps arrive as pull requests, which means every one of them runs
+# the malware scan in CI before it can merge. Bumping by hand is how a poisoned
+# release gets in without anyone looking at it.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      # Weekly rather than daily, deliberately. Most poisoned releases are caught
+      # and unpublished within hours; a project that upgrades the moment a
+      # version appears is the one that catches the bad one.
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for the routine noise, so patch bumps do not bury a major that
+      # deserves reading.
+      minor-and-patch:
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies]
