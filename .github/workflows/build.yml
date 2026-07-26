@@ -32,17 +32,20 @@ jobs:
             # Universal so it runs on both Apple Silicon and Intel. A default
             # build only targets the runner's own architecture, which would
             # leave Intel Mac users unable to open it.
-            script: dist:mac -- --universal
-            artifact: 'release/*.dmg release/*.zip'
+            script: dist:mac -- --universal --publish never
+            artifact: |
+              release/*.dmg
+              release/*.zip
             key: macos
           - name: Windows
             os: windows-latest
-            script: dist:win
-            artifact: 'release/*.exe'
+            script: dist:win -- --publish never
+            artifact: |
+              release/*.exe
             key: windows
           - name: Linux
             os: ubuntu-latest
-            script: dist:linux
+            script: dist:linux -- --publish never
             artifact: |
               release/*.AppImage
               release/*.deb
@@ -60,6 +63,9 @@ jobs:
       # scripts (SECURITY.md). electron-builder fetches its own binaries after.
       - run: npm ci --ignore-scripts
 
+      # --publish never: electron-builder detects CI and tries to push artifacts to
+      # a GitHub release, which fails without GH_TOKEN. This workflow only produces
+      # files; releasing them is a separate, deliberate act.
       - name: Build
         if: >-
           github.event_name == 'push' ||

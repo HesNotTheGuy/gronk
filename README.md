@@ -1,151 +1,125 @@
 # Gronk
 
-Desktop GUI for the [Grok Build CLI](https://x.ai) — a Claude Code–style chat app that talks to Grok over **ACP** (`grok agent stdio`).
+A desktop app for the [Grok Build CLI](https://x.ai). It runs your local `grok`
+binary as a child process and talks to it over ACP (`grok agent stdio`).
 
-Works on **Windows, macOS, and Linux**. The app spawns your local `grok` binary and talks to it over ACP.
+Gronk is a client, not a service. It has no backend, ships no credentials, and
+never calls a model itself.
 
-**Your account only:** Gronk never ships with a login and never stores API keys or tokens in the app. When someone runs the app, they must sign in with **their own** Grok account via the official CLI (`grok login`). Credentials live only on that machine under that OS user (`~/.grok/auth.json` or optional `XAI_API_KEY`). Your sign-in here does not appear in anyone else’s install.
+> **Status: pre-release.** Tested on Windows. macOS and Linux builds have not
+> been run yet. Reports welcome.
 
-### Surfaces
+## What it does
 
 | Surface | Purpose |
 |---------|---------|
-| **Home** | Hub — jump into Chat or Projects |
-| **Chat** | General Grok conversation (like the website / X), CLI-backed |
-| **Projects** | Coding agent in a folder — tools, permissions, sessions |
+| Home | Recent projects, sessions, activity |
+| Chat | General conversation, backed by the CLI |
+| Build | Coding agent in a project folder |
 
-Chat is **not** an Electron wrap of grok.com. It uses the same `grok agent` ACP path with a conversational system prompt and a local sandbox cwd under app `userData` (so it never pollutes your real project list).
+Chat is not a web wrapper. It uses the same ACP path as Build, with a
+conversational system prompt and a sandbox working directory, so it never
+appears in your project list.
 
-## Features
+## Requirements
 
-- **Per-user sign-in** (browser OAuth / device code) before agent use
-- Open a project folder and start a Grok agent session
-- Streaming chat with markdown rendering (code copy buttons)
-- Live **tool call** cards with kind labels + **diff** preview for edits
-- **Permission** prompts (allow once / always / deny) + local audit log
-- Recent projects + session search / rename / delete / export
-- Session restore (ACP + local transcript cache)
-- Model picker (`grok models`)
-- Composer: **@ file mentions**, image paste, attach files, drag-drop
-- Live **plan** checklist panel when the agent emits plan updates
-- Theme (dark / light / system), custom Grok binary path, health check
-- Optional **always approve** tools (`--always-approve`, gated)
-- Cross-platform binary discovery (`~/.grok/bin/grok`, PATH, Homebrew)
-- Shortcuts: `Ctrl/Cmd+O` open · `Ctrl/Cmd+N` new session · `Ctrl/Cmd+,` settings
+1. **Node.js 22.18 or newer.** The test runner relies on native TypeScript type
+   stripping, which older versions lack.
+2. **The Grok CLI**, installed and on your PATH.
+   - Windows: `irm https://x.ai/cli/install.ps1 | iex`
+   - macOS and Linux: `curl -fsSL https://x.ai/cli/install.sh | bash`
+3. **Your own Grok account.** Sign in from Gronk's sign-in screen, or run
+   `grok login`.
 
-## Prerequisites
+## Running it
 
-1. **Node.js 20+**
-2. **Grok Build CLI** installed  
-   - Windows: `irm https://x.ai/cli/install.ps1 | iex`  
-   - macOS/Linux: `curl -fsSL https://x.ai/cli/install.sh | bash`
-3. **Your own Grok account** — sign in from the Gronk sign-in screen (browser OAuth or device code), or run `grok login` in a terminal. Optional advanced: set `XAI_API_KEY` in the environment (never paste keys into the app; Gronk will not save them).
-
-### Auth model (important)
-
-| Rule | Why |
-|------|-----|
-| No credentials in the repo or packaged app | Your login is not embedded for other people |
-| Sign-in required before agent start | Each install must verify its own account |
-| Tokens stay in the Grok CLI, not Gronk | `~/.grok/auth.json` / env — never `gronk-store.json` |
-| Tokens never sent to the renderer | UI only sees safe status (`Signed in`, `grok.com`, …) |
-| Sign out = `grok logout` + stop agent | Clears credentials on **this** machine only |
-| Scope = this OS user on this computer | Someone else on another PC (or another Windows user) is signed out until they log in |
-
-## Develop
-
-**Do not run bare `npm install` as the first step.** npm supply-chain worms
-(Shai-Hulud and variants) often run in package lifecycle scripts. Use the
-safe installer (scripts disabled → malware scan → Electron binary only):
-
-```powershell
-# Preferred (Windows)
-.\scripts\safe-npm-install.ps1
-# or
-npm run safe-install
-
+```bash
+npm ci --ignore-scripts
 npm run dev
 ```
 
-Details: [SECURITY.md](./SECURITY.md). Scan without installing:
+On Windows, prefer the guarded installer, which installs with scripts disabled,
+scans, then fetches only the Electron binary:
 
 ```powershell
-.\scripts\check-deps-security.ps1
+npm run safe-install
 ```
 
-## Build / package
+Bare `npm install` is discouraged. npm supply chain worms run in package
+lifecycle scripts. See [SECURITY.md](SECURITY.md).
+
+## Building installers
 
 ```bash
-npm run build
-
-# Platform installers (run on that OS for native signing/notarization)
 npm run dist:win
-npm run dist:mac    # needs a Mac for a real .dmg test
 npm run dist:linux
+npm run dist:mac
 ```
 
-macOS builds can be produced on a Mac (or CI with macOS runners). Code is written with portable paths and Electron APIs so it should run once packaged; we can’t fully QA macOS from Windows alone.
+macOS installers can only be built on macOS. If you do not have a Mac, run the
+"Build installers" workflow from the Actions tab and download the artifact.
 
-## Architecture
+## Features
+
+- Sign-in per user, before any agent runs
+- Streaming chat with markdown and code blocks
+- Tool call cards with diffs
+- Permission prompts showing the actual diff before you approve
+- Token and cost usage per session
+- Activity heatmap of your own work
+- Plugins, skills and MCP servers, managed from Settings
+- Session restore, search, rename, export
+- Attached dev server preview
+- Model picker and permission modes
+- File mentions, image paste, drag and drop
+
+## How it works
 
 ```
-┌─────────────────────┐     IPC      ┌──────────────────────┐
-│  React renderer     │◄────────────►│  Electron main       │
-│  chat / tools / UI  │              │  AgentManager        │
-└─────────────────────┘              └──────────┬───────────┘
-                                                │ spawn
-                                                ▼
-                                     ┌──────────────────────┐
-                                     │  grok agent stdio    │
-                                     │  JSON-RPC (ACP)      │
-                                     └──────────────────────┘
+React renderer  <--IPC-->  Electron main  --spawn-->  grok agent stdio
+                                                      JSON-RPC (ACP)
 ```
 
-- **Main process** owns the child process and ACP JSON-RPC client
-- **Preload** exposes a typed `window.gronk` API (context isolation on)
-- **Renderer** is a pure React UI — no Node access
+The main process owns the child process and the ACP client. Preload exposes a
+typed `window.gronk` API with context isolation on. The renderer has no Node
+access.
 
-## Settings store
+Your data lives in the app's `userData` directory as `gronk-store.json`, and can
+be relocated from Settings.
 
-User data lives under Electron `userData` as `gronk-store.json` (recent projects, settings, session list).
-
-## Security notes
+## Security
 
 - `contextIsolation: true`, `nodeIntegration: false`
-- Tool execution still runs with your user permissions via the Grok agent — treat **Always approve** like `--yolo`
-- Prefer reviewing permission prompts for shell/network tools
+- Credentials stay in the Grok CLI (`~/.grok/auth.json` or `XAI_API_KEY`).
+  Gronk never stores or forwards tokens.
+- Tools run with your user's permissions. Treat "Bypass all" as YOLO.
+- Every IPC handler validates its sender and arguments.
 
-## Roadmap ideas
+## Contributing
 
-- Full project file tree side panel
-- Embedded terminal (ACP fs/terminal client capabilities)
-- Permission modes beyond YOLO (`acceptEdits`, plan mode)
-- WebSocket mode (`grok agent serve`) for multi-window
-- Desktop notifications when the agent finishes
-- Auto-update packaging
+```bash
+npm run verify   # typecheck and tests
+npm test         # tests only
+npm run test:live # contract tests against your real Grok CLI, opt-in
+```
 
+Tests must pass on all three platforms in CI.
 
-## Licence and attribution
+## Licence
 
-Gronk is licensed under the [Apache License 2.0](LICENSE). That covers **only the
-code in this repository** — the app itself.
+Apache 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-Apache-2.0 is permissive: you may use, modify and ship Gronk commercially,
-including in closed-source products. It also grants patent rights explicitly and
-does **not** grant rights to the Gronk name or logo — a fork is free to exist,
-but not to call itself Gronk. Attribution details are in [NOTICE](NOTICE).
+You may use, modify and ship Gronk commercially, including in closed source
+products. The licence does not grant rights to the Gronk name or logo, so a fork
+is free to exist but not to call itself Gronk.
 
 **The Grok CLI is not part of Gronk and is not redistributed here.** Gronk
-launches whichever `grok` binary you installed yourself, as a separate process,
-and talks to it over stdio. You obtain, install, and sign in to that CLI under
-xAI's own terms, with your own account. Nothing in this project grants you any
-rights to it.
+launches whichever binary you installed yourself. You obtain and use that CLI
+under xAI's terms, with your own account.
 
-Gronk is an independent project. It is **not affiliated with, endorsed by, or
-sponsored by xAI.** "Grok" is a trademark of xAI, used here only to describe
-what this app connects to.
+Gronk is an independent project, not affiliated with or endorsed by xAI. "Grok"
+is a trademark of xAI, used here only to describe what this app connects to.
 
-Packages that Gronk bundles into the application are credited in
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) (regenerate with `npm run
-notices`). The Electron runtime and Chromium ship their own notices inside the
-packaged app.
+Bundled packages are credited in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Electron and Chromium ship
+their own notices inside the packaged app.
