@@ -1,8 +1,8 @@
 /**
- * Is the installed Grok CLI a release Grocky's `--json` parsing was verified against?
+ * Is the installed Grok CLI a release Gronk's `--json` parsing was verified against?
  *
  * The CLI updates itself without asking — it moved 0.2.111 → 0.2.112 unprompted
- * during one development session. Grocky reads that output by field name, and
+ * during one development session. Gronk reads that output by field name, and
  * both `asList()` and `mapPlugin()` degrade to nothing rather than throwing
  * (plugins-map.ts), so a rename upstream does not crash: it renders an EMPTY
  * plugin list, indistinguishable from having none installed. Silently wrong.
@@ -22,10 +22,10 @@ import { runGrokCli } from './grok-cli'
 import type { CliVersionInfo, CliVersionStatus } from '../../shared/types'
 
 /**
- * The CLI release Grocky's JSON parsing was actually checked against.
+ * The CLI release Gronk's JSON parsing was actually checked against.
  *
  * "Verified" has one meaning: `tests/live-cli.test.ts` was run against a real
- * binary of this version (`GROCKY_LIVE_CLI=1 npm test`) and passed — the plugin,
+ * binary of this version (`GRONK_LIVE_CLI=1 npm test`) and passed — the plugin,
  * marketplace and MCP `--json` payloads still carried every field plugins-map.ts
  * reads, under the key spellings it reads them by.
  *
@@ -171,20 +171,20 @@ function message(status: CliVersionStatus, current: string, verified: string): s
       return undefined
     case 'newer-than-verified':
       return (
-        `The Grok CLI is ${current}, newer than the ${verified} Grocky's plugin and MCP ` +
+        `The Grok CLI is ${current}, newer than the ${verified} Gronk's plugin and MCP ` +
         'output parsing was verified against. If the CLI changed its output format, those ' +
         'lists can look empty or incomplete even when you do have plugins and servers ' +
-        'configured. Check them with the CLI before trusting what Grocky shows.'
+        'configured. Check them with the CLI before trusting what Gronk shows.'
       )
     case 'older-than-verified':
       return (
-        `The Grok CLI is ${current}, older than the ${verified} Grocky's plugin and MCP ` +
+        `The Grok CLI is ${current}, older than the ${verified} Gronk's plugin and MCP ` +
         'output parsing was verified against. Those lists can look empty or incomplete on ' +
         'an older output format. Updating the CLI is the usual fix.'
       )
     case 'unknown':
       return (
-        "Grocky could not read the Grok CLI's version, so it cannot tell whether the CLI " +
+        "Gronk could not read the Grok CLI's version, so it cannot tell whether the CLI " +
         `still emits the ${verified} output format it reads. If plugin or MCP lists look ` +
         'empty, this may be why rather than because you have none.'
       )
@@ -192,7 +192,7 @@ function message(status: CliVersionStatus, current: string, verified: string): s
 }
 
 /**
- * Classify a version read off the CLI against the one Grocky was verified
+ * Classify a version read off the CLI against the one Gronk was verified
  * against. Pure: the caller supplies the parse, and `verifiedAgainst` is a
  * parameter so ordering can be exercised without editing the constant.
  *

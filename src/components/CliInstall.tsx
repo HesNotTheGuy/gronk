@@ -33,7 +33,7 @@ export function CliInstall({ open, platform, installing, result, onInstall, onCl
             <div>
               <strong>Installing…</strong>
               <p className="settings-hint">
-                Running the official installer — this can take a minute. Don&apos;t close Grocky.
+                Running the official installer — this can take a minute. Don&apos;t close Gronk.
               </p>
             </div>
           </div>
@@ -49,7 +49,7 @@ export function CliInstall({ open, platform, installing, result, onInstall, onCl
         ) : (
           <>
             <p>
-              Grocky can install the Grok CLI for you using xAI&apos;s official installer. It runs a
+              Gronk can install the Grok CLI for you using xAI&apos;s official installer. It runs a
               script from <strong>x.ai</strong> over HTTPS and installs the <code>grok</code> binary
               on your computer.
             </p>

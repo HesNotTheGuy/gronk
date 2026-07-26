@@ -118,7 +118,7 @@ const HEADER_NAME_RE = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/
 const MCP_TRANSPORTS: McpTransport[] = ['stdio', 'http', 'sse']
 const PROJECT_SCOPE_UNSUPPORTED =
   'Project scope is not supported yet: the CLI helper has no validated project directory, ' +
-  "so `-s project` would write into Grocky's own folder. Use the user scope."
+  "so `-s project` would write into Gronk's own folder. Use the user scope."
 
 /** Non-empty string that grok cannot mistake for a flag. */
 function assertCliToken(value: unknown, name: string): string {
@@ -211,7 +211,7 @@ function createWindow(): void {
     height: 860,
     minWidth: 900,
     minHeight: 600,
-    title: 'Grocky',
+    title: 'Gronk',
     backgroundColor: '#000000',
     show: false,
     titleBarStyle:
@@ -238,12 +238,12 @@ function createWindow(): void {
   initPreview(mainWindow, (channel, payload) => {
     if (!mainWindow || mainWindow.isDestroyed()) return
     if (channel === 'preview-status') {
-      mainWindow.webContents.send('grocky:event', {
+      mainWindow.webContents.send('gronk:event', {
         type: 'preview-status',
         ...(payload as Record<string, unknown>)
       })
     } else if (channel === 'preview-log') {
-      mainWindow.webContents.send('grocky:event', { type: 'preview-log', text: String(payload) })
+      mainWindow.webContents.send('gronk:event', { type: 'preview-log', text: String(payload) })
     }
   })
 
@@ -272,10 +272,10 @@ function createWindow(): void {
   mainWindow.webContents.on('will-attach-webview', (e) => e.preventDefault())
 
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
-    console.error('[grocky] did-fail-load', code, desc, url)
+    console.error('[gronk] did-fail-load', code, desc, url)
   })
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
-    console.error('[grocky] render-process-gone', details)
+    console.error('[gronk] render-process-gone', details)
   })
 
   // DevTools in development so blank screens are diagnosable
@@ -372,7 +372,7 @@ function installGrokCli(): Promise<{
         message: installed
           ? 'Grok CLI installed. Sign in with your own account to continue.'
           : tail ||
-            `Installer exited (code ${code ?? '?'}) but the grok binary was not found. Restart Grocky or install manually.`,
+            `Installer exited (code ${code ?? '?'}) but the grok binary was not found. Restart Gronk or install manually.`,
         grokPath,
         installed
       })
@@ -405,7 +405,7 @@ function dataMoveRefusal(): MoveDataResult | null {
 }
 
 function registerIpc(): void {
-  ipcMain.handle('grocky:select-folder', async (e) => {
+  ipcMain.handle('gronk:select-folder', async (e) => {
     assertTrustedSender(e)
     const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openDirectory', 'createDirectory']
@@ -415,7 +415,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(
-    'grocky:select-file',
+    'gronk:select-file',
     async (
       e,
       options?: { filters?: { name: string; extensions: string[] }[]; title?: string }
@@ -431,12 +431,12 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.handle('grocky:get-settings', (e) => {
+  ipcMain.handle('gronk:get-settings', (e) => {
     assertTrustedSender(e)
     return getSettings()
   })
 
-  ipcMain.handle('grocky:set-settings', (e, partial: Partial<AppSettings>) => {
+  ipcMain.handle('gronk:set-settings', (e, partial: Partial<AppSettings>) => {
     assertTrustedSender(e)
     if (!partial || typeof partial !== 'object') throw new Error('Invalid settings')
     // A different binary is a different CLI, so its cached version is now a
@@ -445,17 +445,17 @@ function registerIpc(): void {
     return setSettings(partial)
   })
 
-  ipcMain.handle('grocky:get-recent-projects', (e) => {
+  ipcMain.handle('gronk:get-recent-projects', (e) => {
     assertTrustedSender(e)
     return getRecentProjects()
   })
 
-  ipcMain.handle('grocky:add-recent-project', (e, cwd: string) => {
+  ipcMain.handle('gronk:add-recent-project', (e, cwd: string) => {
     assertTrustedSender(e)
     return addRecentProject(assertString(cwd, 'cwd'))
   })
 
-  ipcMain.handle('grocky:get-chat-workspace', (e) => {
+  ipcMain.handle('gronk:get-chat-workspace', (e) => {
     assertTrustedSender(e)
     // Must come from data-dir: a relocated data directory has to take the chat
     // sandbox with it, or the agent keeps writing into the old location.
@@ -466,7 +466,7 @@ function registerIpc(): void {
       fs.writeFileSync(
         readme,
         [
-          'Grocky Chat workspace',
+          'Gronk Chat workspace',
           '',
           'This folder is a local sandbox for general Grok chat sessions.',
           'It is not one of your coding projects. Conversations here are',
@@ -480,7 +480,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(
-    'grocky:start-agent',
+    'gronk:start-agent',
     async (
       e,
       cwd: string,
@@ -533,13 +533,13 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.handle('grocky:stop-agent', async (e) => {
+  ipcMain.handle('gronk:stop-agent', async (e) => {
     assertTrustedSender(e)
     return agentManager.stop()
   })
 
   ipcMain.handle(
-    'grocky:send-prompt',
+    'gronk:send-prompt',
     (e, text: string, options?: SendPromptOptions) => {
       assertTrustedSender(e)
       if (typeof text !== 'string') throw new Error('Invalid prompt')
@@ -547,13 +547,13 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.handle('grocky:cancel-prompt', async (e) => {
+  ipcMain.handle('gronk:cancel-prompt', async (e) => {
     assertTrustedSender(e)
     return agentManager.cancelPrompt()
   })
 
   ipcMain.handle(
-    'grocky:respond-permission',
+    'gronk:respond-permission',
     (e, requestId: number | string, decision: PermissionDecision) => {
       assertTrustedSender(e)
       if (requestId === undefined || requestId === null) throw new Error('Invalid requestId')
@@ -564,12 +564,12 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.handle('grocky:list-sessions', (e) => {
+  ipcMain.handle('gronk:list-sessions', (e) => {
     assertTrustedSender(e)
     return listSessions()
   })
 
-  ipcMain.handle('grocky:load-session', async (e, sessionId: string) => {
+  ipcMain.handle('gronk:load-session', async (e, sessionId: string) => {
     assertTrustedSender(e)
     const auth = await getAuthStatus()
     if (!auth.authenticated) {
@@ -584,13 +584,13 @@ function registerIpc(): void {
     return agentManager.loadSession(id, match?.cwd)
   })
 
-  ipcMain.handle('grocky:get-transcript', (e, sessionId: string) => {
+  ipcMain.handle('gronk:get-transcript', (e, sessionId: string) => {
     assertTrustedSender(e)
     return getTranscript(assertString(sessionId, 'sessionId'))
   })
 
   ipcMain.handle(
-    'grocky:save-transcript',
+    'gronk:save-transcript',
     (e, sessionId: string, messages: ChatMessage[]) => {
       assertTrustedSender(e)
       if (!Array.isArray(messages)) throw new Error('Invalid messages')
@@ -598,18 +598,18 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.handle('grocky:delete-session', (e, sessionId: string) => {
+  ipcMain.handle('gronk:delete-session', (e, sessionId: string) => {
     assertTrustedSender(e)
     return deleteSession(assertString(sessionId, 'sessionId'))
   })
 
-  ipcMain.handle('grocky:rename-session', (e, sessionId: string, title: string) => {
+  ipcMain.handle('gronk:rename-session', (e, sessionId: string, title: string) => {
     assertTrustedSender(e)
     return renameSession(assertString(sessionId, 'sessionId'), assertString(title, 'title'))
   })
 
   ipcMain.handle(
-    'grocky:archive-session',
+    'gronk:archive-session',
     (e, sessionId: string, archived?: boolean) => {
       assertTrustedSender(e)
       return archiveSession(assertString(sessionId, 'sessionId'), archived !== false)
@@ -617,7 +617,7 @@ function registerIpc(): void {
   )
 
   ipcMain.handle(
-    'grocky:export-transcript',
+    'gronk:export-transcript',
     async (e, sessionId: string, format: 'md' | 'json' = 'md') => {
       assertTrustedSender(e)
       const id = assertString(sessionId, 'sessionId')
@@ -633,7 +633,7 @@ function registerIpc(): void {
       const base = (sessionInfo?.title || id.slice(0, 8)).replace(/[<>:"/\\|?*]/g, '_')
       const defaultPath = path.join(
         app.getPath('documents'),
-        `grocky-${base}.${format === 'json' ? 'json' : 'md'}`
+        `gronk-${base}.${format === 'json' ? 'json' : 'md'}`
       )
 
       const result = await dialog.showSaveDialog(mainWindow!, {
@@ -667,7 +667,7 @@ function registerIpc(): void {
   )
 
   ipcMain.handle(
-    'grocky:list-project-files',
+    'gronk:list-project-files',
     (e, cwd: string, query?: string, limit?: number) => {
       assertTrustedSender(e)
       const root = assertString(cwd, 'cwd')
@@ -689,28 +689,28 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.handle('grocky:list-models', (e) => {
+  ipcMain.handle('gronk:list-models', (e) => {
     assertTrustedSender(e)
     return listModels()
   })
 
-  ipcMain.handle('grocky:get-permission-audit', (e) => {
+  ipcMain.handle('gronk:get-permission-audit', (e) => {
     assertTrustedSender(e)
     return getPermissionAudit()
   })
 
-  ipcMain.handle('grocky:get-connection-state', (e) => {
+  ipcMain.handle('gronk:get-connection-state', (e) => {
     assertTrustedSender(e)
     return agentManager.getConnectionState()
   })
 
-  ipcMain.handle('grocky:get-grok-path', (e) => {
+  ipcMain.handle('gronk:get-grok-path', (e) => {
     assertTrustedSender(e)
     const settings = getSettings()
     return resolveGrokBinary(settings.grokBinary)
   })
 
-  ipcMain.handle('grocky:get-health', async (e) => {
+  ipcMain.handle('gronk:get-health', async (e) => {
     assertTrustedSender(e)
     const settings = getSettings()
     const grokPath = resolveGrokBinary(settings.grokBinary)
@@ -724,17 +724,17 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('grocky:get-auth-status', async (e) => {
+  ipcMain.handle('gronk:get-auth-status', async (e) => {
     assertTrustedSender(e)
     return getAuthStatus()
   })
 
-  ipcMain.handle('grocky:login', async (e, method?: LoginMethod) => {
+  ipcMain.handle('gronk:login', async (e, method?: LoginMethod) => {
     assertTrustedSender(e)
     const m = method === 'device' ? 'device' : 'oauth'
     const result = await loginWithCli(m)
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('grocky:event', {
+      mainWindow.webContents.send('gronk:event', {
         type: 'auth',
         auth: result.auth
       })
@@ -742,7 +742,7 @@ function registerIpc(): void {
     return result
   })
 
-  ipcMain.handle('grocky:logout', async (e) => {
+  ipcMain.handle('gronk:logout', async (e) => {
     assertTrustedSender(e)
     try {
       await agentManager.stop()
@@ -751,7 +751,7 @@ function registerIpc(): void {
     }
     const result = await logoutWithCli()
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('grocky:event', {
+      mainWindow.webContents.send('gronk:event', {
         type: 'auth',
         auth: result.auth
       })
@@ -759,17 +759,17 @@ function registerIpc(): void {
     return result
   })
 
-  ipcMain.handle('grocky:read-local-image', async (e, filePath: string) => {
+  ipcMain.handle('gronk:read-local-image', async (e, filePath: string) => {
     assertTrustedSender(e)
     return readLocalImageSafe(assertString(filePath, 'filePath'))
   })
 
-  ipcMain.handle('grocky:reveal-local-path', async (e, filePath: string) => {
+  ipcMain.handle('gronk:reveal-local-path', async (e, filePath: string) => {
     assertTrustedSender(e)
     return revealLocalPathSafe(assertString(filePath, 'filePath'))
   })
 
-  ipcMain.handle('grocky:install-cli', async (e) => {
+  ipcMain.handle('gronk:install-cli', async (e) => {
     assertTrustedSender(e)
     return installGrokCli()
   })
@@ -778,32 +778,32 @@ function registerIpc(): void {
   // The move itself lives in data-dir.ts (copy → verify → remove). These
   // handlers only validate the request and refuse it while an agent is live.
 
-  ipcMain.handle('grocky:get-store-health', (e) => {
+  ipcMain.handle('gronk:get-store-health', (e) => {
     assertTrustedSender(e)
     return getStoreHealth()
   })
 
-  ipcMain.handle('grocky:get-cli-version', async (e) => {
+  ipcMain.handle('gronk:get-cli-version', async (e) => {
     assertTrustedSender(e)
     return getCliVersion()
   })
 
-  ipcMain.handle('grocky:get-data-location', (e) => {
+  ipcMain.handle('gronk:get-data-location', (e) => {
     assertTrustedSender(e)
     return getDataLocation()
   })
 
-  ipcMain.handle('grocky:choose-data-dir', async (e) => {
+  ipcMain.handle('gronk:choose-data-dir', async (e) => {
     assertTrustedSender(e)
     const result = await dialog.showOpenDialog(mainWindow!, {
-      title: 'Choose a folder for Grocky data',
+      title: 'Choose a folder for Gronk data',
       properties: ['openDirectory', 'createDirectory']
     })
     if (result.canceled || !result.filePaths[0]) return null
     return result.filePaths[0]
   })
 
-  ipcMain.handle('grocky:move-data-dir', async (e, target: unknown) => {
+  ipcMain.handle('gronk:move-data-dir', async (e, target: unknown) => {
     assertTrustedSender(e)
     const dir = assertString(target, 'target')
     const refusal = dataMoveRefusal()
@@ -811,7 +811,7 @@ function registerIpc(): void {
     return moveDataDir(dir)
   })
 
-  ipcMain.handle('grocky:reset-data-dir', async (e) => {
+  ipcMain.handle('gronk:reset-data-dir', async (e) => {
     assertTrustedSender(e)
     // Same file operations as a move, so the same running-agent rule applies.
     const refusal = dataMoveRefusal()
@@ -819,17 +819,17 @@ function registerIpc(): void {
     return resetDataDir()
   })
 
-  ipcMain.handle('grocky:preview-start', (e, cwd: string, command?: string) => {
+  ipcMain.handle('gronk:preview-start', (e, cwd: string, command?: string) => {
     assertTrustedSender(e)
     return startPreview(normalizeCwd(assertString(cwd, 'cwd')), assertOptionalString(command, 'command'))
   })
 
-  ipcMain.handle('grocky:preview-stop', (e) => {
+  ipcMain.handle('gronk:preview-stop', (e) => {
     assertTrustedSender(e)
     stopPreview()
   })
 
-  ipcMain.handle('grocky:preview-set-bounds', (e, rect: unknown) => {
+  ipcMain.handle('gronk:preview-set-bounds', (e, rect: unknown) => {
     assertTrustedSender(e)
     if (rect && typeof rect === 'object') {
       const r = rect as { x?: number; y?: number; width?: number; height?: number }
@@ -844,17 +844,17 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('grocky:preview-set-url', (e, url: string) => {
+  ipcMain.handle('gronk:preview-set-url', (e, url: string) => {
     assertTrustedSender(e)
     setPreviewUrl(assertString(url, 'url'))
   })
 
-  ipcMain.handle('grocky:preview-reload', (e) => {
+  ipcMain.handle('gronk:preview-reload', (e) => {
     assertTrustedSender(e)
     reloadPreview()
   })
 
-  ipcMain.handle('grocky:preview-status', (e) => {
+  ipcMain.handle('gronk:preview-status', (e) => {
     assertTrustedSender(e)
     return getPreviewStatus()
   })
@@ -865,22 +865,22 @@ function registerIpc(): void {
   // Trust is never implied — installPlugin receives an explicit boolean that
   // the UI may only set from a human-confirmed trust modal.
 
-  ipcMain.handle('grocky:plugin-list', async (e) => {
+  ipcMain.handle('gronk:plugin-list', async (e) => {
     assertTrustedSender(e)
     return listInstalledPlugins()
   })
 
-  ipcMain.handle('grocky:plugin-available', async (e) => {
+  ipcMain.handle('gronk:plugin-available', async (e) => {
     assertTrustedSender(e)
     return listAvailablePlugins()
   })
 
-  ipcMain.handle('grocky:plugin-marketplaces', async (e) => {
+  ipcMain.handle('gronk:plugin-marketplaces', async (e) => {
     assertTrustedSender(e)
     return listMarketplaces()
   })
 
-  ipcMain.handle('grocky:plugin-install', async (e, source: unknown, trust: unknown) => {
+  ipcMain.handle('gronk:plugin-install', async (e, source: unknown, trust: unknown) => {
     assertTrustedSender(e)
     // A source may be a git URL, user/repo@ref#subdir, or a local path (spaces
     // allowed) — only a leading '-' and control characters are rejected.
@@ -890,40 +890,40 @@ function registerIpc(): void {
     return installPlugin(src, trust)
   })
 
-  ipcMain.handle('grocky:plugin-enable', async (e, name: unknown) => {
+  ipcMain.handle('gronk:plugin-enable', async (e, name: unknown) => {
     assertTrustedSender(e)
     const pluginName = assertCliName(name, 'name')
     await assertAuthenticated()
     return enablePlugin(pluginName)
   })
 
-  ipcMain.handle('grocky:plugin-disable', async (e, name: unknown) => {
+  ipcMain.handle('gronk:plugin-disable', async (e, name: unknown) => {
     assertTrustedSender(e)
     const pluginName = assertCliName(name, 'name')
     await assertAuthenticated()
     return disablePlugin(pluginName)
   })
 
-  ipcMain.handle('grocky:plugin-uninstall', async (e, name: unknown) => {
+  ipcMain.handle('gronk:plugin-uninstall', async (e, name: unknown) => {
     assertTrustedSender(e)
     const pluginName = assertCliName(name, 'name')
     await assertAuthenticated()
     return uninstallPlugin(pluginName)
   })
 
-  ipcMain.handle('grocky:mcp-list', async (e) => {
+  ipcMain.handle('gronk:mcp-list', async (e) => {
     assertTrustedSender(e)
     return listMcpServers()
   })
 
-  ipcMain.handle('grocky:mcp-add', async (e, input: unknown) => {
+  ipcMain.handle('gronk:mcp-add', async (e, input: unknown) => {
     assertTrustedSender(e)
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       throw new Error('Invalid MCP server input: expected an object')
     }
     const raw = input as Record<string, unknown>
     // MVP: user scope only (spec §5) — the spawn helper has no validated
-    // project cwd, so `-s project` would target Grocky's own directory.
+    // project cwd, so `-s project` would target Gronk's own directory.
     if (raw.scope === 'project') throw new Error(PROJECT_SCOPE_UNSUPPORTED)
     if (raw.scope !== 'user') throw new Error("Invalid scope: expected 'user' or 'project'")
     const payload: McpAddInput = {
@@ -939,7 +939,7 @@ function registerIpc(): void {
     return addMcpServer(payload)
   })
 
-  ipcMain.handle('grocky:mcp-remove', async (e, name: unknown, scope?: unknown) => {
+  ipcMain.handle('gronk:mcp-remove', async (e, name: unknown, scope?: unknown) => {
     assertTrustedSender(e)
     const serverName = assertCliName(name, 'name')
     const rawScope = assertOptionalString(scope, 'scope')
@@ -952,7 +952,7 @@ function registerIpc(): void {
     return removeMcpServer(serverName, mcpScope)
   })
 
-  ipcMain.handle('grocky:mcp-doctor', async (e, name?: unknown) => {
+  ipcMain.handle('gronk:mcp-doctor', async (e, name?: unknown) => {
     assertTrustedSender(e)
     const rawName = assertOptionalString(name, 'name')
     return mcpDoctor(rawName === undefined ? undefined : assertCliName(rawName, 'name'))

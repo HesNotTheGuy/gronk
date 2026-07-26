@@ -18,7 +18,7 @@ import { PermissionModeBar } from './PermissionModeBar'
  * `unknown` stays neutral on purpose: we have no evidence the CLI is wrong, only
  * that we could not read its version, and a red row for that is the cry-wolf the
  * whole check exists to avoid. Only a real minor/major drift — the kind that can
- * rename the JSON keys Grocky reads — earns the alarm colour.
+ * rename the JSON keys Gronk reads — earns the alarm colour.
  */
 function cliVersionTone(info: CliVersionInfo | null): string {
   if (!info || info.status === 'unknown') return ''
@@ -34,7 +34,7 @@ function formatBytes(bytes?: number): string {
   return `${(kb / 1024).toFixed(1)} MB`
 }
 
-const ISSUES_URL = 'https://github.com/HesNotTheGuy/grocky/issues/new'
+const ISSUES_URL = 'https://github.com/HesNotTheGuy/gronk/issues/new'
 
 /**
  * Prefilled report skeleton. Deliberately carries only the OS — no paths, no
@@ -137,7 +137,7 @@ export function SettingsPanel({
   useEffect(() => {
     let cancelled = false
     if (open) {
-      void window.grocky.getCliVersion().then(
+      void window.gronk.getCliVersion().then(
         (info) => {
           if (!cancelled) setCliVersion(info)
         },
@@ -213,7 +213,7 @@ export function SettingsPanel({
             ) : null}
           </div>
           <p className="settings-hint">
-            Your login is local to this OS user on this machine. Grocky never stores tokens or API
+            Your login is local to this OS user on this machine. Gronk never stores tokens or API
             keys in app settings, and never ships shared credentials. Sign-in uses the Grok CLI (
             <code>~/.grok/auth.json</code> or env <code>XAI_API_KEY</code>) so other people&apos;s
             installs stay signed out until they authenticate themselves.
@@ -262,7 +262,7 @@ export function SettingsPanel({
               className={`health-row ${cliVersionTone(cliVersion)}`}
               title={
                 cliVersion
-                  ? `Grocky's plugin and MCP output parsing was verified against ${cliVersion.verifiedAgainst}`
+                  ? `Gronk's plugin and MCP output parsing was verified against ${cliVersion.verifiedAgainst}`
                   : undefined
               }
             >
@@ -368,7 +368,7 @@ export function SettingsPanel({
             ) : null}
           </div>
           <p className="settings-hint">
-            Override if Grocky cannot find <code>grok</code> on PATH or in ~/.grok/bin.
+            Override if Gronk cannot find <code>grok</code> on PATH or in ~/.grok/bin.
           </p>
         </div>
 
@@ -428,7 +428,7 @@ export function SettingsPanel({
             </div>
             <p className="settings-hint">
               Browse marketplaces, install skills, and configure MCP servers. Plugin code runs on
-              your machine with your permissions — outside Grocky&apos;s file protections.
+              your machine with your permissions — outside Gronk&apos;s file protections.
             </p>
           </div>
         ) : null}
@@ -485,7 +485,7 @@ export function SettingsPanel({
             Report an issue
           </a>
           <p className="settings-hint">
-            Opens the Grocky issue tracker in your browser. Nothing is sent automatically — you
+            Opens the Gronk issue tracker in your browser. Nothing is sent automatically — you
             write and submit the report yourself.
           </p>
         </div>
@@ -499,7 +499,7 @@ export function SettingsPanel({
         {pendingTarget ? (
           <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Confirm data move">
             <div className="modal data-move-modal">
-              <h3>Move Grocky&apos;s data?</h3>
+              <h3>Move Gronk&apos;s data?</h3>
               <dl className="data-move-paths">
                 <dt>From</dt>
                 <dd>

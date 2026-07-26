@@ -33,7 +33,7 @@ export function AuthGate({
           Sign in with <span>your</span> Grok account
         </h2>
         <p className="auth-copy">
-          This app does not ship with anyone else&apos;s login. Credentials are never baked into Grocky
+          This app does not ship with anyone else&apos;s login. Credentials are never baked into Gronk
           or copied between installs. Sign-in goes through the official Grok CLI on{' '}
           <strong>this</strong> computer, for <strong>this</strong> OS user — so if you are signed in
           here, that does not sign anyone else in on their machine.
@@ -42,7 +42,7 @@ export function AuthGate({
         <ul className="auth-bullets">
           <li>Browser login opens SpaceXAI OAuth (recommended)</li>
           <li>Device code works when a browser can&apos;t open here</li>
-          <li>Tokens stay in the local CLI store — not in Grocky settings</li>
+          <li>Tokens stay in the local CLI store — not in Gronk settings</li>
           <li>Sign out clears credentials on this machine only</li>
         </ul>
 
@@ -106,7 +106,7 @@ export function AuthGate({
         </div>
 
         <p className="auth-footnote">
-          Advanced: you may set <code>XAI_API_KEY</code> in <em>your</em> environment. Grocky never
+          Advanced: you may set <code>XAI_API_KEY</code> in <em>your</em> environment. Gronk never
           saves or shows that key, and it only applies to processes on this machine.
         </p>
       </div>

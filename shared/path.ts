@@ -35,10 +35,10 @@ export function folderName(cwd: string): string {
 }
 
 /**
- * True if `cwd` is Grocky's app-level chat sandbox (not a user coding folder).
+ * True if `cwd` is Gronk's app-level chat sandbox (not a user coding folder).
  * 1) Exact match to known chat root when provided
- * 2) Path ends with `/chat-workspace` (Grocky's fixed sandbox under userData)
- * 3) Path contains `/grocky/chat-workspace` (app userData layout)
+ * 2) Path ends with `/chat-workspace` (Gronk's fixed sandbox under userData)
+ * 3) Path contains `/gronk/chat-workspace` (app userData layout)
  */
 export function isChatWorkspace(
   cwd: string,
@@ -48,7 +48,7 @@ export function isChatWorkspace(
   if (chatRoot && pathsEqual(cwd, chatRoot)) return true
   const n = normalizePath(cwd).toLowerCase()
   if (n.endsWith('/chat-workspace') || n === 'chat-workspace') return true
-  if (n.includes('/grocky/chat-workspace')) return true
+  if (n.includes('/gronk/chat-workspace')) return true
   return false
 }
 

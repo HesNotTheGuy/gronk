@@ -6,10 +6,10 @@ import { auditPlugin, componentLine, installSource, plainText } from '../lib/plu
  * (SKILLS-PLUGINS-SPEC §4.4) — kept verbatim as a constant so it cannot drift.
  */
 const TRUST_SENTENCE =
-  "Installing runs this plugin's code (hooks and servers) on your computer with your permissions. Grocky's file protections do not apply to it."
+  "Installing runs this plugin's code (hooks and servers) on your computer with your permissions. Gronk's file protections do not apply to it."
 
 const CATALOG_LIMIT_NOTE =
-  "Grocky shows what the marketplace catalog declares; it has not inspected the plugin's actual code."
+  "Gronk shows what the marketplace catalog declares; it has not inspected the plugin's actual code."
 
 function InventoryGroup({ title, items }: { title: string; items?: PluginComponent[] }) {
   if (!items || items.length === 0) return null
@@ -78,17 +78,17 @@ export function PluginTrustModal({ open, plugin, busy, onCancel, onConfirm }: Pr
           {!sha ? (
             // Verified against grok 0.2.111: `plugin list --available --json` emits no
             // sha/commit field at all, so this branch is what every entry hits today.
-            // Say what Grocky actually knows — claiming "not pinned" would assert the
+            // Say what Gronk actually knows — claiming "not pinned" would assert the
             // source IS mutable, which we have not established either way.
             <p className="settings-hint warn-text">
-              Grocky cannot see which commit this installs. The marketplace may still pin one, but
+              Gronk cannot see which commit this installs. The marketplace may still pin one, but
               the CLI does not report it — so you cannot confirm here that a later install gets the
               same code.
             </p>
           ) : null}
           {unverified ? (
             <p className="settings-hint warn-text">
-              Unverified source — Grocky has no pre-install inventory for it. Install only if you
+              Unverified source — Gronk has no pre-install inventory for it. Install only if you
               wrote this plugin or fully trust whoever did.
             </p>
           ) : null}

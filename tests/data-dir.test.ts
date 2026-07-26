@@ -25,7 +25,7 @@ import {
 } from '../electron/main/store'
 import type { ChatMessage, SessionInfo } from '../shared/types'
 
-const POINTER_FILE = 'grocky-data-location.json'
+const POINTER_FILE = 'gronk-data-location.json'
 
 /** Every temp tree made by a test, removed afterwards. */
 let scratch: string[] = []
@@ -42,7 +42,7 @@ function tempDir(prefix: string): string {
 // configured here so a test can prove the data directory follows appData and
 // ignores the app-name-derived path.
 beforeEach(() => {
-  appDataRoot = tempDir('grocky-appdata-')
+  appDataRoot = tempDir('gronk-appdata-')
   defaultDir = path.join(appDataRoot, DATA_DIR_NAME)
   fs.mkdirSync(defaultDir, { recursive: true })
   __setPath('appData', appDataRoot)
@@ -93,23 +93,23 @@ function tmpFilesIn(dir: string): string[] {
 // ── The default directory must not follow the app name ──────────────
 
 // app.getPath('userData') is <appData>/<app.getName()>, and getName() returns
-// "grocky" only because package.json has a `name` and no top-level
+// "gronk" only because package.json has a `name` and no top-level
 // `productName`. If the data directory were derived from it, renaming the
 // product would move userData and every existing user's sessions would be gone
 // with no error at all. The segment is pinned instead.
 
 test('the default data directory is the pinned segment under appData', () => {
   assert.equal(defaultDataDir(), path.join(appDataRoot, DATA_DIR_NAME))
-  assert.equal(DATA_DIR_NAME, 'grocky', 'changing this is a data migration, not a rename')
+  assert.equal(DATA_DIR_NAME, 'gronk', 'changing this is a data migration, not a rename')
 })
 
 test('renaming the app does not move the default data directory', () => {
   const before = defaultDataDir()
   // Exactly what a top-level productName would do to userData.
-  __setPath('userData', path.join(appDataRoot, 'Grocky Desktop'))
+  __setPath('userData', path.join(appDataRoot, 'Gronk Desktop'))
   assert.equal(defaultDataDir(), before, 'the store must not follow the app name')
   assert.equal(getDataLocation().dataDir, before)
-  assert.equal(storePath(), path.join(before, 'grocky-store.json'))
+  assert.equal(storePath(), path.join(before, 'gronk-store.json'))
 })
 
 test('data-dir never asks Electron for the app name', () => {
@@ -133,9 +133,9 @@ test('package.json must not grow a top-level productName', () => {
   assert.equal(
     'productName' in pkg,
     false,
-    'a top-level productName changes app.getName() and moves %APPDATA%\\grocky'
+    'a top-level productName changes app.getName() and moves %APPDATA%\\gronk'
   )
-  assert.equal(pkg.name, 'grocky', 'app.getName() falls back to `name` — keep it stable')
+  assert.equal(pkg.name, 'gronk', 'app.getName() falls back to `name` — keep it stable')
 })
 
 // ── Resolved paths ──────────────────────────────────────────────────
@@ -145,7 +145,7 @@ test('the store and chat sandbox live inside the data directory', () => {
   assert.equal(location.isDefault, true)
   assert.equal(location.dataDir, defaultDir)
   assert.equal(location.defaultDir, defaultDir)
-  assert.equal(location.storePath, path.join(defaultDir, 'grocky-store.json'))
+  assert.equal(location.storePath, path.join(defaultDir, 'gronk-store.json'))
   assert.equal(location.chatWorkspacePath, path.join(defaultDir, 'chat-workspace'))
   assert.equal(location.previousChatWorkspaces, undefined)
 })
@@ -170,7 +170,7 @@ test('a relative path in the pointer is ignored', () => {
   // It would resolve against whatever cwd the app was launched with.
   fs.writeFileSync(
     path.join(defaultDir, POINTER_FILE),
-    JSON.stringify({ version: 1, dataDir: 'grocky-data' }),
+    JSON.stringify({ version: 1, dataDir: 'gronk-data' }),
     'utf8'
   )
   assert.equal(dataDir(), defaultDir)
@@ -180,7 +180,7 @@ test('a pointer to a directory that is not there is still honoured', () => {
   // An unplugged external drive must not silently redirect writes into a second,
   // empty store — the read comes up empty, which is recoverable; writing new
   // transcripts to the wrong place is not.
-  const gone = path.join(appDataRoot, 'unplugged', 'grocky-data')
+  const gone = path.join(appDataRoot, 'unplugged', 'gronk-data')
   fs.writeFileSync(
     path.join(defaultDir, POINTER_FILE),
     JSON.stringify({ version: 1, dataDir: gone }),
@@ -195,15 +195,15 @@ test('a pointer to a directory that is not there is still honoured', () => {
 test('a successful move preserves every session and transcript', async () => {
   seedData()
   const before = listSessions()
-  const target = tempDir('grocky-target-')
+  const target = tempDir('gronk-target-')
 
   const result = await moveDataDir(target)
   assert.equal(result.ok, true, result.message)
   assert.equal(result.location.dataDir, target)
   assert.equal(result.location.isDefault, false)
 
-  assert.equal(storePath(), path.join(target, 'grocky-store.json'))
-  assert.equal(fs.existsSync(path.join(target, 'grocky-store.json')), true)
+  assert.equal(storePath(), path.join(target, 'gronk-store.json'))
+  assert.equal(fs.existsSync(path.join(target, 'gronk-store.json')), true)
   assert.equal(
     fs.readFileSync(path.join(target, 'chat-workspace', 'notes', 'scratch.txt'), 'utf8'),
     'sandbox file'
@@ -217,9 +217,9 @@ test('a successful move preserves every session and transcript', async () => {
 
 test('the source copy is removed once the move is verified', async () => {
   seedData()
-  const target = tempDir('grocky-target-')
+  const target = tempDir('gronk-target-')
   assert.equal((await moveDataDir(target)).ok, true)
-  assert.equal(fs.existsSync(path.join(defaultDir, 'grocky-store.json')), false)
+  assert.equal(fs.existsSync(path.join(defaultDir, 'gronk-store.json')), false)
   assert.equal(fs.existsSync(path.join(defaultDir, 'chat-workspace')), false)
   // The pointer stays behind: it is the only way back to the data.
   assert.equal(fs.existsSync(path.join(defaultDir, POINTER_FILE)), true)
@@ -228,29 +228,29 @@ test('the source copy is removed once the move is verified', async () => {
 
 test('a move leaves no staging directory behind', async () => {
   seedData()
-  const target = tempDir('grocky-target-')
+  const target = tempDir('gronk-target-')
   assert.equal((await moveDataDir(target)).ok, true)
-  const staged = fs.readdirSync(target).filter((n) => n.startsWith('.grocky-move-'))
+  const staged = fs.readdirSync(target).filter((n) => n.startsWith('.gronk-move-'))
   assert.deepEqual(staged, [])
 })
 
 test('a move to a folder that already holds a store is refused', async () => {
   seedData()
-  const target = tempDir('grocky-target-')
-  fs.writeFileSync(path.join(target, 'grocky-store.json'), '{"sessions":[]}', 'utf8')
+  const target = tempDir('gronk-target-')
+  fs.writeFileSync(path.join(target, 'gronk-store.json'), '{"sessions":[]}', 'utf8')
 
   const result = await moveDataDir(target)
   assert.equal(result.ok, false)
-  assert.match(result.message, /already holds a Grocky store/)
+  assert.match(result.message, /already holds a Gronk store/)
   // Silently merging or clobbering another install's data is not recoverable.
-  assert.equal(fs.readFileSync(path.join(target, 'grocky-store.json'), 'utf8'), '{"sessions":[]}')
+  assert.equal(fs.readFileSync(path.join(target, 'gronk-store.json'), 'utf8'), '{"sessions":[]}')
   assert.equal(result.location.dataDir, defaultDir)
   assert.equal(listSessions().length, 2, 'the original data is untouched')
 })
 
 test('a move to a folder that already holds a chat sandbox is refused', async () => {
   seedData()
-  const target = tempDir('grocky-target-')
+  const target = tempDir('gronk-target-')
   fs.mkdirSync(path.join(target, 'chat-workspace'), { recursive: true })
   const result = await moveDataDir(target)
   assert.equal(result.ok, false)
@@ -267,7 +267,7 @@ test('a move into the current data directory is refused', async () => {
 })
 
 test('a relative target is refused', async () => {
-  const result = await moveDataDir('grocky-data')
+  const result = await moveDataDir('gronk-data')
   assert.equal(result.ok, false)
   assert.match(result.message, /absolute path/)
   assert.equal(dataDir(), defaultDir)
@@ -281,7 +281,7 @@ test('an empty target is refused', async () => {
 
 test('a target that is a file is refused', async () => {
   seedData()
-  const file = path.join(tempDir('grocky-target-'), 'not-a-folder.txt')
+  const file = path.join(tempDir('gronk-target-'), 'not-a-folder.txt')
   fs.writeFileSync(file, 'x', 'utf8')
   const result = await moveDataDir(file)
   assert.equal(result.ok, false)
@@ -292,11 +292,11 @@ test('a target that is a file is refused', async () => {
 test('a failed move leaves the original intact and says nothing changed', async () => {
   seedData()
   const before = listSessions()
-  const root = tempDir('grocky-target-')
+  const root = tempDir('gronk-target-')
   const blocker = path.join(root, 'blocker')
   fs.writeFileSync(blocker, 'a file where a parent folder would have to be', 'utf8')
 
-  const result = await moveDataDir(path.join(blocker, 'grocky-data'))
+  const result = await moveDataDir(path.join(blocker, 'gronk-data'))
   assert.equal(result.ok, false)
   assert.match(result.message, /Cannot write to|Cannot use/)
   assert.equal(result.location.dataDir, defaultDir)
@@ -322,7 +322,7 @@ test('moving to the directory the data is already in reports success and changes
 
 test('a move remembers the chat workspace it left behind', async () => {
   seedData()
-  const first = tempDir('grocky-target-')
+  const first = tempDir('gronk-target-')
   assert.equal((await moveDataDir(first)).ok, true)
 
   const location = getDataLocation()
@@ -332,8 +332,8 @@ test('a move remembers the chat workspace it left behind', async () => {
 
 test('previous chat workspaces accumulate newest-first without the live one', async () => {
   seedData()
-  const first = tempDir('grocky-target-')
-  const second = tempDir('grocky-target-')
+  const first = tempDir('gronk-target-')
+  const second = tempDir('gronk-target-')
   assert.equal((await moveDataDir(first)).ok, true)
   assert.equal((await moveDataDir(second)).ok, true)
 
@@ -351,7 +351,7 @@ test('previous chat workspaces accumulate newest-first without the live one', as
 test('the remembered workspace list is capped so it cannot grow forever', async () => {
   seedData()
   for (let i = 0; i < 11; i++) {
-    const next = tempDir('grocky-target-')
+    const next = tempDir('gronk-target-')
     assert.equal((await moveDataDir(next)).ok, true, `move ${i}`)
   }
   const previous = previousChatWorkspacePaths()
@@ -363,7 +363,7 @@ test('the remembered workspace list is capped so it cannot grow forever', async 
 
 test('reset returns the data to the default directory', async () => {
   seedData()
-  const target = tempDir('grocky-target-')
+  const target = tempDir('gronk-target-')
   assert.equal((await moveDataDir(target)).ok, true)
   assert.equal(getDataLocation().isDefault, false)
 
@@ -371,15 +371,15 @@ test('reset returns the data to the default directory', async () => {
   assert.equal(result.ok, true, result.message)
   assert.equal(result.location.isDefault, true)
   assert.equal(result.location.dataDir, defaultDir)
-  assert.equal(fs.existsSync(path.join(defaultDir, 'grocky-store.json')), true)
-  assert.equal(fs.existsSync(path.join(target, 'grocky-store.json')), false)
+  assert.equal(fs.existsSync(path.join(defaultDir, 'gronk-store.json')), true)
+  assert.equal(fs.existsSync(path.join(target, 'gronk-store.json')), false)
   assert.equal(listSessions().length, 2)
   assert.equal(getTranscript('s1').length, 2)
 })
 
 test('reset keeps the chat workspaces it passed through', async () => {
   seedData()
-  const target = tempDir('grocky-target-')
+  const target = tempDir('gronk-target-')
   assert.equal((await moveDataDir(target)).ok, true)
   assert.equal((await resetDataDir()).ok, true)
 
@@ -422,4 +422,57 @@ test('an atomic write that cannot create its directory writes nothing', () => {
   fs.writeFileSync(blocker, 'x', 'utf8')
   assert.throws(() => writeFileAtomicSync(path.join(blocker, 'nested.json'), 'payload'))
   assert.equal(fs.readFileSync(blocker, 'utf8'), 'x')
+})
+
+// ── Rename migration: Grocky -> Gronk ───────────────────────────────
+// The rename changed both the data directory segment and the store filename.
+// Without a fallback an existing install opens onto an empty folder, which is
+// indistinguishable from "the update wiped my sessions".
+
+test('an install predating the rename keeps using its own directory', () => {
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'gronk-rename-'))
+  __setPath('appData', appData)
+  __setPath('userData', path.join(appData, 'gronk'))
+
+  const legacy = path.join(appData, 'grocky')
+  fs.mkdirSync(legacy, { recursive: true })
+  fs.writeFileSync(
+    path.join(legacy, 'grocky-store.json'),
+    JSON.stringify({ sessions: [{ id: 's1', cwd: 'C:/work/app', createdAt: 1, updatedAt: 1 }] }),
+    'utf8'
+  )
+
+  assert.equal(defaultDataDir(), legacy, 'must adopt the pre-rename directory')
+  assert.equal(
+    storePath(),
+    path.join(legacy, 'grocky-store.json'),
+    'must read the pre-rename filename that actually holds the data'
+  )
+})
+
+test('a fresh install uses the new directory and filename', () => {
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'gronk-fresh-'))
+  __setPath('appData', appData)
+  __setPath('userData', path.join(appData, 'gronk'))
+
+  assert.equal(defaultDataDir(), path.join(appData, 'gronk'))
+  assert.equal(storePath(), path.join(appData, 'gronk', 'gronk-store.json'))
+})
+
+// Once Gronk has written its own store, a leftover Grocky folder must not
+// shadow it — that would silently roll the user back to older transcripts.
+test('a stale pre-rename folder never shadows a real Gronk store', () => {
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'gronk-both-'))
+  __setPath('appData', appData)
+  __setPath('userData', path.join(appData, 'gronk'))
+
+  const current = path.join(appData, 'gronk')
+  const legacy = path.join(appData, 'grocky')
+  fs.mkdirSync(current, { recursive: true })
+  fs.mkdirSync(legacy, { recursive: true })
+  fs.writeFileSync(path.join(current, 'gronk-store.json'), '{"sessions":[]}', 'utf8')
+  fs.writeFileSync(path.join(legacy, 'grocky-store.json'), '{"sessions":[]}', 'utf8')
+
+  assert.equal(defaultDataDir(), current)
+  assert.equal(storePath(), path.join(current, 'gronk-store.json'))
 })

@@ -107,7 +107,7 @@ export function auditPlugin(plugin: Plugin): RiskTag[] {
     tags.push({
       severity: 'HIGH',
       label: `Hooks (${hooks.length})`,
-      detail: "Hooks run shell commands around tool calls, outside Grocky's file protections."
+      detail: "Hooks run shell commands around tool calls, outside Gronk's file protections."
     })
     const broad = hooks.filter((h) => !plainText(h?.description, 40))
     if (broad.length > 0) {
@@ -123,7 +123,7 @@ export function auditPlugin(plugin: Plugin): RiskTag[] {
       severity: 'MED',
       label: `Skills (${skills.length})`,
       detail:
-        'Skill text is injected into the agent as instructions — a prompt-injection surface. Grocky shows it as inert text.'
+        'Skill text is injected into the agent as instructions — a prompt-injection surface. Gronk shows it as inert text.'
     })
   }
   return tags
@@ -136,7 +136,7 @@ export function auditPlugin(plugin: Plugin): RiskTag[] {
  * `grok plugin install --help` on 0.2.111. There is NO install-by-name form, so a plugin
  * name is not a usable source: the CLI would read it as a path or a repo shorthand and
  * install the wrong thing, or nothing. Returning '' instead leaves the trust modal's
- * confirm button disabled, which is the honest outcome when Grocky cannot name a target.
+ * confirm button disabled, which is the honest outcome when Gronk cannot name a target.
  *
  * For a catalog entry that declares its own repository, `sourceUrl` is that repository —
  * the same one the pinned commit refers to. Entries that declare none fall back to the

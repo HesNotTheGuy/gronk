@@ -18,7 +18,7 @@ const child = spawn(
   ],
   {
     stdio: 'inherit',
-    env: { ...process.env, GROCKY_LIVE_CLI: '1' }
+    env: { ...process.env, GRONK_LIVE_CLI: '1' }
   }
 )
 

@@ -21,7 +21,7 @@ export function __setPath(name: string, dir: string): void {
 }
 
 /** Fresh temp dir for `userData`, so store tests never touch real app data. */
-export function __freshUserData(prefix = 'grocky-test-'): string {
+export function __freshUserData(prefix = 'gronk-test-'): string {
   const dir = mkdtempSync(path.join(tmpdir(), prefix))
   paths.set('userData', dir)
   return dir
@@ -42,7 +42,7 @@ export const app = {
     }
     return dir
   },
-  getName: () => 'Grocky',
+  getName: () => 'Gronk',
   getVersion: () => '0.0.0-test',
   requestSingleInstanceLock: () => true,
   quit: () => {},

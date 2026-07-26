@@ -2,11 +2,11 @@
  * Grok CLI authentication — per machine / per OS user.
  *
  * Goal: if you sign in here, that does not sign anyone else into their copy of
- * Grocky. Credentials are never packaged with the app.
+ * Gronk. Credentials are never packaged with the app.
  *
  * Security rules (do not weaken):
  * - Never read or forward tokens from ~/.grok/auth.json into the renderer.
- * - Never persist API keys in grocky-store.json (or the git repo).
+ * - Never persist API keys in gronk-store.json (or the git repo).
  * - Prefer `grok login` (browser OAuth) so each install uses its own account.
  * - Detect credentials only via CLI probes + "file exists" / env presence flags.
  * - API key via XAI_API_KEY is supported as advanced fallback (env only).
@@ -314,7 +314,7 @@ export async function logoutWithCli(): Promise<{ ok: boolean; message: string; a
     return {
       ok: true,
       message:
-        'Signed out. Cached CLI credentials cleared. Grocky does not keep your tokens.',
+        'Signed out. Cached CLI credentials cleared. Gronk does not keep your tokens.',
       auth
     }
   }

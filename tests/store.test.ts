@@ -35,17 +35,17 @@ const ALL_MODES: PermissionMode[] = PERMISSION_MODE_OPTIONS.map((o) => o.id)
 let userData = ''
 
 // Every test gets its own userData directory, so nothing leaks between cases
-// and the developer's real grocky-store.json is never touched.
+// and the developer's real gronk-store.json is never touched.
 beforeEach(() => {
   userData = __freshUserData()
 })
 
 function storeFile(): string {
-  return path.join(userData, 'grocky-store.json')
+  return path.join(userData, 'gronk-store.json')
 }
 
 function backupFile(): string {
-  return path.join(userData, 'grocky-store.backup.json')
+  return path.join(userData, 'gronk-store.backup.json')
 }
 
 function readStoreFile(file = storeFile()): Record<string, unknown> {
@@ -181,7 +181,7 @@ test('a patch that disagrees with itself resolves to the safer value', () => {
 })
 
 test('the UI two-step (ack, then mode + toggle together) still enables YOLO', () => {
-  // Exactly what useGrocky.confirmYolo sends.
+  // Exactly what useGronk.confirmYolo sends.
   setSettings({ alwaysApproveAck: true })
   const after = setSettings({ alwaysApprove: true, permissionMode: 'bypassPermissions' })
   assert.equal(after.permissionMode, 'bypassPermissions')
@@ -405,7 +405,7 @@ test('the legacy field is dropped from disk on the next write', () => {
 // ── Recent projects: the chat sandbox is never a coding folder ───────
 
 test('the chat sandbox is never recorded as a recent project', () => {
-  const projects = addRecentProject('C:/Users/x/AppData/Roaming/grocky/chat-workspace')
+  const projects = addRecentProject('C:/Users/x/AppData/Roaming/gronk/chat-workspace')
   assert.deepEqual(projects, [])
   assert.deepEqual(getRecentProjects(), [])
 })
@@ -428,7 +428,7 @@ test('recent projects are capped at 12', () => {
 
 test('a session in the chat sandbox is always surface=chat, whatever was passed', () => {
   const saved = upsertSession(
-    session({ id: 's1', cwd: 'C:/Users/x/grocky/chat-workspace', surface: 'project' })
+    session({ id: 's1', cwd: 'C:/Users/x/gronk/chat-workspace', surface: 'project' })
   )
   assert.equal(saved.surface, 'chat')
 })
@@ -728,7 +728,7 @@ test('an interrupted write leaves the previous store readable', () => {
   // A crash between the temp file and the rename leaves a stray temp file; the
   // store itself is whole because the rename never happened.
   fs.writeFileSync(
-    path.join(userData, '.grocky-store.json.999.1.abcdef.tmp'),
+    path.join(userData, '.gronk-store.json.999.1.abcdef.tmp'),
     '{ "sessions": [',
     'utf8'
   )
@@ -763,7 +763,7 @@ test('an unreadable store is kept aside when the next save replaces it', () => {
   getSettings()
 
   setSettings({ theme: 'light' })
-  const kept = fs.readdirSync(userData).filter((n) => n.startsWith('grocky-store.corrupt-'))
+  const kept = fs.readdirSync(userData).filter((n) => n.startsWith('gronk-store.corrupt-'))
   assert.equal(kept.length, 1, 'the unreadable bytes are preserved for rescue')
   assert.equal(fs.readFileSync(path.join(userData, kept[0]), 'utf8'), '{ not json')
   assert.equal(readStoredSettings().theme, 'light', 'and the save still went through')

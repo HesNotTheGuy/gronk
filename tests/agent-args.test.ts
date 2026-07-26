@@ -33,7 +33,7 @@ function valueAfter(args: string[], flag: string): string | undefined {
 
 // A build that dropped `--permission-mode` for 'default' shipped: with no flag the
 // CLI reads ~/.grok/config.toml `permission_mode` (commonly "auto") and auto-approves
-// every tool while Grocky's UI still shows the gated Default mode.
+// every tool while Gronk's UI still shows the gated Default mode.
 test('the default mode is still passed explicitly, never left to the CLI config file', () => {
   const { args } = build({ permissionMode: 'default' })
   assert.equal(valueAfter(args, '--permission-mode'), 'default')

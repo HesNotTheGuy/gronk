@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Pre- and post-install supply-chain checks for Grocky (Shai-Hulud era).
+  Pre- and post-install supply-chain checks for Gronk (Shai-Hulud era).
 
 .DESCRIPTION
   1. Ensures none of our declared package names appear in Datadog's malicious
@@ -39,7 +39,7 @@ foreach ($section in @('dependencies', 'devDependencies', 'optionalDependencies'
 }
 $declared = $declared | Sort-Object -Unique
 
-Write-Host '== Grocky dependency security check ==' -ForegroundColor Cyan
+Write-Host '== Gronk dependency security check ==' -ForegroundColor Cyan
 Write-Host "Project: $ProjectRoot"
 Write-Host "Declared packages: $($declared.Count)"
 Write-Host ''

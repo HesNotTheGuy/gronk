@@ -1,8 +1,8 @@
-import type { GrockyApi } from '../shared/types'
+import type { GronkApi } from '../shared/types'
 
 declare global {
   interface Window {
-    grocky: GrockyApi
+    gronk: GronkApi
   }
 }
 

@@ -9,7 +9,7 @@ import {
   pathsEqual
 } from '../shared/path'
 
-const CHAT_ROOT = 'C:/Users/x/AppData/Roaming/grocky/chat-workspace'
+const CHAT_ROOT = 'C:/Users/x/AppData/Roaming/gronk/chat-workspace'
 
 test('normalizePath converts backslashes and strips trailing slashes', () => {
   assert.equal(normalizePath('C:\\work\\app'), 'C:/work/app')
@@ -40,13 +40,13 @@ test('folderName returns the last segment', () => {
 
 test('the configured chat root is recognised', () => {
   assert.equal(isChatWorkspace(CHAT_ROOT, CHAT_ROOT), true)
-  assert.equal(isChatWorkspace('C:\\Users\\x\\AppData\\Roaming\\grocky\\chat-workspace', CHAT_ROOT), true)
+  assert.equal(isChatWorkspace('C:\\Users\\x\\AppData\\Roaming\\gronk\\chat-workspace', CHAT_ROOT), true)
 })
 
 test('the sandbox is recognised without knowing the root', () => {
-  assert.equal(isChatWorkspace('/home/x/.config/grocky/chat-workspace', null), true)
+  assert.equal(isChatWorkspace('/home/x/.config/gronk/chat-workspace', null), true)
   assert.equal(isChatWorkspace('chat-workspace', null), true)
-  assert.equal(isChatWorkspace('D:/somewhere/grocky/chat-workspace/sub', null), true)
+  assert.equal(isChatWorkspace('D:/somewhere/gronk/chat-workspace/sub', null), true)
 })
 
 test('ordinary project folders are not the sandbox', () => {

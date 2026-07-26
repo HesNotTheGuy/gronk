@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Safer npm install for Grocky against Shai-Hulud-style supply-chain malware.
+  Safer npm install for Gronk against Shai-Hulud-style supply-chain malware.
 
 .DESCRIPTION
   Default flow (defense in depth):

@@ -198,7 +198,7 @@ export interface AppSettings {
   model?: string
   /**
    * Grok CLI permission mode (`--permission-mode`) — the only permission fact
-   * Grocky stores. `bypassPermissions` is YOLO and requires alwaysApproveAck.
+   * Gronk stores. `bypassPermissions` is YOLO and requires alwaysApproveAck.
    */
   permissionMode: PermissionMode
   /**
@@ -219,14 +219,14 @@ export interface AppSettings {
 
 // ── Data location ──────────────────────────────────────────────────
 /**
- * Where Grocky keeps the transcript store and the chat sandbox.
+ * Where Gronk keeps the transcript store and the chat sandbox.
  *
  * Deliberately NOT part of AppSettings: settings live inside the store, and the
  * store's own path cannot be read from inside itself. It is resolved from a small
  * pointer file in the default userData directory instead.
  */
 export interface DataLocation {
-  /** Directory currently holding grocky-store.json and chat-workspace/ */
+  /** Directory currently holding gronk-store.json and chat-workspace/ */
   dataDir: string
   /** The app's default userData directory — where the pointer file always lives */
   defaultDir: string
@@ -255,7 +255,7 @@ export interface MoveDataResult {
  * Token and cost accounting for one agent turn.
  *
  * The Grok CLI already reports this on the ACP stream as
- * `sessionUpdate: "turn_completed"` with a `usage` block — Grocky simply did not
+ * `sessionUpdate: "turn_completed"` with a `usage` block — Gronk simply did not
  * handle that update type, so none of it reached the UI.
  */
 export interface TurnUsage {
@@ -294,7 +294,7 @@ export interface SessionUsage {
 export type CliVersionStatus = 'ok' | 'newer-than-verified' | 'older-than-verified' | 'unknown'
 
 /**
- * The CLI updates itself without asking. Grocky parses its `--json` output
+ * The CLI updates itself without asking. Gronk parses its `--json` output
  * against shapes verified at a specific version, so a field rename upstream
  * shows up as empty lists rather than an error. This makes the mismatch legible.
  */
@@ -303,7 +303,7 @@ export interface CliVersionInfo {
   current?: string
   /** e.g. "stable" */
   channel?: string
-  /** The version Grocky's JSON parsing was actually verified against. */
+  /** The version Gronk's JSON parsing was actually verified against. */
   verifiedAgainst: string
   status: CliVersionStatus
   message?: string
@@ -498,7 +498,7 @@ export interface SendPromptOptions {
   attachments?: PromptAttachment[]
 }
 
-export interface GrockyApi {
+export interface GronkApi {
   selectFolder: () => Promise<string | null>
   selectFile: (options?: {
     filters?: { name: string; extensions: string[] }[]
@@ -592,7 +592,7 @@ export interface GrockyApi {
   revealLocalPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>
   /** Did the transcript store load cleanly, or was it recovered / lost? */
   getStoreHealth: () => Promise<StoreHealth>
-  /** Is the installed Grok CLI a version Grocky's parsing was verified against? */
+  /** Is the installed Grok CLI a version Gronk's parsing was verified against? */
   getCliVersion: () => Promise<CliVersionInfo>
   // Data location
   getDataLocation: () => Promise<DataLocation>

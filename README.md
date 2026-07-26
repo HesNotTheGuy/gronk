@@ -1,10 +1,10 @@
-# Grocky
+# Gronk
 
 Desktop GUI for the [Grok Build CLI](https://x.ai) — a Claude Code–style chat app that talks to Grok over **ACP** (`grok agent stdio`).
 
 Works on **Windows, macOS, and Linux**. The app spawns your local `grok` binary and talks to it over ACP.
 
-**Your account only:** Grocky never ships with a login and never stores API keys or tokens in the app. When someone runs the app, they must sign in with **their own** Grok account via the official CLI (`grok login`). Credentials live only on that machine under that OS user (`~/.grok/auth.json` or optional `XAI_API_KEY`). Your sign-in here does not appear in anyone else’s install.
+**Your account only:** Gronk never ships with a login and never stores API keys or tokens in the app. When someone runs the app, they must sign in with **their own** Grok account via the official CLI (`grok login`). Credentials live only on that machine under that OS user (`~/.grok/auth.json` or optional `XAI_API_KEY`). Your sign-in here does not appear in anyone else’s install.
 
 ### Surfaces
 
@@ -39,7 +39,7 @@ Chat is **not** an Electron wrap of grok.com. It uses the same `grok agent` ACP 
 2. **Grok Build CLI** installed  
    - Windows: `irm https://x.ai/cli/install.ps1 | iex`  
    - macOS/Linux: `curl -fsSL https://x.ai/cli/install.sh | bash`
-3. **Your own Grok account** — sign in from the Grocky sign-in screen (browser OAuth or device code), or run `grok login` in a terminal. Optional advanced: set `XAI_API_KEY` in the environment (never paste keys into the app; Grocky will not save them).
+3. **Your own Grok account** — sign in from the Gronk sign-in screen (browser OAuth or device code), or run `grok login` in a terminal. Optional advanced: set `XAI_API_KEY` in the environment (never paste keys into the app; Gronk will not save them).
 
 ### Auth model (important)
 
@@ -47,7 +47,7 @@ Chat is **not** an Electron wrap of grok.com. It uses the same `grok agent` ACP 
 |------|-----|
 | No credentials in the repo or packaged app | Your login is not embedded for other people |
 | Sign-in required before agent start | Each install must verify its own account |
-| Tokens stay in the Grok CLI, not Grocky | `~/.grok/auth.json` / env — never `grocky-store.json` |
+| Tokens stay in the Grok CLI, not Gronk | `~/.grok/auth.json` / env — never `gronk-store.json` |
 | Tokens never sent to the renderer | UI only sees safe status (`Signed in`, `grok.com`, …) |
 | Sign out = `grok logout` + stop agent | Clears credentials on **this** machine only |
 | Scope = this OS user on this computer | Someone else on another PC (or another Windows user) is signed out until they log in |
@@ -102,12 +102,12 @@ macOS builds can be produced on a Mac (or CI with macOS runners). Code is writte
 ```
 
 - **Main process** owns the child process and ACP JSON-RPC client
-- **Preload** exposes a typed `window.grocky` API (context isolation on)
+- **Preload** exposes a typed `window.gronk` API (context isolation on)
 - **Renderer** is a pure React UI — no Node access
 
 ## Settings store
 
-User data lives under Electron `userData` as `grocky-store.json` (recent projects, settings, session list).
+User data lives under Electron `userData` as `gronk-store.json` (recent projects, settings, session list).
 
 ## Security notes
 

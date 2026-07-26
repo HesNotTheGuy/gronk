@@ -21,7 +21,7 @@ import {
 import { redactPreview, redactValue } from './redact'
 
 /**
- * What actually lands in grocky-store.json. `alwaysApprove` is absent on purpose:
+ * What actually lands in gronk-store.json. `alwaysApprove` is absent on purpose:
  * it is a view of `permissionMode === 'bypassPermissions'`, and keeping a second
  * copy of one security fact is what let them disagree — a store holding
  * `bypassPermissions` with `alwaysApprove: false` still spawned the child with
@@ -305,7 +305,7 @@ function refreshBackup(file: string): void {
 
 function quarantineUnreadable(file: string): void {
   try {
-    const kept = path.join(path.dirname(file), `grocky-store.corrupt-${Date.now()}.json`)
+    const kept = path.join(path.dirname(file), `gronk-store.corrupt-${Date.now()}.json`)
     fs.copyFileSync(file, kept)
   } catch {
     /* best effort: failing to keep evidence must not block the save */
@@ -375,7 +375,7 @@ export function getSettings(): AppSettings {
  * stored mode. A patch carrying BOTH and disagreeing with itself resolves
  * towards less access, so no call can turn bypass on as a side effect.
  *
- * Exported because the per-start YOLO override (`grocky:start-agent`) is the same
+ * Exported because the per-start YOLO override (`gronk:start-agent`) is the same
  * question asked for one boot instead of for the stored settings. It must fold by
  * the same rule: a second copy of it in agent-manager is a second place for the
  * toggle and the mode to disagree, which is the drift this collapse removed.

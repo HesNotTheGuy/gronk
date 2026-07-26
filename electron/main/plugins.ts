@@ -12,7 +12,7 @@
  *   parsed by grok as a flag → every caller-supplied value goes through
  *   `assertCliToken` (option injection, Gotcha #8).
  * - `--trust` is passed ONLY when the caller explicitly says trust === true.
- *   Installing runs third-party hooks/MCP servers outside Grocky's fs jail.
+ *   Installing runs third-party hooks/MCP servers outside Gronk's fs jail.
  */
 
 import fs from 'node:fs/promises'
@@ -189,7 +189,7 @@ async function readMarketplaceCaches(): Promise<RawMarketplaceCache[]> {
 // ── Mutating paths ─────────────────────────────────────────────────
 
 /**
- * `trust` is the user's explicit, human-confirmed decision from Grocky's own
+ * `trust` is the user's explicit, human-confirmed decision from Gronk's own
  * trust modal — never inferred, never remembered, never defaulted to true.
  * Without it the CLI wants its own TTY prompt, which a piped spawn cannot
  * answer, so the command fails instead of installing silently.
@@ -240,7 +240,7 @@ async function runPluginCommand(args: string[], okMessage: string): Promise<Plug
  * Add (or update) an MCP server.
  *
  * MVP restriction: `-s project` writes ./.grok/config.toml relative to the spawn
- * cwd — Grocky's own directory, not the user's project — so project scope is
+ * cwd — Gronk's own directory, not the user's project — so project scope is
  * refused until a validated cwd is plumbed through (spec §5 / Gotcha #2).
  */
 export async function addMcpServer(input: McpAddInput): Promise<McpActionResult> {

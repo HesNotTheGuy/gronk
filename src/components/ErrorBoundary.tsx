@@ -21,7 +21,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error('[grocky] render error', error, info.componentStack)
+    console.error('[gronk] render error', error, info.componentStack)
     this.setState({ info: info.componentStack || null })
   }
 
@@ -44,7 +44,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div className="crash-screen" role="alert">
         <div className="crash-card">
-          <div className="crash-kicker">Grocky hit an error</div>
+          <div className="crash-kicker">Gronk hit an error</div>
           <h2>{error.message || 'Unexpected error'}</h2>
           <p className="crash-copy">
             The interface stopped rendering. Your sessions and transcripts are saved on disk — try

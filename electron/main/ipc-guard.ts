@@ -33,7 +33,7 @@ export function isLocalDevHost(hostname: string): boolean {
 }
 
 /**
- * True when `target` is Grocky's own renderer.
+ * True when `target` is Gronk's own renderer.
  * Dev serves it over http from the Vite server; packaged builds load file://.
  * `devRendererUrl` is `process.env.ELECTRON_RENDERER_URL` — passed in rather
  * than read here so tests can exercise both modes.
@@ -56,7 +56,7 @@ export interface IpcSenderLike {
 }
 
 /**
- * Reject IPC that did not come from Grocky's own renderer frame. Without this a
+ * Reject IPC that did not come from Gronk's own renderer frame. Without this a
  * compromised or injected frame could call every privileged handler.
  * Must stay on EVERY ipcMain handler.
  */

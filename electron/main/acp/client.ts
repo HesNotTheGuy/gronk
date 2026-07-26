@@ -50,7 +50,7 @@ export class GrokAcpClient extends EventEmitter {
   private nextId = 1
   private pending = new Map<JsonRpcId, Pending>()
   private closed = false
-  private debug = !!process.env.GROCKY_DEBUG
+  private debug = !!process.env.GRONK_DEBUG
 
   private readonly grokBinary: string
   private readonly args: string[]
@@ -95,7 +95,7 @@ export class GrokAcpClient extends EventEmitter {
       // FIX-8: drop oversized ACP lines to avoid unbounded memory use
       if (line.length > MAX_ACP_LINE_BYTES) {
         console.error(
-          '[grocky] dropping oversized ACP line',
+          '[gronk] dropping oversized ACP line',
           line.length,
           'bytes (max',
           MAX_ACP_LINE_BYTES,
@@ -139,7 +139,7 @@ export class GrokAcpClient extends EventEmitter {
     // Claiming fs/terminal without handlers freezes the agent on those requests.
     return this.request('initialize', {
       protocolVersion: params?.protocolVersion ?? 1,
-      clientInfo: params?.clientInfo ?? { name: 'Grocky', version: '0.1.0' },
+      clientInfo: params?.clientInfo ?? { name: 'Gronk', version: '0.1.0' },
       clientCapabilities: params?.clientCapabilities ?? {
         // We handle session/request_permission in-app.
         // Do NOT claim fs/terminal unless implemented — that hangs tool turns.

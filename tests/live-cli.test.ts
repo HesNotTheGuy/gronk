@@ -8,12 +8,12 @@
  *
  * How to run:
  *   npm test                       → these cases report as SKIPPED
- *   GROCKY_LIVE_CLI=1 npm test     → they spawn the real CLI
- *   (PowerShell: $env:GROCKY_LIVE_CLI = '1'; npm test)
- *   GROCKY_GROK_BINARY=<path>      → optional explicit binary (must be grok/grok.exe)
+ *   GRONK_LIVE_CLI=1 npm test     → they spawn the real CLI
+ *   (PowerShell: $env:GRONK_LIVE_CLI = '1'; npm test)
+ *   GRONK_GROK_BINARY=<path>      → optional explicit binary (must be grok/grok.exe)
  *
  * Rules this file must keep (they are why it is safe to run against a real account):
- * 1. Skipped unless GROCKY_LIVE_CLI is truthy, and skipped — never failed — when
+ * 1. Skipped unless GRONK_LIVE_CLI is truthy, and skipped — never failed — when
  *    no grok binary can be resolved. CI with no CLI and no auth stays green.
  * 2. READ-ONLY. `assertReadOnlyArgv` is a hard allowlist of four commands
  *    (`--version`, `plugin list --json`, `plugin marketplace list --json`,
@@ -40,15 +40,15 @@ import { asList, mapMcpServers, mapPlugins, str } from '../electron/main/plugins
 
 // ── Opt-in gate ─────────────────────────────────────────────────────
 
-const OPTED_IN = /^(1|true|yes|on)$/i.test((process.env.GROCKY_LIVE_CLI ?? '').trim())
+const OPTED_IN = /^(1|true|yes|on)$/i.test((process.env.GRONK_LIVE_CLI ?? '').trim())
 
 /** Only resolved when opted in — the PATH scan is pointless otherwise. */
-const BINARY = OPTED_IN ? resolveGrokBinary(process.env.GROCKY_GROK_BINARY) : null
+const BINARY = OPTED_IN ? resolveGrokBinary(process.env.GRONK_GROK_BINARY) : null
 
 const skip: string | false = !OPTED_IN
-  ? 'set GROCKY_LIVE_CLI=1 to run the live Grok CLI contract checks'
+  ? 'set GRONK_LIVE_CLI=1 to run the live Grok CLI contract checks'
   : !BINARY
-    ? 'no grok binary found (GROCKY_GROK_BINARY / ~/.grok/bin / PATH) — nothing to verify'
+    ? 'no grok binary found (GRONK_GROK_BINARY / ~/.grok/bin / PATH) — nothing to verify'
     : false
 
 /** Test-level budget must exceed the per-command timeouts below. */

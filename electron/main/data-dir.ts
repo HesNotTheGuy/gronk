@@ -1,8 +1,8 @@
 /**
- * The single authority for WHERE Grocky keeps its data.
+ * The single authority for WHERE Gronk keeps its data.
  *
  * The data directory cannot be a normal setting: settings live inside
- * grocky-store.json, and the store's own path cannot be read from inside itself.
+ * gronk-store.json, and the store's own path cannot be read from inside itself.
  * It is resolved instead from a small pointer file in the app's DEFAULT userData
  * directory — the one place that is always findable without knowing anything
  * else — which is why every path in the app has to come from here rather than
@@ -25,24 +25,39 @@ import type { DataLocation, MoveDataResult } from '../../shared/types'
  * derived from the app name.
  *
  * `app.getPath('userData')` is `<appData>/<app.getName()>`, and getName() only
- * returns `grocky` because package.json has a `name` and no top-level
+ * returns `gronk` because package.json has a `name` and no top-level
  * `productName`. Adding one — or renaming the product — would silently move
  * userData to a different folder, and every existing user's sessions would be
  * gone with no error to explain it. Pinning the segment decouples the brand from
  * the data location, so the app can be renamed without a migration.
  *
- * The value must stay exactly what shipped: `<appData>/grocky` is byte-identical
- * to today's userData on all three platforms (Windows `%APPDATA%\grocky`,
- * macOS `~/Library/Application Support/grocky`, Linux `~/.config/grocky`).
+ * The value must stay exactly what shipped: `<appData>/gronk` is byte-identical
+ * to today's userData on all three platforms (Windows `%APPDATA%\gronk`,
+ * macOS `~/Library/Application Support/gronk`, Linux `~/.config/gronk`).
  * Changing it is a data migration, not a rename.
  */
-export const DATA_DIR_NAME = 'grocky'
+export const DATA_DIR_NAME = 'gronk'
 
-export const STORE_FILE = 'grocky-store.json'
-export const BACKUP_FILE = 'grocky-store.backup.json'
+export const STORE_FILE = 'gronk-store.json'
+export const BACKUP_FILE = 'gronk-store.backup.json'
 export const CHAT_WORKSPACE_DIR = 'chat-workspace'
 
-const POINTER_FILE = 'grocky-data-location.json'
+/**
+ * Names used before the app was renamed from Grocky to Gronk.
+ *
+ * An install predating the rename keeps using its own directory and file names.
+ * The alternative — pointing it at a fresh empty folder — would look exactly
+ * like "the update wiped my sessions", which is the failure this whole module
+ * exists to prevent. Copying instead would be a real data migration for a purely
+ * cosmetic gain, so nothing is moved: the old location simply stays valid.
+ *
+ * Safe to delete once no install predating the rename can plausibly remain.
+ */
+const LEGACY_DATA_DIR_NAME = 'grocky'
+const LEGACY_STORE_FILE = 'grocky-store.json'
+const LEGACY_BACKUP_FILE = 'grocky-store.backup.json'
+
+const POINTER_FILE = 'gronk-data-location.json'
 const POINTER_VERSION = 1
 
 /**
@@ -188,12 +203,30 @@ export function writeFileAtomicSync(filePath: string, contents: string): void {
  * process (the `node --test` stub only provides `userData`). In Electron both
  * always resolve and, today, to the same directory.
  */
-export function defaultDataDir(): string {
+/** True when a directory holds a store under either the current or legacy name. */
+function holdsStore(dir: string): boolean {
   try {
-    return path.join(app.getPath('appData'), DATA_DIR_NAME)
+    return fs.existsSync(path.join(dir, STORE_FILE)) || fs.existsSync(path.join(dir, LEGACY_STORE_FILE))
+  } catch {
+    return false
+  }
+}
+
+export function defaultDataDir(): string {
+  let appData: string
+  try {
+    appData = app.getPath('appData')
   } catch {
     return app.getPath('userData')
   }
+
+  const current = path.join(appData, DATA_DIR_NAME)
+  // Only fall back when the current location has nothing: once Gronk has written
+  // its own store, that is the truth and a stale Grocky folder must not shadow it.
+  if (!holdsStore(current) && holdsStore(path.join(appData, LEGACY_DATA_DIR_NAME))) {
+    return path.join(appData, LEGACY_DATA_DIR_NAME)
+  }
+  return current
 }
 
 function pointerPath(): string {
@@ -284,12 +317,31 @@ export function dataDir(): string {
   return readPointer().dataDir ?? defaultDataDir()
 }
 
+/**
+ * Prefer the current name, but keep using a pre-rename file when that is what is
+ * actually on disk. Returning the new name while the old file holds the data
+ * would read as an empty store — the transcripts would still be there, and
+ * invisible — and the next save would write beside them.
+ */
+function resolveStoreFile(current: string, legacy: string): string {
+  const dir = dataDir()
+  const currentPath = path.join(dir, current)
+  try {
+    if (fs.existsSync(currentPath)) return currentPath
+    const legacyPath = path.join(dir, legacy)
+    if (fs.existsSync(legacyPath)) return legacyPath
+  } catch {
+    /* fall through to the current name */
+  }
+  return currentPath
+}
+
 export function storePath(): string {
-  return path.join(dataDir(), STORE_FILE)
+  return resolveStoreFile(STORE_FILE, LEGACY_STORE_FILE)
 }
 
 export function backupStorePath(): string {
-  return path.join(dataDir(), BACKUP_FILE)
+  return resolveStoreFile(BACKUP_FILE, LEGACY_BACKUP_FILE)
 }
 
 export function chatWorkspacePath(): string {
@@ -433,7 +485,7 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
   })
 
   if (typeof target !== 'string' || !target.trim()) {
-    return fail('Pick a folder to keep Grocky data in.')
+    return fail('Pick a folder to keep Gronk data in.')
   }
   const requested = target.trim()
   if (!path.isAbsolute(requested)) {
@@ -444,7 +496,7 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
   const dest = path.resolve(requested)
 
   if (pathsEqual(dest, current.dataDir)) {
-    return { ok: true, message: `Grocky data is already in ${dest}.`, location: current }
+    return { ok: true, message: `Gronk data is already in ${dest}.`, location: current }
   }
   if (isInside(current.dataDir, dest)) {
     return fail(
@@ -463,7 +515,7 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
 
   try {
     await fsp.mkdir(dest, { recursive: true })
-    const probe = path.join(dest, `.grocky-write-test-${process.pid}`)
+    const probe = path.join(dest, `.gronk-write-test-${process.pid}`)
     await fsp.writeFile(probe, 'ok')
     await fsp.rm(probe, { force: true })
   } catch (err) {
@@ -474,7 +526,7 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
   // other's sessions would be gone with no way back.
   if (fs.existsSync(path.join(dest, STORE_FILE))) {
     return fail(
-      `${dest} already holds a Grocky store (${STORE_FILE}). Merging two stores would lose ` +
+      `${dest} already holds a Gronk store (${STORE_FILE}). Merging two stores would lose ` +
         'the sessions of one of them, so nothing was moved — pick an empty folder, or move ' +
         'that store aside first.'
     )
@@ -496,7 +548,7 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
   // Staged inside the destination so the final step is a rename on the same
   // filesystem, and so a failed copy leaves one obvious directory to delete
   // instead of half a store next to the user's files.
-  const staging = path.join(dest, `.grocky-move-${process.pid}-${Date.now()}`)
+  const staging = path.join(dest, `.gronk-move-${process.pid}-${Date.now()}`)
   const placed: string[] = []
 
   try {
@@ -571,7 +623,7 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
     ? ` The old copy in ${current.dataDir} could not be removed (${leftovers.length} item(s)) — ` +
       'it is safe to delete by hand.'
     : ''
-  return { ok: true, message: `Grocky data moved to ${dest}.${note}`, location }
+  return { ok: true, message: `Gronk data moved to ${dest}.${note}`, location }
 }
 
 /** Move back to the app's default userData directory (same machinery). */

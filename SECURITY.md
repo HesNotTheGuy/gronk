@@ -1,6 +1,6 @@
 # Supply-chain security (npm)
 
-Grocky intentionally keeps a **small, well-known dependency set** and installs
+Gronk intentionally keeps a **small, well-known dependency set** and installs
 with a **scripts-disabled-first** workflow because of ongoing npm worms
 (Shai-Hulud / Mini Shai-Hulud and copycats through 2025–2026).
 
@@ -73,30 +73,30 @@ Any automated assistant working in this repo should:
 - **Not** add dependencies without a malware-name check
 - Prefer removing deps over adding new ones when possible
 
-## Runtime safety (Grocky app)
+## Runtime safety (Gronk app)
 
 ### Per-install authentication (no shared login)
 
-- Grocky **does not ship credentials**. Your sign-in on one machine never
+- Gronk **does not ship credentials**. Your sign-in on one machine never
   travels with the git repo, the installer, or another person’s copy of the app.
 - Every install must authenticate with **its own** Grok account before the
   agent can start (browser OAuth or device code via the official CLI).
 - Login: `grok login --oauth` or `grok login --device-auth`. Sign-out:
   `grok logout` + stop any running agent.
-- **Never** store API keys or OAuth tokens in `grocky-store.json` or send them
+- **Never** store API keys or OAuth tokens in `gronk-store.json` or send them
   over IPC to the renderer. The UI only receives a safe `AuthStatus` snapshot
   (authenticated yes/no, method, non-secret label).
 - Optional CI-style auth: process environment `XAI_API_KEY` is detected as a
   boolean presence flag only — the key value is never read into the UI.
 - Credentials live under the OS user’s Grok home (`~/.grok/auth.json` by
   default). That path is local to that user account on that computer.
-- Agent start is gated in both IPC (`grocky:start-agent`) and
+- Agent start is gated in both IPC (`gronk:start-agent`) and
   `AgentManager.bootAgent` via `assertAuthenticated()`.
 
 ### Local data (transcripts / audit)
 
 - Session transcripts and the permission audit log live in Electron `userData`
-  (`grocky-store.json`) **on this machine only**.
+  (`gronk-store.json`) **on this machine only**.
 - Values are stored in plaintext minus **obvious secret patterns** (API keys,
   JWTs, `api_key=…`, emails) redacted before write. Treat the store as
   sensitive local cache — do not copy it into tickets or chat.
@@ -108,7 +108,7 @@ Any automated assistant working in this repo should:
   `alwaysApproveAck` in the local store before `--always-approve` is passed.
 - A persistent red banner shows while bypass is active.
 - Permission decisions are written to a local **audit log** in Electron
-  `userData` (`grocky-store.json` → `permissionAudit`).
+  `userData` (`gronk-store.json` → `permissionAudit`).
 - Optional client FS methods are **path-jailed** to the open project root.
 - Prefer not advertising client `fs` / `terminal` capabilities unless handlers
   exist (claiming them without responses freezes ACP turns).

@@ -62,7 +62,7 @@ function attachView(url: string): void {
   if (!view) {
     view = new WebContentsView({
       webPreferences: {
-        // Isolated, sandboxed, no bridge — the preview never touches window.grocky.
+        // Isolated, sandboxed, no bridge — the preview never touches window.gronk.
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,

@@ -39,7 +39,7 @@ import type {
   ToolCallInfo
 } from '../../shared/types'
 
-/** Grocky app chat sandbox (same path as grocky:get-chat-workspace). */
+/** Gronk app chat sandbox (same path as gronk:get-chat-workspace). */
 function isChatPadCwd(cwd: string): boolean {
   // Ask data-dir for the sandbox path rather than rebuilding it from
   // app.getPath('userData'). A third copy of this derivation would keep pointing
@@ -123,7 +123,7 @@ export class AgentManager {
 
   private emit(event: MainToRendererEvent): void {
     if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send('grocky:event', event)
+      this.window.webContents.send('gronk:event', event)
     }
   }
 
@@ -133,8 +133,8 @@ export class AgentManager {
   }
 
   private log(...args: unknown[]): void {
-    if (process.env.GROCKY_DEBUG) {
-      console.error('[grocky]', ...args)
+    if (process.env.GRONK_DEBUG) {
+      console.error('[gronk]', ...args)
     }
   }
 
@@ -144,7 +144,7 @@ export class AgentManager {
   }
 
   /**
-   * May Grocky answer a permission request itself? Boot posture AND current
+   * May Gronk answer a permission request itself? Boot posture AND current
    * settings must both say bypass — isAutoApproveActive owns that rule and
    * documents which side wins when the user flips the toggle mid-session.
    */
@@ -159,7 +159,7 @@ export class AgentManager {
 
   /**
    * `options.alwaysApprove` is the per-start YOLO override coming from the
-   * `grocky:start-agent` IPC; it folds onto the stored permission mode (see
+   * `gronk:start-agent` IPC; it folds onto the stored permission mode (see
    * store.requestedPermissionMode) instead of travelling beside it. Omit it to
    * use the mode as stored.
    */
@@ -213,7 +213,7 @@ export class AgentManager {
 
     // All permission derivation lives in buildAgentArgs — adopt what it decided
     // rather than recomputing the downgrades here (they must never drift apart).
-    // The per-start override (IPC `grocky:start-agent`) is the UI's YOLO toggle
+    // The per-start override (IPC `gronk:start-agent`) is the UI's YOLO toggle
     // asked for one boot instead of for the stored settings, so it folds onto the
     // stored mode through the store's one fold rule: `true` asks for bypass (still
     // gated on the persisted ack below), `false` refuses it for this boot, absent
@@ -230,7 +230,7 @@ export class AgentManager {
     this.surface = built.surface
     this.bootAlwaysApprove = built.alwaysApprove
     const agentArgs = built.args
-    // The argv is what decides whether grok asks Grocky for permission at all,
+    // The argv is what decides whether grok asks Gronk for permission at all,
     // so record the posture the child actually starts with.
     this.log('boot', {
       permissionMode: built.permissionMode,
@@ -752,7 +752,7 @@ export class AgentManager {
     this.client?.respondError(
       id,
       -32601,
-      `Method not supported by Grocky client: ${method}`
+      `Method not supported by Gronk client: ${method}`
     )
     this.emit({
       type: 'error',

@@ -4,8 +4,8 @@
  *
  * One definition on purpose — this used to be copied verbatim into auth.ts and
  * plugins.ts, and two modules disagreeing about where the CLI's home is would
- * make Grocky read credentials from one place and plugin caches from another.
- * `GROK_HOME` is the CLI's own override, so honouring it keeps Grocky pointed at
+ * make Gronk read credentials from one place and plugin caches from another.
+ * `GROK_HOME` is the CLI's own override, so honouring it keeps Gronk pointed at
  * whatever install the user is actually running.
  */
 

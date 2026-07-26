@@ -67,7 +67,7 @@ export function McpServersPanel({ servers, busyName, onAdd, onRemove }: Props) {
     }
     setFormError(null)
     // MVP: user scope only — the CLI helper has no cwd, so -s project would write into
-    // Grocky's own directory instead of the project (SKILLS-PLUGINS-SPEC §5).
+    // Gronk's own directory instead of the project (SKILLS-PLUGINS-SPEC §5).
     onAdd({ name: n, commandOrUrl: target, transport, scope: 'user' })
     reset()
     setShowForm(false)
@@ -114,9 +114,9 @@ export function McpServersPanel({ servers, busyName, onAdd, onRemove }: Props) {
       )}
 
       <p className="settings-hint">
-        Values shown here are redacted by Grocky — environment variables and auth headers set on a
+        Values shown here are redacted by Gronk — environment variables and auth headers set on a
         server are never displayed in full. MCP servers run as processes on your machine, outside
-        Grocky&apos;s file protections.
+        Gronk&apos;s file protections.
       </p>
 
       {showForm ? (
@@ -175,7 +175,7 @@ export function McpServersPanel({ servers, busyName, onAdd, onRemove }: Props) {
           </p>
           <p className="settings-hint">
             Secrets are not entered here. Configure environment variables and auth headers with{' '}
-            <code>grok mcp add</code> so tokens never pass through Grocky.
+            <code>grok mcp add</code> so tokens never pass through Gronk.
           </p>
 
           {formError ? <p className="settings-hint warn-text">{formError}</p> : null}

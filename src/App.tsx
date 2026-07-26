@@ -17,7 +17,7 @@ import { YoloConfirm } from './components/YoloConfirm'
 import { CliInstall } from './components/CliInstall'
 import { PreviewPane } from './components/PreviewPane'
 import { UsageMeter } from './components/UsageMeter'
-import { useGrocky } from './hooks/useGrocky'
+import { useGronk } from './hooks/useGronk'
 import { folderName, isChatSession } from '../shared/path'
 import type { LoginMethod, SessionInfo } from '../shared/types'
 
@@ -34,7 +34,7 @@ const CHAT_HINTS = [
 ]
 
 export function App() {
-  const g = useGrocky()
+  const g = useGronk()
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
@@ -207,7 +207,7 @@ export function App() {
             </div>
             <div className="topbar-title">
               {surface === 'home'
-                ? 'Grocky'
+                ? 'Gronk'
                 : surface === 'chat'
                   ? g.browsing
                     ? 'Your chats'
@@ -667,7 +667,7 @@ export function App() {
 
       <CliInstall
         open={g.showCliInstall}
-        platform={window.grocky.platform}
+        platform={window.gronk.platform}
         installing={g.cliInstalling}
         result={g.cliInstallResult}
         onInstall={() => void g.installCli()}

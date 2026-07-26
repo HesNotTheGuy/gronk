@@ -37,7 +37,7 @@ const KNOWN_PERMISSION_MODES: ReadonlySet<string> = new Set(
  * user-writable JSON file, and it ends up verbatim as the value of
  * `--permission-mode`. An unrecognised value is not inert: grok falls back to
  * `~/.grok/config.toml` `permission_mode` (commonly "auto"), so one corrupted or
- * hand-edited string auto-approves every tool while Grocky's UI still shows a
+ * hand-edited string auto-approves every tool while Gronk's UI still shows a
  * gated mode.
  *
  * 'default' is the fail-safe target rather than the stricter 'dontAsk': it
@@ -51,7 +51,7 @@ export function normalizePermissionMode(mode: unknown): PermissionMode {
 }
 
 /**
- * The runtime gate: may Grocky answer a permission request without asking?
+ * The runtime gate: may Gronk answer a permission request without asking?
  *
  * `bootAlwaysApprove` is the posture the running child was actually spawned with
  * (the `alwaysApprove` this module returned for that boot); `current` is settings
@@ -63,7 +63,7 @@ export function normalizePermissionMode(mode: unknown): PermissionMode {
  *   change. It applies on the next boot, where the ack gate runs again.
  * - switching YOLO OFF mid-session DOES take effect immediately. The child keeps
  *   its `--always-approve` until respawned, but every request that still reaches
- *   Grocky goes back to the user — de-escalation is always safe to honour early.
+ *   Gronk goes back to the user — de-escalation is always safe to honour early.
  *
  * The acknowledgement is re-checked on top, because this is the one decision that
  * skips the UI prompt entirely.
@@ -78,7 +78,7 @@ export function isAutoApproveActive(
 /** Conversational-Grok persona for the Chat surface (grok.com / Grok on X style). */
 export const CHAT_SYSTEM_PROMPT = [
   'You are Grok, built by xAI.',
-  'You are in Grocky desktop Chat mode — a general conversation like grok.com or Grok on X.',
+  'You are in Gronk desktop Chat mode — a general conversation like grok.com or Grok on X.',
   'Be helpful, witty when appropriate, and clear.',
   'Answer directly. Do not browse or edit the local filesystem unless the user explicitly asks.',
   'You may use web search when current information helps.',
@@ -137,7 +137,7 @@ export function buildAgentArgs(options: BuildAgentArgsOptions): AgentArgs {
   const args: string[] = []
   // ALWAYS pass the mode, including 'default'. Omitting it lets the CLI fall back to
   // ~/.grok/config.toml `permission_mode` (commonly "auto"), which silently auto-approves
-  // every tool while Grocky's UI still shows the gated Default mode. Verified against
+  // every tool while Gronk's UI still shows the gated Default mode. Verified against
   // grok 0.2.111: no flag => 0 permission requests; `--permission-mode default` => prompts.
   args.push('--permission-mode', permissionMode)
   if (surface === 'chat') {

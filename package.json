@@ -1,9 +1,9 @@
 {
-  "name": "grocky",
+  "name": "gronk",
   "version": "0.2.0",
   "description": "Desktop GUI for Grok Build CLI — Claude Code-style app over ACP",
   "main": "out/main/index.js",
-  "author": "Grocky",
+  "author": "Gronk",
   "license": "MIT",
   "private": true,
   "scripts": {
@@ -39,8 +39,8 @@
     "vite": "6.3.3"
   },
   "build": {
-    "appId": "com.grocky.app",
-    "productName": "Grocky",
+    "appId": "com.gronk.app",
+    "productName": "Gronk",
     "directories": {
       "output": "release"
     },

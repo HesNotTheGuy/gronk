@@ -54,7 +54,7 @@ interface ExportNotice {
   copyError?: string
 }
 
-export function useGrocky() {
+export function useGronk() {
   const [connection, setConnection] = useState<ConnectionState>('idle')
   const [cwd, setCwd] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -123,15 +123,15 @@ export function useGrocky() {
   const refreshMeta = useCallback(async () => {
     const [projects, sess, s, path, modelList, auditList, healthStatus, authStatus, chatPath] =
       await Promise.all([
-        window.grocky.getRecentProjects(),
-        window.grocky.listSessions(),
-        window.grocky.getSettings(),
-        window.grocky.getGrokPath(),
-        window.grocky.listModels(),
-        window.grocky.getPermissionAudit(),
-        window.grocky.getHealth(),
-        window.grocky.getAuthStatus(),
-        window.grocky.getChatWorkspacePath()
+        window.gronk.getRecentProjects(),
+        window.gronk.listSessions(),
+        window.gronk.getSettings(),
+        window.gronk.getGrokPath(),
+        window.gronk.listModels(),
+        window.gronk.getPermissionAudit(),
+        window.gronk.getHealth(),
+        window.gronk.getAuthStatus(),
+        window.gronk.getChatWorkspacePath()
       ])
     setRecentProjects(projects)
     setSessions(sess)
@@ -147,9 +147,9 @@ export function useGrocky() {
 
   useEffect(() => {
     void refreshMeta()
-    void window.grocky.getConnectionState().then(setConnection)
+    void window.gronk.getConnectionState().then(setConnection)
 
-    const unsub = window.grocky.onEvent((event: MainToRendererEvent) => {
+    const unsub = window.gronk.onEvent((event: MainToRendererEvent) => {
       switch (event.type) {
         case 'connection':
           setConnection(event.state)
@@ -172,7 +172,7 @@ export function useGrocky() {
         case 'history-done':
           setHistorySource(event.source)
           setBusy(false)
-          void window.grocky.listSessions().then(setSessions)
+          void window.gronk.listSessions().then(setSessions)
           break
         case 'user-message':
           setMessages((prev) => {
@@ -251,12 +251,12 @@ export function useGrocky() {
               m.id === event.messageId ? { ...m, streaming: false } : m
             )
             if (event.sessionId) {
-              void window.grocky.saveTranscript(event.sessionId, next)
+              void window.gronk.saveTranscript(event.sessionId, next)
             }
             return next
           })
-          void window.grocky.listSessions().then(setSessions)
-          void window.grocky.getPermissionAudit().then(setAudit)
+          void window.gronk.listSessions().then(setSessions)
+          void window.gronk.getPermissionAudit().then(setAudit)
           break
         case 'permission-request':
           setPermission(event.request)
@@ -334,7 +334,7 @@ export function useGrocky() {
   useEffect(() => {
     if (!sessionId || messages.length === 0) return
     const t = setTimeout(() => {
-      void window.grocky.saveTranscript(sessionId, messagesRef.current)
+      void window.gronk.saveTranscript(sessionId, messagesRef.current)
     }, 400)
     return () => clearTimeout(t)
   }, [messages, sessionId])
@@ -364,7 +364,7 @@ export function useGrocky() {
     async (folder?: string | null, opts?: { forceNew?: boolean }) => {
       setError(null)
 
-      const authNow = await window.grocky.getAuthStatus()
+      const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
         setError(
@@ -376,7 +376,7 @@ export function useGrocky() {
 
       let target = folder
       if (!target) {
-        target = await window.grocky.selectFolder()
+        target = await window.gronk.selectFolder()
       }
       if (!target) return
 
@@ -406,8 +406,8 @@ export function useGrocky() {
       setAgentSurface('project')
 
       try {
-        const s = await window.grocky.getSettings()
-        const { sessionId: id } = await window.grocky.startAgent(target, {
+        const s = await window.gronk.getSettings()
+        const { sessionId: id } = await window.gronk.startAgent(target, {
           model: s.model,
           alwaysApprove: s.alwaysApprove,
           forceNew: opts?.forceNew,
@@ -429,7 +429,7 @@ export function useGrocky() {
   const openChat = useCallback(
     async (opts?: { forceNew?: boolean }) => {
       setError(null)
-      const authNow = await window.grocky.getAuthStatus()
+      const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
         setError(
@@ -440,7 +440,7 @@ export function useGrocky() {
       }
 
       const chatPath =
-        chatWorkspacePath || (await window.grocky.getChatWorkspacePath())
+        chatWorkspacePath || (await window.gronk.getChatWorkspacePath())
       setChatWorkspacePath(chatPath)
 
       const sameChat =
@@ -469,8 +469,8 @@ export function useGrocky() {
       setAgentSurface('chat')
 
       try {
-        const s = await window.grocky.getSettings()
-        const { sessionId: id } = await window.grocky.startAgent(chatPath, {
+        const s = await window.gronk.getSettings()
+        const { sessionId: id } = await window.gronk.startAgent(chatPath, {
           model: s.model,
           alwaysApprove: s.alwaysApprove,
           forceNew: opts?.forceNew,
@@ -514,7 +514,7 @@ export function useGrocky() {
   const selectSession = useCallback(
     async (session: SessionInfo) => {
       setError(null)
-      const authNow = await window.grocky.getAuthStatus()
+      const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
         setError(
@@ -525,7 +525,7 @@ export function useGrocky() {
       }
 
       const chatPath =
-        chatWorkspacePath || (await window.grocky.getChatWorkspacePath())
+        chatWorkspacePath || (await window.gronk.getChatWorkspacePath())
       const isChat = isChatWorkspace(session.cwd, chatPath)
 
       setPermission(null)
@@ -541,7 +541,7 @@ export function useGrocky() {
       stickToBottom.current = true
 
       try {
-        const local = await window.grocky.getTranscript(session.id)
+        const local = await window.gronk.getTranscript(session.id)
         if (local.length) {
           setMessages(
             local.map((m) => ({
@@ -557,7 +557,7 @@ export function useGrocky() {
           )
         } else setMessages([])
 
-        const result = await window.grocky.loadSession(session.id)
+        const result = await window.gronk.loadSession(session.id)
         setSessionId(result.sessionId)
         await refreshMeta()
       } catch (err) {
@@ -604,7 +604,7 @@ export function useGrocky() {
       }
 
       try {
-        const { messageId } = await window.grocky.sendPrompt(trimmed, { attachments })
+        const { messageId } = await window.gronk.sendPrompt(trimmed, { attachments })
         setMessages((prev) => {
           const next = prev.map((m) =>
             m.id === userId ? { ...m, sendStatus: 'sent' as const, error: undefined } : m
@@ -674,16 +674,16 @@ export function useGrocky() {
   )
 
   const cancel = useCallback(async () => {
-    await window.grocky.cancelPrompt()
+    await window.gronk.cancelPrompt()
     setBusy(false)
   }, [])
 
   const respondPermission = useCallback(
     async (decision: 'allow-once' | 'allow-always' | 'reject-once') => {
       if (!permission) return
-      await window.grocky.respondPermission(permission.requestId, decision)
+      await window.gronk.respondPermission(permission.requestId, decision)
       setPermission(null)
-      void window.grocky.getPermissionAudit().then(setAudit)
+      void window.gronk.getPermissionAudit().then(setAudit)
     },
     [permission]
   )
@@ -695,15 +695,15 @@ export function useGrocky() {
       partial.permissionMode === 'bypassPermissions'
     ) {
       setShowYoloConfirm(true)
-      return await window.grocky.getSettings()
+      return await window.gronk.getSettings()
     }
-    const next = await window.grocky.setSettings(partial)
+    const next = await window.gronk.setSettings(partial)
     setSettingsState(next)
     if (partial.theme) applyTheme(next.theme)
     if (partial.grokBinary !== undefined) {
-      const path = await window.grocky.getGrokPath()
+      const path = await window.gronk.getGrokPath()
       setGrokPath(path)
-      const h = await window.grocky.getHealth()
+      const h = await window.gronk.getHealth()
       setHealth(h)
     }
     return next
@@ -711,8 +711,8 @@ export function useGrocky() {
 
   const confirmYolo = useCallback(async () => {
     // Two-step so store guard sees priorAck (FIX-14)
-    await window.grocky.setSettings({ alwaysApproveAck: true })
-    const next = await window.grocky.setSettings({
+    await window.gronk.setSettings({ alwaysApproveAck: true })
+    const next = await window.gronk.setSettings({
       alwaysApprove: true,
       permissionMode: 'bypassPermissions'
     })
@@ -730,7 +730,7 @@ export function useGrocky() {
         setShowYoloConfirm(true)
         return
       }
-      const next = await window.grocky.setSettings({
+      const next = await window.gronk.setSettings({
         permissionMode: mode,
         alwaysApprove: false
       })
@@ -750,7 +750,7 @@ export function useGrocky() {
 
   const changeModel = useCallback(
     async (modelId: string) => {
-      const next = await window.grocky.setSettings({ model: modelId })
+      const next = await window.gronk.setSettings({ model: modelId })
       setSettingsState(next)
       if (cwd) {
         if (agentSurface === 'chat') await openChat({ forceNew: true })
@@ -761,14 +761,14 @@ export function useGrocky() {
   )
 
   const renameSession = useCallback(async (id: string, title: string) => {
-    await window.grocky.renameSession(id, title)
-    const sess = await window.grocky.listSessions()
+    await window.gronk.renameSession(id, title)
+    const sess = await window.gronk.listSessions()
     setSessions(sess)
   }, [])
 
   const deleteSession = useCallback(
     async (id: string) => {
-      const sess = await window.grocky.deleteSession(id)
+      const sess = await window.gronk.deleteSession(id)
       setSessions(sess)
       if (sessionId === id) {
         setMessages([])
@@ -784,8 +784,8 @@ export function useGrocky() {
 
   const archiveSession = useCallback(
     async (id: string) => {
-      await window.grocky.archiveSession(id, true)
-      const sess = await window.grocky.listSessions()
+      await window.gronk.archiveSession(id, true)
+      const sess = await window.gronk.listSessions()
       setSessions(sess)
       if (sessionId === id) {
         setMessages([])
@@ -801,14 +801,14 @@ export function useGrocky() {
 
   /** Put an archived session back into the normal lists. */
   const unarchiveSession = useCallback(async (id: string) => {
-    await window.grocky.archiveSession(id, false)
-    const sess = await window.grocky.listSessions()
+    await window.gronk.archiveSession(id, false)
+    const sess = await window.gronk.listSessions()
     setSessions(sess)
   }, [])
 
   const exportSession = useCallback(async (id: string, format: 'md' | 'json' = 'md') => {
     try {
-      const result = await window.grocky.exportTranscript(id, format)
+      const result = await window.gronk.exportTranscript(id, format)
       if (!result.ok) {
         // A cancel is the user's own choice — stay silent. An empty transcript is
         // not, and would otherwise read as a dead menu item.
@@ -825,7 +825,7 @@ export function useGrocky() {
 
   const revealExport = useCallback(async () => {
     if (!exportNotice) return
-    const res = await window.grocky.revealLocalPath(exportNotice.path)
+    const res = await window.gronk.revealLocalPath(exportNotice.path)
     // Keep the notice up either way — the path itself is the answer to "where?"
     setExportNotice((prev) =>
       prev
@@ -865,10 +865,10 @@ export function useGrocky() {
   const dismissExport = useCallback(() => setExportNotice(null), [])
 
   const pickBinary = useCallback(async () => {
-    const path = await window.grocky.selectFile({
+    const path = await window.gronk.selectFile({
       title: 'Select grok binary',
       filters:
-        window.grocky.platform === 'win32'
+        window.gronk.platform === 'win32'
           ? [{ name: 'Executable', extensions: ['exe'] }]
           : undefined
     })
@@ -877,15 +877,15 @@ export function useGrocky() {
 
   const clearBinary = useCallback(async () => {
     // Empty string clears override (Electron IPC drops `undefined` keys)
-    const next = await window.grocky.setSettings({ grokBinary: '' })
+    const next = await window.gronk.setSettings({ grokBinary: '' })
     setSettingsState(next)
-    const path = await window.grocky.getGrokPath()
+    const path = await window.gronk.getGrokPath()
     setGrokPath(path)
-    setHealth(await window.grocky.getHealth())
+    setHealth(await window.gronk.getHealth())
   }, [])
 
   const refreshHealth = useCallback(async () => {
-    const h = await window.grocky.getHealth()
+    const h = await window.gronk.getHealth()
     setHealth(h)
     setGrokPath(h.grokPath)
     setAuth(h.auth)
@@ -895,7 +895,7 @@ export function useGrocky() {
     setCliInstalling(true)
     setCliInstallResult(null)
     try {
-      const res = await window.grocky.installCli()
+      const res = await window.gronk.installCli()
       setCliInstallResult(res.message)
       await refreshMeta()
       return res
@@ -910,13 +910,13 @@ export function useGrocky() {
   const startPreview = useCallback(async () => {
     if (!cwd) return
     setPreviewError(null)
-    const s = await window.grocky.getSettings()
-    const res = await window.grocky.previewStart(cwd, s.previewCommand)
+    const s = await window.gronk.getSettings()
+    const res = await window.gronk.previewStart(cwd, s.previewCommand)
     if (!res.ok) setPreviewError(res.message)
   }, [cwd])
 
   const stopPreview = useCallback(async () => {
-    await window.grocky.previewStop()
+    await window.gronk.previewStop()
   }, [])
 
   const togglePreview = useCallback(() => {
@@ -930,9 +930,9 @@ export function useGrocky() {
     setPluginsError(null)
     try {
       const [inst, mkts, servers] = await Promise.all([
-        window.grocky.listInstalledPlugins(),
-        window.grocky.listMarketplaces(),
-        window.grocky.listMcpServers()
+        window.gronk.listInstalledPlugins(),
+        window.gronk.listMarketplaces(),
+        window.gronk.listMcpServers()
       ])
       setInstalledPlugins(inst)
       setMarketplaces(mkts)
@@ -949,7 +949,7 @@ export function useGrocky() {
     setPluginsLoading(true)
     setPluginsError(null)
     try {
-      setAvailablePlugins(await window.grocky.listAvailablePlugins())
+      setAvailablePlugins(await window.gronk.listAvailablePlugins())
     } catch (err) {
       setPluginsError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -977,19 +977,19 @@ export function useGrocky() {
 
   const installPlugin = useCallback(
     (source: string, trust: boolean) =>
-      runPluginAction(source, () => window.grocky.installPlugin(source, trust)),
+      runPluginAction(source, () => window.gronk.installPlugin(source, trust)),
     [runPluginAction]
   )
   const enablePlugin = useCallback(
-    (name: string) => runPluginAction(name, () => window.grocky.enablePlugin(name)),
+    (name: string) => runPluginAction(name, () => window.gronk.enablePlugin(name)),
     [runPluginAction]
   )
   const disablePlugin = useCallback(
-    (name: string) => runPluginAction(name, () => window.grocky.disablePlugin(name)),
+    (name: string) => runPluginAction(name, () => window.gronk.disablePlugin(name)),
     [runPluginAction]
   )
   const uninstallPlugin = useCallback(
-    (name: string) => runPluginAction(name, () => window.grocky.uninstallPlugin(name)),
+    (name: string) => runPluginAction(name, () => window.gronk.uninstallPlugin(name)),
     [runPluginAction]
   )
 
@@ -998,10 +998,10 @@ export function useGrocky() {
       setPluginBusy(input.name)
       setPluginsError(null)
       try {
-        const res = await window.grocky.addMcpServer(input)
+        const res = await window.gronk.addMcpServer(input)
         if (!res.ok) setPluginsError(res.message)
         if (res.servers) setMcpServers(res.servers)
-        else setMcpServers(await window.grocky.listMcpServers())
+        else setMcpServers(await window.gronk.listMcpServers())
       } catch (err) {
         setPluginsError(err instanceof Error ? err.message : String(err))
       } finally {
@@ -1015,10 +1015,10 @@ export function useGrocky() {
     setPluginBusy(name)
     setPluginsError(null)
     try {
-      const res = await window.grocky.removeMcpServer(name)
+      const res = await window.gronk.removeMcpServer(name)
       if (!res.ok) setPluginsError(res.message)
       if (res.servers) setMcpServers(res.servers)
-      else setMcpServers(await window.grocky.listMcpServers())
+      else setMcpServers(await window.gronk.listMcpServers())
     } catch (err) {
       setPluginsError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -1031,7 +1031,7 @@ export function useGrocky() {
   // store must not take sessions, settings and theme down with it.
   const refreshDataLocation = useCallback(async () => {
     try {
-      setDataLocation(await window.grocky.getDataLocation())
+      setDataLocation(await window.gronk.getDataLocation())
     } catch (err) {
       setDataError(err instanceof Error ? err.message : String(err))
     }
@@ -1048,7 +1048,7 @@ export function useGrocky() {
    * losing transcripts is worth an interruption.
    */
   useEffect(() => {
-    void window.grocky
+    void window.gronk
       .getStoreHealth()
       .then((h) => {
         if (h.degraded) setStoreHealth(h)
@@ -1061,7 +1061,7 @@ export function useGrocky() {
   const chooseDataDir = useCallback(async (): Promise<string | null> => {
     setDataError(null)
     try {
-      return await window.grocky.chooseDataDir()
+      return await window.gronk.chooseDataDir()
     } catch (err) {
       setDataError(err instanceof Error ? err.message : String(err))
       return null
@@ -1096,19 +1096,19 @@ export function useGrocky() {
   )
 
   const moveDataDir = useCallback(
-    (target: string) => runDataAction(() => window.grocky.moveDataDir(target)),
+    (target: string) => runDataAction(() => window.gronk.moveDataDir(target)),
     [runDataAction]
   )
 
   const resetDataDir = useCallback(
-    () => runDataAction(() => window.grocky.resetDataDir()),
+    () => runDataAction(() => window.gronk.resetDataDir()),
     [runDataAction]
   )
 
   const refreshAuth = useCallback(async () => {
     setAuthBusy(true)
     try {
-      const a = await window.grocky.getAuthStatus()
+      const a = await window.gronk.getAuthStatus()
       setAuth(a)
       setAuthMessage(a.message || null)
     } finally {
@@ -1125,7 +1125,7 @@ export function useGrocky() {
     )
     setDeviceHint(null)
     try {
-      const result = await window.grocky.login(method)
+      const result = await window.gronk.login(method)
       setAuth(result.auth)
       setAuthMessage(result.message)
       if (result.deviceHint) setDeviceHint(result.deviceHint)
@@ -1156,7 +1156,7 @@ export function useGrocky() {
       setBusy(false)
       setConnection('idle')
 
-      const result = await window.grocky.logout()
+      const result = await window.gronk.logout()
       setAuth(result.auth)
       setAuthMessage(result.message)
       await refreshMeta()

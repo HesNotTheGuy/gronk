@@ -45,7 +45,7 @@ const SWITCHER_LIMIT = 8
 /** Rails are a hop list, not an archive — the browse homes hold the full set. */
 const LIST_LIMIT = 40
 
-const COLLAPSE_KEY = 'grocky.sidebar.collapse.v2'
+const COLLAPSE_KEY = 'gronk.sidebar.collapse.v2'
 
 function loadCollapse(): { folders: boolean; sessions: boolean; chats: boolean } {
   try {
@@ -154,7 +154,7 @@ export function Sidebar({
             G
           </div>
           <div className="brand-text">
-            <h1>Grocky</h1>
+            <h1>Gronk</h1>
             <p>Grok desktop</p>
           </div>
         </div>

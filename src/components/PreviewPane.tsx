@@ -26,7 +26,7 @@ export function PreviewPane({ url, error, onStop }: Props) {
     let raf = 0
     const sync = (): void => {
       const r = el.getBoundingClientRect()
-      window.grocky.previewSetBounds({ x: r.left, y: r.top, width: r.width, height: r.height })
+      window.gronk.previewSetBounds({ x: r.left, y: r.top, width: r.width, height: r.height })
     }
     const schedule = (): void => {
       cancelAnimationFrame(raf)
@@ -56,14 +56,14 @@ export function PreviewPane({ url, error, onStop }: Props) {
           spellCheck={false}
           onChange={(e) => setAddr(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && addr.trim()) void window.grocky.previewSetUrl(addr.trim())
+            if (e.key === 'Enter' && addr.trim()) void window.gronk.previewSetUrl(addr.trim())
           }}
           placeholder="http://localhost:5173"
         />
         <button
           type="button"
           className="btn-mini"
-          onClick={() => void window.grocky.previewReload()}
+          onClick={() => void window.gronk.previewReload()}
           title="Reload"
         >
           ⟳

@@ -105,7 +105,7 @@ export function Composer({
     }
     let cancelled = false
     const t = setTimeout(() => {
-      void window.grocky.listProjectFiles(cwd, mentionQuery, 24).then((items) => {
+      void window.gronk.listProjectFiles(cwd, mentionQuery, 24).then((items) => {
         if (!cancelled) {
           setMentionItems(items.filter((i) => !i.isDir))
           setMentionIndex(0)
@@ -250,7 +250,7 @@ export function Composer({
       const f = files[0] as File & { path?: string }
       if (f.path && !f.type && onOpenFolder) {
         // Heuristic: no MIME often means folder on Electron
-        void window.grocky
+        void window.gronk
           .listProjectFiles(f.path, '', 1)
           .then((entries) => {
             if (entries.length || f.path) {
@@ -273,7 +273,7 @@ export function Composer({
   }
 
   const pickFiles = async () => {
-    const path = await window.grocky.selectFile({ title: 'Attach file' })
+    const path = await window.gronk.selectFile({ title: 'Attach file' })
     if (!path) return
     const name = path.replace(/\\/g, '/').split('/').pop() || path
     addAttachments([

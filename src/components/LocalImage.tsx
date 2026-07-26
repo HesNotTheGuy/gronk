@@ -26,7 +26,7 @@ export function LocalImage({
     setState({ status: 'loading' })
     void (async () => {
       try {
-        const res = await window.grocky.readLocalImage(image.path)
+        const res = await window.gronk.readLocalImage(image.path)
         if (cancelled) return
         if (!res?.dataUrl) {
           setState({ status: 'error', message: res?.error || 'Image not found' })
@@ -52,7 +52,7 @@ export function LocalImage({
 
   const openExternal = () => {
     if (state.status === 'ready') {
-      void window.grocky.revealLocalPath?.(state.resolvedPath)
+      void window.gronk.revealLocalPath?.(state.resolvedPath)
     }
   }
 

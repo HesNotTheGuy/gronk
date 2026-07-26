@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Grocky ships on all three; path handling and process-kill differ per OS.
+        # Gronk ships on all three; path handling and process-kill differ per OS.
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
