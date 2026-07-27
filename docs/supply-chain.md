@@ -25,11 +25,23 @@ npm run setup
 
 That script:
 
-1. Checks **declared package names** against
-   [DataDog’s malicious npm dataset](https://github.com/DataDog/malicious-software-packages-dataset)
-2. Runs `npm install --ignore-scripts` (no code execution from packages)
-3. Scans `package-lock.json` + `node_modules` for high-risk scopes and worm files
-4. Only then runs **Electron’s** binary downloader (`node_modules/electron/install.js`)
+1. Runs `npm ci --ignore-scripts`, which installs exactly what `package-lock.json`
+   pins and executes no lifecycle scripts from any package. `ci` rather than
+   `install`, because `install` is free to resolve something newer than the
+   lockfile, which is the opposite of what a security-motivated install should do.
+2. Scans the **resolved versions** in `package-lock.json` against
+   [DataDog’s malicious npm dataset](https://github.com/DataDog/malicious-software-packages-dataset),
+   and flags packages in scopes that have been compromised before. Version-aware,
+   not name-only: a name match alone would flag `debug` and `chalk` forever, since
+   both have a poisoned release in their history and a safe one today.
+3. Aborts on any hit, before step 4 can run.
+4. Only then runs **Electron’s** binary downloader
+   (`node_modules/electron/install.js`) — the single install script deliberately
+   allowed, because it fetches the official binary from Electron's own release host.
+
+The scan runs after the install rather than before it, because the thing worth
+checking is the resolved dependency graph, and that does not exist until the
+lockfile has been walked. Nothing from a package has executed at that point.
 
 Scan only (no install):
 
@@ -54,7 +66,8 @@ packages with long history, multiple maintainers, and no surprising install scri
 2. Confirm maintainers look legitimate (not a brand-new account on a famous name)
 3. Prefer **exact versions** in `package.json` for anything security-sensitive
 4. Run `npm run security-check` after install
-5. Never use `-AllowScripts` unless you have read the install script
+5. Never re-run an install with lifecycle scripts enabled to "make it work"
+   without reading what those scripts do
 
 ## If you already ran a dirty install
 
@@ -97,9 +110,16 @@ Any automated assistant working in this repo should:
 
 - Session transcripts and the permission audit log live in Electron `userData`
   (`gronk-store.json`) **on this machine only**.
-- Values are stored in plaintext minus **obvious secret patterns** (API keys,
-  JWTs, `api_key=…`, emails) redacted before write. Treat the store as
-  sensitive local cache — do not copy it into tickets or chat.
+- **Your own conversation is stored verbatim.** Message text and agent thoughts
+  are written exactly as they appear, with no redaction. That is deliberate: it
+  is your text, on your machine, and silently altering it would corrupt the
+  transcript you came back for.
+- Redaction applies to the machine-generated payloads around it — tool call
+  content and raw input, and the permission audit log — where obvious secret
+  patterns (API keys, JWTs, `api_key=…`, emails) are stripped before write.
+- The practical consequence: if you paste a secret into a message, it is on disk
+  in plaintext. Treat the store as a sensitive local cache and do not copy it
+  into tickets or chat.
 - Optional future hardening: encrypt at rest with Electron `safeStorage`.
 
 ### Tool permissions

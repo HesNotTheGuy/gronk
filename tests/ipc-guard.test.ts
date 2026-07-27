@@ -8,6 +8,7 @@ import {
   isAllowedExternalUrl,
   isAppUrl,
   isLocalDevHost,
+  isLocalPreviewUrl,
   isPathInside,
   MAX_IMAGE_BYTES,
   mimeForImageExt
@@ -119,6 +120,58 @@ test('only http, https and mailto may be opened externally', () => {
 })
 
 // ── Path containment (the fs jail's lexical half) ───────────────────
+
+// ── preview pane navigation ────────────────────────────────────────────────
+
+test('the preview pane may only reach a loopback dev server', () => {
+  for (const ok of [
+    'http://localhost:5173',
+    'http://localhost:3000/nested/route?q=1',
+    'http://127.0.0.1:8080',
+    'https://localhost:443',
+    'http://[::1]:5173'
+  ]) {
+    assert.equal(isLocalPreviewUrl(ok), true, ok)
+  }
+})
+
+// The bug this replaced: preview.ts gated navigation with `.test()` on the
+// unanchored regex used to spot a dev server URL in log output, so any address
+// that merely CONTAINED one was accepted. Every entry below satisfies that old
+// check and must now be refused.
+test('an address that merely contains a localhost url is not local', () => {
+  for (const bad of [
+    'https://evil.example/#http://localhost:3000',
+    'https://evil.example/?next=http://localhost:3000',
+    'https://evil.example/http://localhost:3000',
+    'http://localhost.evil.example:3000',
+    'http://127.0.0.1.evil.example:3000'
+  ]) {
+    assert.equal(isLocalPreviewUrl(bad), false, bad)
+  }
+})
+
+test('the preview pane refuses non-http schemes and unparseable input', () => {
+  for (const bad of [
+    'file:///C:/Windows/System32/drivers/etc/hosts',
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'ws://localhost:5173',
+    'not a url',
+    ''
+  ]) {
+    assert.equal(isLocalPreviewUrl(bad), false, bad)
+  }
+})
+
+// A remote origin reached by redirect is the same risk as one typed in, so the
+// two guards have to agree. preview.ts hands both will-navigate and
+// will-redirect to this single predicate.
+test('the preview check and the external-open check disagree about remote origins', () => {
+  const remote = 'https://example.com/'
+  assert.equal(isLocalPreviewUrl(remote), false)
+  assert.equal(isAllowedExternalUrl(remote), true)
+})
 
 test('a path inside the root is accepted, the root itself included', () => {
   const root = path.resolve('/data/project')

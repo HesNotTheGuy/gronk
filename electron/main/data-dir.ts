@@ -353,13 +353,6 @@ export function previousChatWorkspacePaths(): string[] {
   return readPointer().previousChatWorkspaces ?? []
 }
 
-/** Create the data directory if needed and return it. */
-export function ensureDataDir(): string {
-  const dir = dataDir()
-  fs.mkdirSync(dir, { recursive: true })
-  return dir
-}
-
 export function getDataLocation(): DataLocation {
   const pointer = readPointer()
   const defaults = defaultDataDir()

@@ -23,13 +23,15 @@ appears in your project list.
 
 ## Requirements
 
-1. **Node.js 22.18 or newer.** The test runner relies on native TypeScript type
-   stripping, which older versions lack.
-2. **The Grok CLI**, installed and on your PATH.
+1. **The Grok CLI**, installed and on your PATH.
    - Windows: `irm https://x.ai/cli/install.ps1 | iex`
    - macOS and Linux: `curl -fsSL https://x.ai/cli/install.sh | bash`
-3. **Your own Grok account.** Sign in from Gronk's sign-in screen, or run
+2. **Your own Grok account.** Sign in from Gronk's sign-in screen, or run
    `grok login`.
+
+Node.js is not required to run Gronk. The installer bundles its own runtime.
+Building from source needs **Node.js 22.18 or newer**, because the test runner
+relies on native TypeScript type stripping.
 
 ## Running it
 

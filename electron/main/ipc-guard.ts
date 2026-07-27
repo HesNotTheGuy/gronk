@@ -33,6 +33,24 @@ export function isLocalDevHost(hostname: string): boolean {
 }
 
 /**
+ * May the preview pane navigate to `target`?
+ *
+ * Parsed rather than pattern-matched, and that is the whole point. preview.ts
+ * previously gated navigation with `.test()` on the unanchored regex it uses to
+ * spot a dev server's URL in its log output, so any address merely CONTAINING a
+ * localhost URL was accepted — `https://evil.example/#http://localhost:3000`
+ * passed the check and loaded in the pane.
+ */
+export function isLocalPreviewUrl(target: string): boolean {
+  try {
+    const u = new URL(target)
+    return (u.protocol === 'http:' || u.protocol === 'https:') && isLocalDevHost(u.hostname)
+  } catch {
+    return false
+  }
+}
+
+/**
  * True when `target` is Gronk's own renderer.
  * Dev serves it over http from the Vite server; packaged builds load file://.
  * `devRendererUrl` is `process.env.ELECTRON_RENDERER_URL` — passed in rather

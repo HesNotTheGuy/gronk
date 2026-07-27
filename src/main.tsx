@@ -6,12 +6,30 @@ import './styles.css'
 
 const rootEl = document.getElementById('root')
 
+/**
+ * Built as nodes rather than an HTML string. `message` is an error text, and
+ * interpolating it into innerHTML parses whatever it contains as markup — on the
+ * one code path that runs when the app is already too broken to have loaded its
+ * defences. textContent cannot execute anything.
+ */
 function bootError(message: string): void {
   if (!rootEl) return
-  rootEl.innerHTML = `<div style="padding:24px;font-family:system-ui;color:#f2f2f2;background:#000;min-height:100vh">
-    <h2 style="color:#ff4d00">Gronk failed to start</h2>
-    <pre style="white-space:pre-wrap;color:#a3a3a3">${message}</pre>
-  </div>`
+  const wrap = document.createElement('div')
+  wrap.setAttribute(
+    'style',
+    'padding:24px;font-family:system-ui;color:#f2f2f2;background:#000;min-height:100vh'
+  )
+
+  const heading = document.createElement('h2')
+  heading.setAttribute('style', 'color:#ff4d00')
+  heading.textContent = 'Gronk failed to start'
+
+  const detail = document.createElement('pre')
+  detail.setAttribute('style', 'white-space:pre-wrap;color:#a3a3a3')
+  detail.textContent = message
+
+  wrap.append(heading, detail)
+  rootEl.replaceChildren(wrap)
 }
 
 try {

@@ -40,7 +40,7 @@ export function AuthGate({
         </p>
 
         <ul className="auth-bullets">
-          <li>Browser login opens SpaceXAI OAuth (recommended)</li>
+          <li>Browser login opens xAI OAuth (recommended)</li>
           <li>Device code works when a browser can&apos;t open here</li>
           <li>Tokens stay in the local CLI store — not in Gronk settings</li>
           <li>Sign out clears credentials on this machine only</li>

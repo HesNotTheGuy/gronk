@@ -3,10 +3,11 @@
  * attached WebContentsView pane (isolated session, sandboxed). Start/stop owned
  * by the user via the preview icon — never automatic.
  */
-import { BrowserWindow, WebContentsView, shell } from 'electron'
+import { BrowserWindow, WebContentsView, session, shell } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import { isAllowedExternalUrl, isLocalPreviewUrl } from './ipc-guard'
 import { redactSecrets } from './redact'
 
 export interface PreviewStatus {
@@ -27,7 +28,44 @@ let lastBounds = { x: 0, y: 0, width: 0, height: 0 }
 let emit: Emit = () => {}
 let urlFound = false
 
+const PREVIEW_PARTITION = 'preview'
+
+/**
+ * Finds a dev server's URL inside a line of its own log output.
+ *
+ * Deliberately unanchored, because it is searching a sentence. That makes it
+ * unusable as a gate, which is what it was also being used for: `.test()` on a
+ * navigation target returns true for `https://evil.example/#http://localhost:3000`,
+ * since the substring really is present. Scanning and validating are different
+ * jobs and cannot share one pattern. Validation lives in isLocalPreviewUrl.
+ */
 const LOCALHOST_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+[^\s"']*/i
+
+/**
+ * Same scheme allow-list the main window uses. Handing an arbitrary string to
+ * shell.openExternal lets the page choose the protocol, and the OS will honour
+ * whatever handler is registered for it.
+ */
+function openExternalSafely(target: string): void {
+  if (isAllowedExternalUrl(target)) void shell.openExternal(target)
+}
+
+/**
+ * The pane runs in its own partition, so hardenSession() in index.ts never
+ * reaches it: that configures session.defaultSession only. Without this the
+ * preview keeps Electron's defaults, where a page can be granted the
+ * microphone, camera, geolocation or notifications.
+ *
+ * No CSP is imposed here, on purpose. The pane renders the user's own dev
+ * server and a policy strict enough to be worth having would break real
+ * projects. Containment comes from staying on localhost, with no preload and no
+ * bridge to reach.
+ */
+function hardenPreviewSession(): void {
+  const previewSession = session.fromPartition(PREVIEW_PARTITION)
+  previewSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(false))
+  previewSession.setPermissionCheckHandler(() => false)
+}
 
 export function initPreview(win: BrowserWindow, emitter: Emit): void {
   hostWindow = win
@@ -59,28 +97,38 @@ function status(extra?: Partial<PreviewStatus>): void {
 
 function attachView(url: string): void {
   if (!hostWindow || hostWindow.isDestroyed()) return
+  // The single place the pane is ever handed a URL to load, so the check lives
+  // here too rather than only at the callers. Both of today's callers are
+  // already safe; a future third one will not silently not be.
+  if (!isLocalPreviewUrl(url)) return
   if (!view) {
+    // Before the view exists, so no page can load under the default handlers.
+    hardenPreviewSession()
     view = new WebContentsView({
       webPreferences: {
         // Isolated, sandboxed, no bridge — the preview never touches window.gronk.
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
-        partition: 'preview'
+        partition: PREVIEW_PARTITION
       }
     })
     // Keep the preview locked to localhost; external links go to the OS browser.
     const wc = view.webContents
     wc.setWindowOpenHandler(({ url: u }) => {
-      void shell.openExternal(u)
+      openExternalSafely(u)
       return { action: 'deny' }
     })
-    wc.on('will-navigate', (e, u) => {
-      if (!LOCALHOST_URL.test(u)) {
-        e.preventDefault()
-        void shell.openExternal(u)
-      }
-    })
+    const keepLocal = (e: Electron.Event, u: string): void => {
+      if (isLocalPreviewUrl(u)) return
+      e.preventDefault()
+      openExternalSafely(u)
+    }
+    wc.on('will-navigate', keepLocal)
+    // will-navigate does not fire on an HTTP redirect. Without this, a 3xx from
+    // the dev server walks the pane to any origin it likes, and the localhost
+    // lock only ever applied to the first hop.
+    wc.on('will-redirect', keepLocal)
     hostWindow.contentView.addChildView(view)
   }
   view.setBounds(lastBounds)
@@ -101,7 +149,16 @@ export function setPreviewBounds(b: { x: number; y: number; width: number; heigh
 }
 
 export function setPreviewUrl(url: string): void {
-  if (!LOCALHOST_URL.test(url) && !/^https?:\/\//i.test(url)) return
+  // The old guard was `!isLocalhost && !isHttpScheme`, so any http(s) origin
+  // satisfied the second clause and the localhost check never rejected
+  // anything. This is the address bar in PreviewPane, so an off-localhost entry
+  // is a deliberate user action: hand it to the real browser rather than
+  // dropping it silently, which is what happens to an outbound link clicked
+  // inside the pane.
+  if (!isLocalPreviewUrl(url)) {
+    openExternalSafely(url)
+    return
+  }
   if (!view) attachView(url)
   else {
     currentUrl = url

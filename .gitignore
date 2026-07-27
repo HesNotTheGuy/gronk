@@ -23,3 +23,10 @@ SKILLS-PLUGINS-SPEC.md
 
 # Author's own tooling, not part of the app.
 scripts/make-icon.mjs
+
+# AI coding-assistant working directories. Ignored here rather than only in
+# .git/info/exclude, which is per-clone and never published — without this a
+# contributor using one of these tools commits their local session state.
+.claude/
+.cursor/
+.aider*

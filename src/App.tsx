@@ -328,7 +328,13 @@ export function App() {
           </div>
         </header>
 
-        {g.yoloActive && inProject ? (
+        {/*
+          Not gated on `inProject`. yoloActive is a global setting, so hiding
+          the banner on Chat meant bypass could be on, and passed to the agent,
+          with nothing on screen saying so. A safety indicator that is only
+          sometimes shown is worse than none, because its absence reads as safe.
+        */}
+        {g.yoloActive ? (
           <div className="yolo-banner">
             BYPASS PERMISSIONS ACTIVE — agent tools auto-approve. Switch mode or turn off YOLO.
           </div>

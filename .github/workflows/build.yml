@@ -20,8 +20,28 @@ permissions:
   contents: read
 
 jobs:
+  # Nothing here is allowed to produce an installer until the suite and the
+  # malware scan have passed. Pushing a v* tag used to go straight to building
+  # shippable binaries, so a red main could still be released: CI ran on the
+  # commit, this workflow ran on the tag, and the two never spoke.
+  verify:
+    name: verify before building
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Check resolved versions against known-malicious releases
+        run: node ./scripts/security-check.mjs
+      - run: npm run typecheck
+      - run: npm test
+
   build:
     name: ${{ matrix.name }}
+    needs: verify
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

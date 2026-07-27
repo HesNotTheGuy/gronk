@@ -163,15 +163,6 @@ function captionFromInput(rawInput: unknown): string | undefined {
   return undefined
 }
 
-/** Whether this tool looks like Imagine (image_gen / image_edit / video stills). */
-export function isImageTool(tool: ToolCallInfo): boolean {
-  const blob = `${tool.title || ''} ${tool.kind || ''} ${JSON.stringify(tool.rawInput ?? '')}`.toLowerCase()
-  if (/image_gen|image_edit|image_to_video|reference_to_video|imagine/.test(blob)) return true
-  // Heuristic: completed tool whose content is an image-gen JSON payload
-  const refs = extractImageRefsFromTool(tool)
-  return refs.length > 0
-}
-
 /** Extract generated/edited image paths from a tool call. */
 export function extractImageRefsFromTool(tool: ToolCallInfo): ImageRef[] {
   const out: ImageRef[] = []
