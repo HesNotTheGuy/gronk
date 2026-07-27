@@ -4,6 +4,23 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-07-27
+
+### Fixed
+
+- **The activity heatmap was invisible.** It had no stylesheet at all, so every
+  one of its day cells rendered at zero height and the panel showed only its
+  month and weekday captions, bunched together as plain text. The component
+  itself was correct; `src/styles.css` simply never contained a single
+  `.calendar-*` rule, in this release or any before it. Anyone who installed
+  0.1.0 saw a blank space where the heatmap should be.
+
+### Added
+
+- A test that fails when a component uses a class the stylesheet does not
+  define. The existing tests covered the calendar's data and passed throughout,
+  because the data was never what was broken.
+
 ## [0.1.0] - 2026-07-26
 
 First public release. Everything before this was pre-release development in a
@@ -55,4 +72,5 @@ private repository, so there is no earlier entry to compare against.
   warn on first launch.
 - No automatic updates. Code signing has to land first.
 
+[0.1.1]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.1
 [0.1.0]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.0
