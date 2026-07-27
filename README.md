@@ -9,6 +9,8 @@ never calls a model itself.
 > **Status: pre-release.** Tested on Windows. macOS and Linux builds have not
 > been run yet. Reports welcome.
 
+![Gronk Home, showing recent projects and an activity heatmap](docs/images/home.png)
+
 ## What it does
 
 | Surface | Purpose |
@@ -16,6 +18,20 @@ never calls a model itself.
 | Home | Recent projects, sessions, activity |
 | Chat | General conversation, backed by the CLI |
 | Build | Coding agent in a project folder |
+
+Build runs the agent in a project folder. Tool calls appear as cards you can
+open, showing what was read, edited or run.
+
+![A Build session: tool call cards for read, edit and shell, with the reply below](docs/images/build.png)
+
+Chat is app-level and needs no folder. It uses the same account as the CLI.
+
+![The Chat surface listing previous conversations](docs/images/chat.png)
+
+Settings shows account state, CLI health, and the permission mode the agent runs
+under.
+
+![Settings, showing account status, CLI health and permission modes](docs/images/settings.png)
 
 Chat is not a web wrapper. It uses the same ACP path as Build, with a
 conversational system prompt and a sandbox working directory, so it never

@@ -24,6 +24,12 @@ SKILLS-PLUGINS-SPEC.md
 # Author's own tooling, not part of the app.
 scripts/make-icon.mjs
 
+# Screenshot harness: mounts the app in a browser against fake data to capture
+# README images. Regenerated on demand, never shipped.
+src/__shots.html
+src/__shots.tsx
+vite.shots.config.ts
+
 # AI coding-assistant working directories. Ignored here rather than only in
 # .git/info/exclude, which is per-clone and never published — without this a
 # contributor using one of these tools commits their local session state.
