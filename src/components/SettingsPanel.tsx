@@ -10,6 +10,7 @@ import type {
   PermissionAuditEntry,
   PermissionMode
 } from '../../shared/types'
+import { cloudSyncServiceFor } from '@shared/path'
 import { PermissionModeBar } from './PermissionModeBar'
 
 /**
@@ -162,6 +163,14 @@ export function SettingsPanel({
     const target = await onChooseDataDir()
     if (target) setPendingTarget(target)
   }
+
+  /**
+   * Warn, never block. Transcripts are stored as readable text, so relocating
+   * them into a synced folder hands every conversation to that provider. Plenty
+   * of people sync on purpose and this cannot tell the difference, so it informs
+   * the decision rather than overriding it.
+   */
+  const pendingCloudService = pendingTarget ? cloudSyncServiceFor(pendingTarget) : null
 
   const confirmMove = () => {
     const target = pendingTarget
@@ -515,6 +524,14 @@ export function SettingsPanel({
                 there. Only then are they removed from the old one — nothing is deleted before
                 the copy checks out.
               </p>
+              {pendingCloudService ? (
+                <p className="settings-hint warn-text">
+                  <strong>{pendingCloudService} syncs this folder to the internet.</strong>{' '}
+                  Transcripts are stored as readable text, so every conversation, including
+                  anything you have pasted into one, would be uploaded and kept by that service.
+                  Pick a folder outside it unless that is what you want.
+                </p>
+              ) : null}
               <p className="settings-hint warn-text">
                 The app must not have a running agent. Stop the current Chat or Build session
                 first, or the move is refused.

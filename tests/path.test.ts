@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  cloudSyncServiceFor,
   folderName,
   isChatSession,
   isChatWorkspace,
@@ -79,5 +80,71 @@ test('chat and workspace classification are exact inverses', () => {
   ]
   for (const r of rows) {
     assert.notEqual(isChatSession(r, CHAT_ROOT), isWorkspaceSession(r, CHAT_ROOT))
+  }
+})
+
+// ── cloud sync detection ───────────────────────────────────────────────────
+// Transcripts are stored as readable text, so relocating the data directory into
+// a synced folder uploads every conversation to a third party. This drives a
+// warning only, so the cost of being wrong is one dismissable notice.
+
+test('the common sync roots are recognised on Windows and macOS', () => {
+  const cases: Array<[string, string]> = [
+    ['C:/Users/sam/OneDrive/gronk', 'OneDrive'],
+    ['C:\\Users\\sam\\OneDrive\\gronk', 'OneDrive'],
+    ['C:/Users/sam/Dropbox/gronk', 'Dropbox'],
+    ['/Users/sam/Dropbox/gronk', 'Dropbox'],
+    ['/Users/sam/Google Drive/gronk', 'Google Drive'],
+    ['C:/Users/sam/Nextcloud/data', 'Nextcloud'],
+    ['/Users/sam/Library/Mobile Documents/com~apple~CloudDocs/gronk', 'iCloud Drive']
+  ]
+  for (const [dir, service] of cases) {
+    assert.equal(cloudSyncServiceFor(dir), service, dir)
+  }
+})
+
+// Every provider decorates the folder with the account name, so an exact-match
+// check would miss the majority of real installs.
+test('a sync root carrying an account suffix is still recognised', () => {
+  assert.equal(cloudSyncServiceFor('C:/Users/sam/OneDrive - Contoso/gronk'), 'OneDrive')
+  assert.equal(cloudSyncServiceFor('C:/Users/sam/Dropbox (Personal)/gronk'), 'Dropbox')
+  assert.equal(cloudSyncServiceFor('/Users/sam/Library/CloudStorage/OneDrive-Personal/x'), 'OneDrive')
+  assert.equal(
+    cloudSyncServiceFor('/Users/sam/Library/CloudStorage/GoogleDrive-sam@example.com/x'),
+    'Google Drive'
+  )
+})
+
+// macOS routes every provider through Library/CloudStorage, so the parent proves
+// it is synced even for a provider this list has never heard of.
+test('an unknown provider under macOS CloudStorage is still flagged', () => {
+  assert.equal(
+    cloudSyncServiceFor('/Users/sam/Library/CloudStorage/SomeNewThing-account/x'),
+    'a cloud-synced folder'
+  )
+})
+
+test('an ordinary local directory is not flagged', () => {
+  for (const dir of [
+    'C:/Users/sam/AppData/Roaming/gronk',
+    'C:/gronk-data',
+    '/home/sam/.config/gronk',
+    '/Users/sam/Documents/gronk',
+    ''
+  ]) {
+    assert.equal(cloudSyncServiceFor(dir), null, dir)
+  }
+})
+
+// A false positive nags someone who did nothing wrong, so the match cannot be a
+// bare substring: these all CONTAIN a provider name without being one.
+test('a folder that merely contains a provider name is not a sync root', () => {
+  for (const dir of [
+    'C:/projects/dropbox-clone/data',
+    'C:/projects/my-onedrive-backup-tool/data',
+    '/home/sam/boxes/gronk',
+    '/home/sam/megaproject/gronk'
+  ]) {
+    assert.equal(cloudSyncServiceFor(dir), null, dir)
   }
 })
