@@ -560,7 +560,7 @@ export function App() {
             {/* Directly above the composer: in view whenever the user is about to
                 spend more, and it renders nothing until a turn has completed, so
                 it never greets an empty session. */}
-            {inConversation ? <UsageMeter usage={g.usage} /> : null}
+            {inConversation ? <UsageMeter usage={g.usage} auth={g.auth} /> : null}
 
             <Composer
               disabled={g.connection !== 'ready'}

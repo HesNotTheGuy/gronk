@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import type { SessionUsage, TurnUsage } from '../../shared/types'
+import { costNote, detailCostLabel, summaryCostLabel } from '../lib/cost'
+import type { AuthStatus, SessionUsage, TurnUsage } from '../../shared/types'
 
 /**
  * Readable magnitudes. 45428 reads as "45.4K": the exact figure is available in
@@ -44,13 +45,18 @@ function cachedShare(usage: TurnUsage): number | null {
   return Math.min(100, Math.round((usage.cachedReadTokens / usage.inputTokens) * 100))
 }
 
-const COST_NOTE =
-  'Estimated from the token counts the Grok CLI reports for this session. ' +
-  'Not a billing figure — check your xAI account for what you are actually charged.'
-
-function UsageColumn({ label, usage }: { label: string; usage: TurnUsage }) {
+function UsageColumn({
+  label,
+  usage,
+  auth
+}: {
+  label: string
+  usage: TurnUsage
+  auth: AuthStatus | null | undefined
+}) {
   const share = cachedShare(usage)
   const cost = formatCost(usage.costUsd)
+  const note = costNote(auth)
   return (
     <div className="usage-col">
       <div className="usage-col-head">{label}</div>
@@ -86,10 +92,12 @@ function UsageColumn({ label, usage }: { label: string; usage: TurnUsage }) {
           <dt>API time</dt>
           <dd>{formatDuration(usage.apiDurationMs)}</dd>
         </div>
+        {/* Always shown here, unlike the summary bar: the panel is opened
+            deliberately, and the label says which of the two things it is. */}
         {cost ? (
           <div className="usage-cell">
-            <dt>Est. cost</dt>
-            <dd title={COST_NOTE}>~{cost}</dd>
+            <dt>{detailCostLabel(auth)}</dt>
+            <dd title={note}>~{cost}</dd>
           </div>
         ) : null}
       </dl>
@@ -122,7 +130,13 @@ function UsageColumn({ label, usage }: { label: string; usage: TurnUsage }) {
  * to. There is also no percentage-full gauge: the CLI exposes no context-window
  * limit anywhere, so a fullness bar would be invented.
  */
-export function UsageMeter({ usage }: { usage: SessionUsage | null }) {
+export function UsageMeter({
+  usage,
+  auth
+}: {
+  usage: SessionUsage | null
+  auth?: AuthStatus | null
+}) {
   const [open, setOpen] = useState(false)
 
   if (!usage || usage.turns === 0) return null
@@ -130,6 +144,10 @@ export function UsageMeter({ usage }: { usage: SessionUsage | null }) {
   const { totals, last } = usage
   const sessionCost = formatCost(totals.costUsd)
   const share = cachedShare(totals)
+  // Null on a subscription: the CLI reports a cost for every turn regardless of
+  // credential, but only an API key actually spends money per token.
+  const costSuffix = summaryCostLabel(auth)
+  const note = costNote(auth)
 
   return (
     <div className={`usage-meter ${open ? 'open' : ''}`}>
@@ -155,9 +173,9 @@ export function UsageMeter({ usage }: { usage: SessionUsage | null }) {
               {share !== null ? ` (${share}%)` : ''}
             </span>
           ) : null}
-          {sessionCost ? (
-            <span className="usage-fig cost" title={COST_NOTE}>
-              ~{sessionCost} est.
+          {sessionCost && costSuffix ? (
+            <span className="usage-fig cost" title={note}>
+              ~{sessionCost} {costSuffix}
             </span>
           ) : null}
           <span className="usage-fig muted">
@@ -180,12 +198,12 @@ export function UsageMeter({ usage }: { usage: SessionUsage | null }) {
       {open ? (
         <div className="usage-detail">
           <div className="usage-cols">
-            <UsageColumn label="Session total" usage={totals} />
-            {last ? <UsageColumn label="Last turn" usage={last} /> : null}
+            <UsageColumn label="Session total" usage={totals} auth={auth} />
+            {last ? <UsageColumn label="Last turn" usage={last} auth={auth} /> : null}
           </div>
           <p className="usage-note">
-            Reported by the Grok CLI. Cost is an estimate for your own awareness, not a
-            bill. The CLI compacts context on its own, so there is nothing here to manage.
+            Reported by the Grok CLI. {note} The CLI compacts context on its own, so
+            there is nothing here to manage.
           </p>
         </div>
       ) : null}
