@@ -24,6 +24,10 @@ open, showing what was read, edited or run.
 
 ![A Build session: tool call cards for read, edit and shell, with the reply below](docs/images/build.png)
 
+Before a tool runs, you see what it wants to do and decide. Edits show the diff.
+
+![A permission prompt showing the diff an edit would apply, with deny and allow options](docs/images/permission.png)
+
 Chat is app-level and needs no folder. It uses the same account as the CLI.
 
 ![The Chat surface listing previous conversations](docs/images/chat.png)
