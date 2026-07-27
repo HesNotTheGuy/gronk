@@ -45,6 +45,15 @@
   --user-pad: #0e0e0e;
   --tool-pad: #080808;
 
+  /* Inset surfaces: inputs, chips, code blocks, modals — anything that reads as
+     cut INTO the panel rather than raised off it. These were 27 separate
+     hardcoded literals, which is why the light theme could not reach them and
+     rendered dark text on a black field. Values are unchanged from those
+     literals, so dark is identical. */
+  --sunken: #000000;
+  --sunken-2: #050505;
+  --sunken-3: #0a0a0a;
+
   /* Intentional system stacks only (FIX-R5) — no remote CDN, no bundled woff2.
      Identical in dev and packaged builds; no network font requests. */
   --font-display: system-ui, 'Segoe UI', Roboto, Ubuntu, Cantarell, sans-serif;
@@ -223,7 +232,7 @@ button {
   font-weight: 700;
   font-size: 15px;
   letter-spacing: 0.02em;
-  color: #000;
+  color: var(--void);
   background: var(--flare);
   clip-path: polygon(0 0, 100% 0, 100% 72%, 72% 100%, 0 100%);
   box-shadow: 0 0 24px rgba(255, 255, 255, 0.18);
@@ -560,7 +569,7 @@ button {
 
 .btn-primary {
   background: var(--flare);
-  color: #000;
+  color: var(--void);
   border: 1px solid var(--flare);
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.08) inset,
@@ -1051,7 +1060,7 @@ button {
   gap: 6px;
   padding: 4px;
   border: 1px solid var(--line);
-  background: #050505;
+  background: var(--sunken-2);
   border-radius: var(--radius);
   width: fit-content;
   max-width: 100%;
@@ -1198,7 +1207,7 @@ button {
   width: calc(100% - 16px);
   min-width: 0;
   padding: 8px 10px;
-  background: #000;
+  background: var(--sunken);
   border: 1px solid var(--ignite);
   color: var(--ink);
   font-family: var(--font-mono);
@@ -1297,7 +1306,7 @@ button {
   align-items: stretch;
   gap: 8px;
   border-bottom: 1px solid var(--line);
-  background: #000;
+  background: var(--sunken);
 }
 
 .workspace-folder-open {
@@ -1745,7 +1754,7 @@ button {
   margin: 0.85em 0;
   padding: 12px 14px;
   border-radius: var(--radius);
-  background: #000;
+  background: var(--sunken);
   overflow: auto;
   border: 1px solid var(--line-2);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
@@ -1826,7 +1835,7 @@ button {
   font-size: 12px;
   color: var(--ink-3);
   border: 1px solid var(--line-2);
-  background: #000;
+  background: var(--sunken);
   flex-shrink: 0;
 }
 
@@ -1891,7 +1900,7 @@ button {
   padding: 3px 7px;
   border: 1px solid var(--line-2);
   color: var(--ink-3);
-  background: #000;
+  background: var(--sunken);
 }
 
 .tool-chip.status-in_progress,
@@ -2000,7 +2009,7 @@ button {
   font-family: var(--font-display);
   font-size: 11px;
   font-weight: 700;
-  background: #000;
+  background: var(--sunken);
   color: var(--ink);
   border: 1px solid var(--line-2);
   flex-shrink: 0;
@@ -2050,7 +2059,7 @@ button {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  background: #000;
+  background: var(--sunken);
 }
 
 /* ---------- Permission mode bar ---------- */
@@ -2085,7 +2094,7 @@ button {
   text-transform: uppercase;
   padding: 6px 8px;
   border: 1px solid var(--line-2);
-  background: #000;
+  background: var(--sunken);
   color: var(--ink-3);
   border-radius: var(--radius);
   transition:
@@ -2149,7 +2158,7 @@ button {
   margin: 0 auto;
   position: relative;
   border: 1px solid var(--line-2);
-  background: #050505;
+  background: var(--sunken-2);
   border-radius: var(--radius-lg);
   overflow: hidden;
   transition:
@@ -2237,7 +2246,7 @@ button {
 
 .modal {
   width: min(520px, 100%);
-  background: #0a0a0a;
+  background: var(--sunken-3);
   border: 1px solid var(--line-2);
   border-radius: var(--radius-lg);
   padding: 22px;
@@ -2282,7 +2291,7 @@ button {
   margin: 0 0 18px;
   padding: 12px;
   border-radius: var(--radius);
-  background: #000;
+  background: var(--sunken);
   border: 1px solid var(--line);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -2324,7 +2333,7 @@ button {
   width: 40px;
   height: 20px;
   border-radius: 0;
-  background: #000;
+  background: var(--sunken);
   border: 1px solid var(--line-2);
   position: relative;
   transition:
@@ -2458,7 +2467,7 @@ button {
 .model-select {
   width: 100%;
   padding: 9px 10px;
-  background: #000;
+  background: var(--sunken);
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
   color: var(--ink);
@@ -2479,7 +2488,7 @@ button {
 .path-code {
   display: block;
   padding: 10px;
-  background: #000;
+  background: var(--sunken);
   border: 1px solid var(--line);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -2610,6 +2619,27 @@ html[data-theme='light'] {
   --flare: #121212;
   --user-pad: #f0f0ec;
   --tool-pad: #f7f7f4;
+
+  /* Inset surfaces flip with the theme. Without these every input, chip, code
+     block and modal kept a black field while its text turned dark. */
+  --sunken: #f0f0ec;
+  --sunken-2: #f4f4f2;
+  --sunken-3: #ffffff;
+
+  /* The accent is defined as "the brightest thing" for a phosphor tube, which
+     on white is invisible — #eafffb measured 1.06:1 against the page. Inverted
+     to the darkest thing while keeping the teal cast, so the identity survives
+     the flip. */
+  --ignite: #0f5c50;
+  --ignite-dim: rgba(15, 92, 80, 0.1);
+  --ignite-glow: rgba(15, 92, 80, 0.22);
+
+  /* State colours were desaturated for luminance-on-black and measured
+     1.4–2.1:1 on white. Same hues, taken down to carry on a light field. */
+  --signal: #1a6b57;
+  --signal-dim: rgba(26, 107, 87, 0.12);
+  --warn: #7a5c12;
+  --abort: #a02c2c;
 }
 
 html[data-theme='light'] body {
@@ -2633,6 +2663,33 @@ html[data-theme='light'] .sidebar {
 
 html[data-theme='light'] .composer {
   background: #fff;
+}
+
+/* Gradients bake their colours in, so a variable swap cannot reach them. These
+   two were the last dark-on-dark surfaces in light mode: the assistant bubble
+   rendered near-black behind dark body text (1.04:1), and the topbar did the
+   same to the title and the Preview/Export controls. */
+html[data-theme='light'] .message.assistant .bubble {
+  background: linear-gradient(180deg, #ffffff, var(--panel-2));
+}
+
+html[data-theme='light'] .topbar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 244, 242, 0.7));
+}
+
+/* Both sit on a --flare / --ignite fill, which is dark in this theme, so a
+   hardcoded black label disappeared into it. */
+html[data-theme='light'] .btn-ignite,
+html[data-theme='light'] ::selection {
+  color: var(--void);
+}
+
+/* Scrims that fade content out behind the composer and the sidebar footer. They
+   fade to black, which on a light page is a dark band rather than a fade — a
+   contrast check cannot catch this because no text sits on them. */
+html[data-theme='light'] .composer-wrap,
+html[data-theme='light'] .sidebar-footer {
+  background: linear-gradient(180deg, transparent, var(--void) 55%);
 }
 
 html[data-theme='light'] .bubble.md pre,
@@ -2701,11 +2758,13 @@ html[data-theme='light'] .model-select {
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
   overflow: hidden;
-  background: #000;
+  background: var(--sunken);
 }
 
+/* Was #1a1a1a: a dark field that kept dark text, so code was unreadable in
+   light mode. Code blocks follow the theme like every other inset surface. */
 html[data-theme='light'] .code-block {
-  background: #1a1a1a;
+  background: var(--sunken);
 }
 
 .code-block-bar {
@@ -2963,7 +3022,7 @@ html[data-theme='light'] .code-block {
   gap: 8px;
   padding: 8px 8px;
   border: 1px solid var(--line);
-  background: #000;
+  background: var(--sunken);
   border-radius: var(--radius);
 }
 
@@ -3076,7 +3135,7 @@ html[data-theme='light'] .code-block {
   max-width: 100%;
   padding: 4px 8px;
   border: 1px solid var(--line-2);
-  background: #000;
+  background: var(--sunken);
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--ink-3);
@@ -3165,7 +3224,7 @@ html[data-theme='light'] .code-block {
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
   overflow: hidden;
-  background: #000;
+  background: var(--sunken);
   cursor: zoom-in;
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
@@ -3180,7 +3239,7 @@ html[data-theme='light'] .code-block {
   width: 100%;
   max-height: 360px;
   object-fit: contain;
-  background: #0a0a0a;
+  background: var(--sunken-3);
 }
 
 .local-image.compact .local-image-img {
@@ -3561,7 +3620,7 @@ html[data-theme='light'] .code-block {
   padding: 3px 6px 3px 4px;
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
-  background: #000;
+  background: var(--sunken);
   font-family: var(--font-mono);
   font-size: 11px;
   max-width: 200px;
@@ -3605,7 +3664,7 @@ html[data-theme='light'] .attach-chip {
   margin: 0 auto;
   max-height: 220px;
   overflow: auto;
-  background: #0a0a0a;
+  background: var(--sunken-3);
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
   z-index: 20;
@@ -3651,7 +3710,7 @@ html[data-theme='light'] .mention-menu {
   margin: 0 4px 8px;
   width: calc(100% - 8px);
   padding: 7px 9px;
-  background: #000;
+  background: var(--sunken);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   color: var(--ink);
@@ -3818,7 +3877,7 @@ html[data-theme='light'] .session-menu {
   min-width: 0;
   width: calc(100% - 8px);
   padding: 6px 8px;
-  background: #000;
+  background: var(--sunken);
   border: 1px solid var(--ignite);
   color: var(--ink);
   font-family: var(--font-mono);
@@ -4142,7 +4201,7 @@ html[data-theme='light'] .auth-card {
   padding: 12px;
   max-height: 160px;
   overflow: auto;
-  background: #000;
+  background: var(--sunken);
   border: 1px solid var(--line-2);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -5241,18 +5300,22 @@ html[data-theme='light'] .auth-card {
   background: var(--panel-2);
 }
 
+/* Mixed from the accent rather than a fixed rgba, so the ramp inverts with the
+   theme. Hardcoding rgba(234,255,251,...) made levels 1-3 near-white squares on
+   a white page in light mode — invisible, and a contrast check cannot catch it
+   because the cells carry no text. */
 .calendar-day.level-1 {
-  background: rgba(234, 255, 251, 0.16);
+  background: color-mix(in srgb, var(--ignite) 18%, var(--panel-2));
   box-shadow: none;
 }
 
 .calendar-day.level-2 {
-  background: rgba(234, 255, 251, 0.34);
+  background: color-mix(in srgb, var(--ignite) 38%, var(--panel-2));
   box-shadow: none;
 }
 
 .calendar-day.level-3 {
-  background: rgba(234, 255, 251, 0.6);
+  background: color-mix(in srgb, var(--ignite) 65%, var(--panel-2));
   box-shadow: none;
 }
 
