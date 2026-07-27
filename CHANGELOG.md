@@ -19,7 +19,7 @@ private repository, so there is no earlier entry to compare against.
   path as Build with a sandbox working directory, so it never enters your
   project list.
 - Sign-in gate. Nothing runs until the CLI reports an authenticated account.
-- Streaming responses with markdown, code blocks and syntax highlighting.
+- Streaming responses with markdown, and code blocks with a copy button.
 - Tool call cards, with diffs for edits.
 - Permission prompts that show the actual diff or command before you approve,
   plus permission modes and a per-session model picker.
