@@ -9,13 +9,11 @@ interface Props {
   surface: AppSurface
   /** true when main pane is the conversation (not a browse home) */
   inConversation: boolean
-  /** true when main pane is the browse home for this surface */
-  browsing: boolean
-  /** Recent folder workspaces (coding agent) */
+  /** Recent projects (coding agent) */
   projects: ProjectContext[]
-  /** Folder-bound agent sessions (excludes app chat) */
+  /** Project-bound agent sessions (excludes app chat) */
   projectSessions: SessionInfo[]
-  /** App-level chat sessions (not tied to a user folder) */
+  /** App-level chat sessions (not tied to a project) */
   chatSessions: SessionInfo[]
   activeCwd: string | null
   activeSessionId: string | null
@@ -67,10 +65,13 @@ function loadCollapse(): { folders: boolean; sessions: boolean; chats: boolean }
 }
 
 /**
- * Left rail — context for the conversation on screen, never a second copy of it.
- * The browse homes (ChatHome / ProjectHome) own the full lists; while one of
- * those is up the rails collapse to a note plus the surface's primary action,
- * so Folders/Sessions are never rendered twice on the same screen.
+ * Left rail — the navigator for whichever surface you are on.
+ *
+ * It stays put whether you are browsing or inside a conversation, so choosing
+ * Build shows your projects immediately rather than after you have already
+ * picked one. The browse homes still hold the richer view (activity, sessions
+ * per project); the rail is the hop list, capped by SWITCHER_LIMIT / LIST_LIMIT,
+ * and says how many rows it is hiding when it cuts.
  */
 export function Sidebar({
   alwaysApprove,
@@ -78,7 +79,6 @@ export function Sidebar({
   authenticated,
   surface,
   inConversation,
-  browsing,
   projects,
   projectSessions,
   chatSessions,
@@ -112,7 +112,7 @@ export function Sidebar({
     setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  /** Only the open folder's sessions — the cross-folder view is ProjectHome's job */
+  /** Only the open project's sessions — the all-projects view is ProjectHome's job */
   const folderSessionsAll = useMemo(() => {
     if (!activeCwd) return []
     return projectSessions
@@ -143,8 +143,18 @@ export function Sidebar({
   const hiddenFolders = projects.length - folderSwitcher.length
   const hiddenFolderSessions = folderSessionsAll.length - folderSessions.length
 
-  const showChatRail = surface === 'chat' && !browsing
-  const showWorkspaceRails = surface === 'project' && !browsing
+  /**
+   * The rails follow the SURFACE, not whether a conversation is open.
+   *
+   * They used to be hidden while browsing, so picking Build gave you a browse
+   * screen with an empty rail, and the list of projects only appeared after you
+   * had already chosen one — the moment you no longer needed it. Worse, getting
+   * back to the list meant leaving the project entirely, which is what the
+   * "Switch workspace / All" buttons existed to undo. Keeping the list on screen
+   * removes the round trip and both buttons with it.
+   */
+  const showChatRail = surface === 'chat'
+  const showProjectRails = surface === 'project'
 
   return (
     <aside className="sidebar">
@@ -171,7 +181,7 @@ export function Sidebar({
             type="button"
             className={`nav-item ${surface === 'chat' ? 'active' : ''}`}
             onClick={onGoChat}
-            title="App-level chats — no project folder"
+            title="App-level chats — no project"
           >
             Chat
           </button>
@@ -179,7 +189,7 @@ export function Sidebar({
             type="button"
             className={`nav-item ${surface === 'project' ? 'active' : ''}`}
             onClick={onGoProjects}
-            title="Grok working in a folder on your computer"
+            title="Grok working in a project on your computer"
           >
             Build
           </button>
@@ -192,44 +202,12 @@ export function Sidebar({
             <div className="muted-note">
               <strong>Chat</strong> is general Grok in the app.
               <br />
-              <strong>Build</strong> is Grok working in a folder on your computer.
+              <strong>Build</strong> is Grok working in a project on your computer.
             </div>
           </div>
         ) : null}
 
-        {/* ---- Browse homes own the lists — rail keeps the primary action only ---- */}
-        {browsing && surface === 'chat' ? (
-          <div className="sidebar-section">
-            <div className="muted-note">Your chats are listed in the main pane.</div>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm btn-block"
-              disabled={!authenticated}
-              onClick={onOpenChat}
-            >
-              New chat
-            </button>
-          </div>
-        ) : null}
-
-        {browsing && surface === 'project' ? (
-          <div className="sidebar-section">
-            <div className="muted-note">
-              Folders and their sessions are listed in the main pane.
-            </div>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm btn-block"
-              disabled={!authenticated}
-              onClick={() => onOpenProject()}
-              title="Pick a folder in Explorer"
-            >
-              Open folder…
-            </button>
-          </div>
-        ) : null}
-
-        {/* ---- Chat conversation: hop between chats without leaving it ---- */}
+        {/* ---- Chat: the list is here whether or not a chat is open ---- */}
         {showChatRail ? (
           <div className={`sidebar-rail ${open.chats ? 'open' : 'collapsed'}`}>
             <button
@@ -248,7 +226,7 @@ export function Sidebar({
             {open.chats ? (
               <div className="sidebar-rail-body">
                 <div className="sidebar-rail-toolbar">
-                  <div className="sidebar-rail-sub">Saved in the app · no folder</div>
+                  <div className="sidebar-rail-sub">Saved in the app · no project</div>
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm btn-block sidebar-rail-action"
@@ -290,8 +268,8 @@ export function Sidebar({
           </div>
         ) : null}
 
-        {/* ---- Folder conversation: switch folder, or switch session inside it ---- */}
-        {showWorkspaceRails ? (
+        {/* ---- Build: projects, and the sessions inside the open one ---- */}
+        {showProjectRails ? (
           <>
             <div className={`sidebar-rail ${open.folders ? 'open' : 'collapsed'}`}>
               <button
@@ -299,40 +277,33 @@ export function Sidebar({
                 className="sidebar-rail-head"
                 onClick={() => toggle('folders')}
                 aria-expanded={open.folders}
-                title={open.folders ? 'Minimize folders' : 'Expand folders'}
+                title={open.folders ? 'Minimize projects' : 'Expand projects'}
               >
                 <span className="sidebar-rail-chevron" aria-hidden>
                   {open.folders ? '▾' : '▸'}
                 </span>
-                <span className="sidebar-rail-title">Folders</span>
+                <span className="sidebar-rail-title">Projects</span>
                 <span className="sidebar-rail-count">{folderSwitcher.length || ''}</span>
               </button>
               {open.folders ? (
                 <div className="sidebar-rail-body">
+                  {/* One action, not two. "Open…" and "All" were a pair of large
+                      buttons for adding a project and for returning to a list
+                      that is now permanently on screen. Adding is the only one
+                      of those the list cannot do itself. */}
                   <div className="sidebar-rail-toolbar">
-                    <div className="sidebar-rail-sub">Switch workspace</div>
-                    <div className="sidebar-rail-actions">
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm sidebar-rail-action"
-                        disabled={!authenticated}
-                        onClick={() => onOpenProject()}
-                        title="Pick a folder in Explorer"
-                      >
-                        Open…
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm sidebar-rail-action"
-                        onClick={onGoProjects}
-                        title="All folders, with their sessions and activity"
-                      >
-                        All
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm btn-block sidebar-rail-action"
+                      disabled={!authenticated}
+                      onClick={() => onOpenProject()}
+                      title="Pick a folder on your computer to work in"
+                    >
+                      + Add project
+                    </button>
                   </div>
                   {folderSwitcher.length === 0 ? (
-                    <div className="muted-note">No folders yet</div>
+                    <div className="muted-note">No projects yet</div>
                   ) : (
                     folderSwitcher.map((p) => {
                       const active = !!activeCwd && pathsEqual(p.cwd, activeCwd)
@@ -356,7 +327,7 @@ export function Sidebar({
                       type="button"
                       className="sidebar-rail-more"
                       onClick={onGoProjects}
-                      title="Open the full folder list"
+                      title="All projects, with their sessions and activity"
                     >
                       +{hiddenFolders} more · See all
                     </button>
@@ -365,6 +336,10 @@ export function Sidebar({
               ) : null}
             </div>
 
+            {/* Only once a project is open. With none, this rail was a header, a
+                disabled button and a line telling you to go do the thing the
+                rail above it already offers. */}
+            {activeCwd ? (
             <div className={`sidebar-rail ${open.sessions ? 'open' : 'collapsed'}`}>
               <button
                 type="button"
@@ -383,7 +358,7 @@ export function Sidebar({
                 <div className="sidebar-rail-body">
                   <div className="sidebar-rail-toolbar">
                     <div className="sidebar-rail-sub">
-                      {activeCwd ? folderName(activeCwd) : 'No folder open'}
+                      {activeCwd ? folderName(activeCwd) : 'No project open'}
                     </div>
                     <button
                       type="button"
@@ -392,8 +367,8 @@ export function Sidebar({
                       onClick={onNewProjectSession}
                       title={
                         activeCwd
-                          ? 'Start a fresh agent session in this folder'
-                          : 'Open a folder first'
+                          ? 'Start a fresh agent session in this project'
+                          : 'Add a project first'
                       }
                     >
                       New session
@@ -401,7 +376,7 @@ export function Sidebar({
                   </div>
                   {folderSessions.length === 0 ? (
                     <div className="muted-note">
-                      {activeCwd ? 'No sessions in this folder yet' : 'Open a folder first'}
+                      {activeCwd ? 'No sessions in this project yet' : 'Add a project first'}
                     </div>
                   ) : (
                     folderSessions.map((s) => (
@@ -433,6 +408,7 @@ export function Sidebar({
                 </div>
               ) : null}
             </div>
+            ) : null}
           </>
         ) : null}
       </div>

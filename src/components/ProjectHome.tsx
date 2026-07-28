@@ -26,9 +26,9 @@ interface Props {
 }
 
 /**
- * Build landing page: every folder, with that folder's sessions and activity
- * nested underneath. This is the only cross-folder view — the sidebar rails
- * stay scoped to the folder currently open, so the two never repeat a list.
+ * Build landing page: every project, with its sessions and activity nested
+ * underneath. Richer than the sidebar rail, which is a capped hop list scoped to
+ * the project currently open.
  * Chat sessions never appear here (filtered upstream).
  */
 export function ProjectHome({
@@ -60,13 +60,13 @@ export function ProjectHome({
           Code with the <span>agent</span>
         </h1>
         <p className="home-copy">
-          Open a folder for the coding agent. Every folder and its sessions live here; once you are
-          inside one, the left rail keeps just that folder. Chat stays on the Chat tab.
+          Point the coding agent at a project. Every project and its sessions are listed here and
+          in the left rail, which stays put while you work. Chat stays on the Chat tab.
         </p>
         <div className="home-actions">
           {authenticated ? (
             <button type="button" className="btn btn-primary" onClick={onOpenFolder}>
-              Open folder…
+              + Add project
             </button>
           ) : (
             <button type="button" className="btn btn-primary" onClick={onSignIn}>
@@ -79,7 +79,7 @@ export function ProjectHome({
       <div className="browse-panel workspace-folder-list">
         {groups.length === 0 ? (
           <div className="browse-empty">
-            No folders yet. Open a folder to start a coding-agent session.
+            No projects yet. Add one to start a coding-agent session.
           </div>
         ) : (
           groups.map((g) => {

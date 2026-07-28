@@ -172,7 +172,6 @@ export function App() {
         authenticated={g.isAuthenticated}
         surface={surface}
         inConversation={inConversation}
-        browsing={g.browsing}
         projects={g.recentProjects}
         projectSessions={g.projectOnlySessions}
         chatSessions={g.chatSessions}
@@ -213,16 +212,16 @@ export function App() {
                     ? 'Your chats'
                     : 'Chat with Grok'
                   : g.browsing
-                    ? 'Folders & sessions'
-                    : g.projectName || 'Folder'}
+                    ? 'Your projects'
+                    : g.projectName || 'Project'}
             </div>
             <div className="topbar-sub">
               {surface === 'home'
-                ? 'Chat is app-wide · Build is Grok working in a folder on your computer'
+                ? 'Chat is app-wide · Build is Grok working in a project on your computer'
                 : surface === 'chat' && g.browsing
-                  ? 'App-level chats — no project folder required'
+                  ? 'App-level chats — no project required'
                   : surface === 'project' && g.browsing
-                    ? 'Open a folder for the coding agent, or resume a session'
+                    ? 'Pick a project for the coding agent, or resume a session'
                     : surface === 'chat'
                       ? 'General conversation · saved in the app'
                       : g.cwd || ''}

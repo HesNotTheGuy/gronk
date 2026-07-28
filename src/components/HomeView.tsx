@@ -67,8 +67,8 @@ export function HomeView({
           Grok on your <span>desktop</span>
         </h1>
         <p className="home-copy">
-          <strong>Chat</strong> is general Grok in the app (no folder). <strong>Build</strong> is Grok
-          working in a folder on your computer — reading, editing, and running your files. Frequency
+          <strong>Chat</strong> is general Grok in the app (no project). <strong>Build</strong> is Grok
+          working in a project on your computer — reading, editing, and running your files. Frequency
           shows how much you&apos;ve been using each item.
         </p>
 
