@@ -4,6 +4,34 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-07-28
+
+### Fixed
+
+- **Light mode was unusable.** Twenty-four elements were unreadable, several at
+  a contrast ratio of 1.03:1 — text the same colour as the surface behind it.
+  Twenty-seven rules painted their own black background, so no theme could reach
+  them: the palette flipped, the text turned dark, and the surfaces stayed dark.
+  The accent and the state colours were never overridden either. Now measured at
+  zero failures across five views, with dark verified unchanged.
+- **The usage meter claimed you had spent money you had not.** It read
+  "~$0.28 est." on every session. That figure is only a charge when you sign in
+  with an API key; with a Grok account nothing is billed per token and the same
+  number is a notional API-rate equivalent. Dollars now appear only when they
+  are real, labelled "At API rates" otherwise. Token counts are unchanged.
+
+### Changed
+
+- **The sidebar is now a navigator that stays put.** Choosing Build shows your
+  projects immediately, rather than after you had already opened one. Switching
+  projects no longer means leaving the session you are in.
+- **One word for a project.** "Folder" and "workspace" both meant the same thing
+  as "project" in different corners of the interface. A *project* is a directory
+  the agent works in; a *session* is one conversation. "Workspace" is gone.
+- "Open folder…" is now "＋ Add project", since every existing project is
+  already listed. The paired "All" button and the Sessions rail's empty state
+  are gone, which is a row of buttons and a dead panel reclaimed.
+
 ## [0.1.1] - 2026-07-27
 
 ### Fixed
@@ -72,5 +100,6 @@ private repository, so there is no earlier entry to compare against.
   warn on first launch.
 - No automatic updates. Code signing has to land first.
 
+[0.1.2]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.2
 [0.1.1]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.1
 [0.1.0]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.0
