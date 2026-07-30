@@ -27,6 +27,16 @@ let currentCwd: string | null = null
 let lastBounds = { x: 0, y: 0, width: 0, height: 0 }
 let emit: Emit = () => {}
 let urlFound = false
+/**
+ * Which run the current output belongs to.
+ *
+ * stopPreview nulled devProc but left the stdout listeners attached, so a chunk
+ * arriving in the kill window re-entered attachView and rebuilt the pane AFTER
+ * the user had stopped it. Detaching listeners alone still races callbacks
+ * already queued; every handler checks its generation instead, and stopping
+ * bumps the counter so anything in flight is stale by definition.
+ */
+let runId = 0
 
 const PREVIEW_PARTITION = 'preview'
 
@@ -233,7 +243,10 @@ export function startPreview(cwd: string, override?: string): { ok: boolean; mes
     return { ok: false, message: msg }
   }
 
+  const myRun = ++runId
+
   const onData = (chunk: Buffer): void => {
+    if (myRun !== runId) return
     const raw = chunk.toString()
     emit('preview-log', redactSecrets(raw))
     if (!urlFound) {
@@ -249,9 +262,15 @@ export function startPreview(cwd: string, override?: string): { ok: boolean; mes
   devProc.stdout?.on('data', onData)
   devProc.stderr?.on('data', onData)
   devProc.on('error', (err) => {
+    if (myRun !== runId) return
+    // 'error' means the child never ran — a bad cwd emits error:ENOENT then
+    // close, and NEVER exit, so nothing else would clear devProc and
+    // getPreviewStatus() reported running:true forever with no pid.
+    devProc = null
     status({ error: err.message })
   })
   devProc.on('exit', (code) => {
+    if (myRun !== runId) return
     emit('preview-log', `\n[dev server exited: code ${code ?? '?'}]\n`)
     // Server died; tear down the pane too.
     stopPreview()
@@ -338,6 +357,8 @@ function killTree(proc: ChildProcess): void {
 }
 
 export function stopPreview(): void {
+  // Invalidate first: everything still queued from this run is now stale.
+  runId++
   if (view) {
     try {
       if (hostWindow && !hostWindow.isDestroyed()) hostWindow.contentView.removeChildView(view)

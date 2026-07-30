@@ -50,8 +50,40 @@ import type {
 // ── Read paths ─────────────────────────────────────────────────────
 
 export async function listInstalledPlugins(): Promise<Plugin[]> {
+  return (await refreshInstalledPlugins()) ?? []
+}
+
+/**
+ * The installed list, or null when the CLI's output could not be read.
+ *
+ * runGrokJson returns null for empty or unparseable stdout, and mapPlugins turns
+ * that into [] — indistinguishable from "you have no plugins". After a
+ * SUCCESSFUL install that emptied the Installed tab, so a working install looked
+ * like it had wiped everything. Callers that report state to the UI need to tell
+ * the two apart; callers that just want a list can keep using the wrapper above.
+ */
+async function refreshInstalledPlugins(): Promise<Plugin[] | null> {
   const raw = await runGrokJson<unknown>(['plugin', 'list', '--json'], { timeoutMs: 15_000 })
+  if (raw === null) return null
   return mapPlugins(raw, 'installed')
+}
+
+/**
+ * Shape a mutating command's result.
+ *
+ * The refresh is skipped entirely when the command failed — nothing changed, so
+ * spending another CLI call to re-read an unchanged list only delays the error.
+ * When it succeeds but the re-read cannot be parsed, `plugins` is omitted rather
+ * than sent as [], which makes the renderer fall back to its own refresh instead
+ * of rendering an empty tab.
+ */
+async function withRefreshedPlugins(
+  ok: boolean,
+  message: string
+): Promise<PluginActionResult> {
+  if (!ok) return { ok, message }
+  const plugins = await refreshInstalledPlugins()
+  return plugins ? { ok, message, plugins } : { ok, message }
 }
 
 export async function listMarketplaces(): Promise<MarketplaceSource[]> {
@@ -213,11 +245,10 @@ export async function installPlugin(source: string, trust: boolean): Promise<Plu
 
   const result = await runGrokCli(args, { timeoutMs: 180_000 })
   const ok = result.code === 0
-  return {
+  return withRefreshedPlugins(
     ok,
-    message: cliMessage(result, ok ? `Installed ${src}` : `Could not install ${src}`),
-    plugins: await listInstalledPlugins()
-  }
+    cliMessage(result, ok ? `Installed ${src}` : `Could not install ${src}`)
+  )
 }
 
 export async function enablePlugin(name: string): Promise<PluginActionResult> {
@@ -239,11 +270,10 @@ export async function uninstallPlugin(name: string): Promise<PluginActionResult>
 async function runPluginCommand(args: string[], okMessage: string): Promise<PluginActionResult> {
   const result = await runGrokCli(args, { timeoutMs: 60_000 })
   const ok = result.code === 0
-  return {
+  return withRefreshedPlugins(
     ok,
-    message: cliMessage(result, ok ? okMessage : 'The Grok CLI reported a failure.'),
-    plugins: await listInstalledPlugins()
-  }
+    cliMessage(result, ok ? okMessage : 'The Grok CLI reported a failure.')
+  )
 }
 
 /**
