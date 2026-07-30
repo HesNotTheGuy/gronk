@@ -143,6 +143,46 @@ export function auditPlugin(plugin: Plugin): RiskTag[] {
  * marketplace repo URL, which installs from the marketplace rather than the plugin's
  * upstream; that asymmetry is why the trust modal shows the source it is about to use.
  */
+/**
+ * Where a plugin actually comes from, e.g. `github.com/xai-org`.
+ *
+ * The card used to show `plugin.marketplace` as a badge — a name typed into a
+ * config file, which anyone can set to "xAI Official" and inherit the same
+ * visual authority as the real catalog. The host and account CANNOT be forged
+ * that way: publishing under github.com/xai-org means controlling that account.
+ *
+ * So the origin is displayed and the name is not treated as a credential.
+ * Deliberately no allow-list of "verified" publishers: that would be Gronk
+ * vouching for third parties it has never checked, and any badge simply moves
+ * the target — people stop reading the origin and scan for the mark instead.
+ *
+ * Returns null when there is no usable URL, so the caller renders nothing rather
+ * than an empty chip that reads as "no origin, therefore fine".
+ */
+export function sourceOrigin(url: string | null | undefined): string | null {
+  if (typeof url !== 'string') return null
+  const raw = url.trim()
+  if (!raw) return null
+
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return null
+  }
+  // Only web origins are meaningful to show. Anything else is not a provenance
+  // a user can reason about, and installPlugin refuses it anyway.
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null
+
+  const host = parsed.hostname.toLowerCase()
+  if (!host) return null
+
+  // First path segment is the account or org on every common forge, which is the
+  // part that actually identifies who published this.
+  const account = parsed.pathname.split('/').filter(Boolean)[0]
+  return account ? `${host}/${account}` : host
+}
+
 export function installSource(plugin: Plugin): string {
   const url = typeof plugin?.sourceUrl === 'string' ? plugin.sourceUrl.trim() : ''
   return url

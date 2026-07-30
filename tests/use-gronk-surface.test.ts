@@ -117,6 +117,9 @@ const EXPECTED_MEMBERS: string[] = [
   "showCliInstall",
   "showSettings",
   "showYoloConfirm",
+  // Skills on disk, for the Skills tab. Read from ~/.grok/skills and the CLI's
+  // bundled set — nothing is installed through Gronk, the folder IS the install.
+  "skills",
   "startPreview",
   "stopPreview",
   "storeHealth",

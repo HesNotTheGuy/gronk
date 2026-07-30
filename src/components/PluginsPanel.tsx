@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import type { McpAddInput, McpServer, MarketplaceSource, Plugin } from '../../shared/types'
+import type { McpAddInput, McpServer, MarketplaceSource, Plugin,
+  InstalledSkill
+} from '../../shared/types'
 import { McpServersPanel } from './McpServersPanel'
 import { PluginCard } from './PluginCard'
 import { PluginDetailsModal } from './PluginDetailsModal'
 import { PluginTrustModal } from './PluginTrustModal'
 import { plainText } from '../lib/plugin-view'
 
-type Tab = 'installed' | 'marketplace' | 'mcp'
+type Tab = 'installed' | 'skills' | 'marketplace' | 'mcp'
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'installed', label: 'Installed' },
+  { id: 'skills', label: 'Skills' },
   { id: 'marketplace', label: 'Marketplace' },
   { id: 'mcp', label: 'MCP servers' }
 ]
@@ -31,6 +34,7 @@ interface Props {
   available: Plugin[]
   marketplaces: MarketplaceSource[]
   mcpServers: McpServer[]
+  skills: InstalledSkill[]
   loading: boolean
   error: string | null
   /** Name (or install source) of the entry with an action in flight */
@@ -54,6 +58,7 @@ export function PluginsPanel({
   available,
   marketplaces,
   mcpServers,
+  skills,
   loading,
   error,
   busyName,
@@ -136,6 +141,7 @@ export function PluginsPanel({
               {t.label}
               {t.id === 'installed' ? ` (${installed.length})` : null}
               {t.id === 'mcp' ? ` (${mcpServers.length})` : null}
+              {t.id === 'skills' ? ` (${skills.length})` : null}
             </button>
           ))}
           <div className="plugins-tabs-spacer" />
@@ -151,7 +157,34 @@ export function PluginsPanel({
 
         {error ? <p className="settings-hint warn-text plugins-error">{error}</p> : null}
 
-        {tab === 'mcp' ? (
+        {tab === 'skills' ? (
+          <div className="plugins-body">
+            <p className="settings-hint">
+              A skill is a folder containing SKILL.md. Drop one into{' '}
+              <code className="path-inline">~/.grok/skills</code> and it appears here — that
+              is the whole install. Bundled skills ship with the Grok CLI.
+            </p>
+            {skills.length === 0 ? (
+              <div className="browse-empty">No skills found.</div>
+            ) : (
+              <div className="skill-list">
+                {skills.map((skill) => (
+                  <div key={`${skill.source}:${skill.directory}`} className="skill-row">
+                    <div className="skill-head">
+                      <span className="plugin-name">{plainText(skill.name, 80)}</span>
+                      <span className={`plugin-chip ${skill.source === 'user' ? 'hot' : ''}`}>
+                        {skill.source === 'user' ? 'yours' : 'bundled'}
+                      </span>
+                    </div>
+                    <p className="plugin-desc">
+                      {plainText(skill.description) || 'No description provided.'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : tab === 'mcp' ? (
           <div className="plugins-body">
             <McpServersPanel
               servers={mcpServers}

@@ -16,7 +16,8 @@ import {
   mapPlugin,
   mapPlugins,
   parseGitRemote,
-  parseGitRemoteUrl
+  parseGitRemoteUrl,
+  parseSkillFrontmatter
 } from '../electron/main/plugins-map'
 
 // ── Option injection (SKILLS-PLUGINS-SPEC Gotcha #8) ────────────────
@@ -524,4 +525,65 @@ test('cliMessage redacts, trims and falls back', () => {
   const out = cliMessage({ code: 1, stdout: 'api_key=SUPERSECRET123', stderr: '' }, 'fallback')
   assert.ok(!out.includes('SUPERSECRET123'))
   assert.ok(cliMessage({ code: 1, stdout: 'x'.repeat(2000), stderr: '' }, 'f').length <= 600)
+})
+
+// ── SKILL.md front matter ──────────────────────────────────────────────────
+
+test('name and description are read from the front matter', () => {
+  const parsed = parseSkillFrontmatter('---\nname: code-review\ndescription: Be harsh\n---\n\n# Body')
+  assert.deepEqual(parsed, { name: 'code-review', description: 'Be harsh' })
+})
+
+// Every real skill on disk that failed before this: `description: >` returned a
+// description of literally ">".
+test('a folded block scalar is joined into one line', () => {
+  const parsed = parseSkillFrontmatter(
+    '---\nname: build-with-ai\ndescription: >\n  Use whenever adding AI\n  features to an app.\n---\n'
+  )
+  assert.equal(parsed?.description, 'Use whenever adding AI features to an app.')
+})
+
+test('a literal block scalar keeps its line breaks', () => {
+  const parsed = parseSkillFrontmatter('---\nname: x\ndescription: |\n  one\n  two\n---\n')
+  assert.equal(parsed?.description, 'one\ntwo')
+})
+
+test('a chomping indicator is accepted', () => {
+  assert.equal(parseSkillFrontmatter('---\nname: x\ndescription: >-\n  a b\n---\n')?.description, 'a b')
+})
+
+test('a block ends at the next unindented key', () => {
+  const parsed = parseSkillFrontmatter(
+    '---\nname: x\ndescription: >\n  wrapped text\nlicense: MIT\n---\n'
+  )
+  assert.equal(parsed?.description, 'wrapped text')
+})
+
+test('only the first colon splits, so a description may contain colons', () => {
+  const parsed = parseSkillFrontmatter('---\nname: x\ndescription: Use for X: then Y\n---\n')
+  assert.equal(parsed?.description, 'Use for X: then Y')
+})
+
+test('a name is required; a description is not', () => {
+  assert.deepEqual(parseSkillFrontmatter('---\nname: solo\n---\n'), { name: 'solo' })
+  assert.equal(parseSkillFrontmatter('---\ndescription: no name here\n---\n'), null)
+})
+
+test('anything without a front-matter block is not a skill', () => {
+  assert.equal(parseSkillFrontmatter('# Just markdown\n'), null)
+  assert.equal(parseSkillFrontmatter('---\nname: unterminated\n'), null)
+  assert.equal(parseSkillFrontmatter(''), null)
+  assert.equal(parseSkillFrontmatter(null), null)
+})
+
+// The declared name becomes a directory name when a skill is added, so a
+// separator or traversal segment in it must never be accepted.
+test('a name that could escape its directory is rejected', () => {
+  for (const bad of ['../evil', 'a/b', 'a\b', '..']) {
+    assert.equal(parseSkillFrontmatter(`---\nname: ${bad}\n---\n`), null, bad)
+  }
+})
+
+test('a leading BOM does not defeat the block', () => {
+  assert.equal(parseSkillFrontmatter('\uFEFF---\nname: bom\n---\n')?.name, 'bom')
 })

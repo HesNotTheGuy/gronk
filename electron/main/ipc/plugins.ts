@@ -21,7 +21,8 @@ import {
   listMcpServers,
   mcpDoctor,
   removeMcpServer,
-  uninstallPlugin
+  uninstallPlugin,
+  listSkills
 } from '../plugins'
 import {
   assertCliName,
@@ -50,6 +51,11 @@ export function registerPluginsIpc(): void {
   ipcMain.handle('gronk:plugin-marketplaces', async (e) => {
     assertTrustedSender(e)
     return listMarketplaces()
+  })
+
+  ipcMain.handle('gronk:list-skills', async (e) => {
+    assertTrustedSender(e)
+    return listSkills()
   })
 
   ipcMain.handle('gronk:plugin-install', async (e, source: unknown, trust: unknown) => {

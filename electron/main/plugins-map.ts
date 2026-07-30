@@ -769,3 +769,69 @@ export function mapMcpServers(raw: unknown): McpServer[] {
   }
   return redactValue(out) as McpServer[]
 }
+
+// ── Skills ─────────────────────────────────────────────────────────
+
+/**
+ * Read `name` and `description` out of a SKILL.md front-matter block.
+ *
+ * A skill is just a directory containing SKILL.md, and the same format is used
+ * by other agent tools — the identical file works in ~/.claude/skills and
+ * ~/.grok/skills. Parsing is deliberately minimal: only the two keys that get
+ * displayed, only from the leading `---` block, and a value may contain colons
+ * because descriptions routinely do.
+ *
+ * Returns null when there is no front matter or no name, so a stray markdown
+ * file in the skills directory is skipped rather than listed as a nameless row.
+ */
+export function parseSkillFrontmatter(
+  text: unknown
+): { name: string; description?: string } | null {
+  if (typeof text !== 'string') return null
+  // Tolerate a BOM and leading blank lines; the block must still come first.
+  const body = text.replace(/^\uFEFF/, '').replace(/^\s*\n/, '')
+  if (!body.startsWith('---')) return null
+
+  const end = body.indexOf('\n---', 3)
+  if (end < 0) return null
+
+  const lines = body.slice(3, end).split('\n')
+  let name = ''
+  let description = ''
+
+  for (let i = 0; i < lines.length; i++) {
+    const at = lines[i].indexOf(':')
+    if (at < 0) continue
+    const key = lines[i].slice(0, at).trim().toLowerCase()
+    if (key !== 'name' && key !== 'description') continue
+
+    // Split on the FIRST colon only: "description: Use for X: do Y" is common.
+    let value = lines[i].slice(at + 1).trim().replace(/^["']|["']$/g, '')
+
+    // YAML block scalars. Real skills write `description: >` with the text on
+    // the following indented lines, and reading only the marker produced a
+    // description of literally ">". `>` folds to spaces, `|` keeps newlines,
+    // and either may carry a chomping indicator such as `>-`.
+    if (/^[>|][-+]?$/.test(value)) {
+      const folded = value.startsWith('>')
+      const collected: string[] = []
+      while (i + 1 < lines.length) {
+        const next = lines[i + 1]
+        // A blank line belongs to the block; a non-indented one ends it.
+        if (next.trim() && !/^[ \t]/.test(next)) break
+        collected.push(next.trim())
+        i++
+      }
+      value = collected.join(folded ? ' ' : '\n').trim()
+    }
+
+    if (key === 'name' && !name) name = value
+    else if (key === 'description' && !description) description = value
+  }
+
+  if (!name || CONTROL_CHARS.test(name)) return null
+  // The name becomes a directory name when a skill is added, so it must never
+  // carry a separator or a traversal segment.
+  if (/[\/]/.test(name) || name.includes('..')) return null
+  return description ? { name, description } : { name }
+}

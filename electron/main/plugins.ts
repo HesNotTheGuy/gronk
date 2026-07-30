@@ -19,6 +19,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { runGrokCli, runGrokJson } from './grok-cli'
 import { grokHome } from './grok-home'
+import { redactSecrets } from './redact'
 import {
   applyPinnedShas,
   asList,
@@ -35,7 +36,8 @@ import {
   str,
   type RawMarketplace,
   type RawMarketplaceCache,
-  isInstallableSource
+  isInstallableSource,
+  parseSkillFrontmatter
 } from './plugins-map'
 import type {
   McpActionResult,
@@ -44,7 +46,8 @@ import type {
   McpServer,
   MarketplaceSource,
   Plugin,
-  PluginActionResult
+  PluginActionResult,
+  InstalledSkill
 } from '../../shared/types'
 
 // ── Read paths ─────────────────────────────────────────────────────
@@ -344,4 +347,60 @@ export async function removeMcpServer(name: string, scope?: McpScope): Promise<M
     ),
     servers: await listMcpServers()
   }
+}
+
+// ── Skills ─────────────────────────────────────────────────────────
+
+/** Bound what a directory scan will look at; these are user-writable paths. */
+const MAX_SKILLS = 400
+const MAX_SKILL_FILE_BYTES = 1_000_000
+
+/**
+ * Every skill on this machine, from both places the CLI reads.
+ *
+ * A skill is a directory containing SKILL.md — that is the whole format, which
+ * is why the identical folder works in ~/.claude/skills and ~/.grok/skills.
+ * Nothing is installed or registered: dropping the folder in IS the install, so
+ * listing the directories is the honest source of truth.
+ *
+ * Reads only. Unreadable or malformed entries are skipped rather than surfaced
+ * as broken rows.
+ */
+export async function listSkills(): Promise<InstalledSkill[]> {
+  const roots: Array<{ dir: string; source: InstalledSkill['source'] }> = [
+    { dir: path.join(grokHome(), 'skills'), source: 'user' },
+    { dir: path.join(grokHome(), 'bundled', 'skills'), source: 'bundled' }
+  ]
+
+  const out: InstalledSkill[] = []
+  const seen = new Set<string>()
+  for (const { dir, source } of roots) {
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      if (out.length >= MAX_SKILLS) return out
+      if (!entry.isDirectory()) continue
+
+      const file = path.join(dir, entry.name, 'SKILL.md')
+      const stat = await fs.stat(file).catch(() => null)
+      if (!stat?.isFile() || stat.size > MAX_SKILL_FILE_BYTES) continue
+
+      const text = await fs.readFile(file, 'utf8').catch(() => null)
+      const parsed = parseSkillFrontmatter(text)
+      if (!parsed) continue
+
+      // A user skill shadows a bundled one of the same name, which is the order
+      // the roots are scanned in. Listing both would imply two are active.
+      const key = parsed.name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      out.push({
+        name: parsed.name,
+        description: parsed.description ? redactSecrets(parsed.description).slice(0, 400) : undefined,
+        source,
+        directory: entry.name
+      })
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name))
 }

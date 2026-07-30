@@ -68,6 +68,7 @@ const api: GronkApi = {
   previewSetUrl: (url: string) => ipcRenderer.invoke('gronk:preview-set-url', url),
   previewReload: () => ipcRenderer.invoke('gronk:preview-reload'),
   previewStatus: () => ipcRenderer.invoke('gronk:preview-status'),
+  listSkills: () => ipcRenderer.invoke('gronk:list-skills'),
   listInstalledPlugins: () => ipcRenderer.invoke('gronk:plugin-list'),
   listAvailablePlugins: () => ipcRenderer.invoke('gronk:plugin-available'),
   listMarketplaces: () => ipcRenderer.invoke('gronk:plugin-marketplaces'),

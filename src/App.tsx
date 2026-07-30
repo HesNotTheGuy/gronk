@@ -721,6 +721,7 @@ export function App() {
         available={g.availablePlugins}
         marketplaces={g.marketplaces}
         mcpServers={g.mcpServers}
+        skills={g.skills}
         loading={g.pluginsLoading}
         error={g.pluginsError}
         busyName={g.pluginBusy}

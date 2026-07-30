@@ -510,6 +510,17 @@ export interface McpServer {
   detail?: string
 }
 
+/** A skill on disk: a directory containing SKILL.md. */
+export interface InstalledSkill {
+  /** From the front matter, not the folder name. */
+  name: string
+  description?: string
+  /** 'user' = you added it; 'bundled' = shipped with the Grok CLI. */
+  source: 'user' | 'bundled'
+  /** The folder it lives in, which can differ from the declared name. */
+  directory: string
+}
+
 export interface PluginActionResult {
   ok: boolean
   message: string
@@ -659,6 +670,8 @@ export interface GronkApi {
   }>
   // Plugins & Skills
   listInstalledPlugins: () => Promise<Plugin[]>
+  /** Skills on disk, from ~/.grok/skills and the CLI's bundled set. */
+  listSkills: () => Promise<InstalledSkill[]>
   listAvailablePlugins: () => Promise<Plugin[]>
   listMarketplaces: () => Promise<MarketplaceSource[]>
   installPlugin: (source: string, trust: boolean) => Promise<PluginActionResult>

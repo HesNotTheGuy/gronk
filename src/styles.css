@@ -5407,3 +5407,68 @@ html[data-theme='light'] .sidebar-search-input {
   background: var(--panel-2);
   color: var(--ink);
 }
+
+/* ---------- Plugin provenance ----------
+   The marketplace NAME is a self-declared string from a config file — anyone can
+   set theirs to "xAI Official". It renders as a plain chip. The ORIGIN is the
+   host and account the plugin is actually published under, which cannot be
+   claimed without controlling that account, so it is the thing worth reading.
+
+   Deliberately NOT styled as a badge or seal. A mark of approval would be Gronk
+   vouching for publishers it has never checked, and any badge just moves the
+   target: people stop reading the origin and scan for the mark instead. */
+.plugin-origin {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 3px;
+  color: var(--ink-3);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  white-space: nowrap;
+}
+
+html[data-theme='light'] .plugin-origin {
+  color: var(--ink-3);
+  border-color: var(--line-2);
+}
+
+/* ---------- Skills list ----------
+   A skill has no install state to act on — the folder's presence IS the install
+   — so these are rows, not cards with buttons. */
+.skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.skill-row {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.skill-row:last-child {
+  border-bottom: none;
+}
+
+.skill-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+/* A path INSIDE a sentence. .path-code is a block for standalone paths, and
+   using it inline broke the sentence across three lines. */
+.path-inline {
+  display: inline;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--ink-2);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}

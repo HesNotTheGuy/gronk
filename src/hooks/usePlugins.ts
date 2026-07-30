@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react'
-import type { MarketplaceSource, McpAddInput, McpServer, Plugin } from '../../shared/types'
+import type { MarketplaceSource, McpAddInput, McpServer, Plugin,
+  InstalledSkill
+} from '../../shared/types'
 
 /**
  * Plugins, marketplaces and MCP servers.
@@ -14,6 +16,7 @@ export function usePlugins() {
   const [availablePlugins, setAvailablePlugins] = useState<Plugin[]>([])
   const [marketplaces, setMarketplaces] = useState<MarketplaceSource[]>([])
   const [mcpServers, setMcpServers] = useState<McpServer[]>([])
+  const [skills, setSkills] = useState<InstalledSkill[]>([])
   const [pluginsLoading, setPluginsLoading] = useState(false)
   const [pluginsError, setPluginsError] = useState<string | null>(null)
   const [pluginBusy, setPluginBusy] = useState<string | null>(null)
@@ -22,14 +25,19 @@ export function usePlugins() {
     setPluginsLoading(true)
     setPluginsError(null)
     try {
-      const [inst, mkts, servers] = await Promise.all([
+      // Skills are read straight off disk, so they cost nothing and never fail
+      // the way a CLI call can — but they are fetched together so one refresh
+      // brings the whole panel up to date.
+      const [inst, mkts, servers, skillList] = await Promise.all([
         window.gronk.listInstalledPlugins(),
         window.gronk.listMarketplaces(),
-        window.gronk.listMcpServers()
+        window.gronk.listMcpServers(),
+        window.gronk.listSkills()
       ])
       setInstalledPlugins(inst)
       setMarketplaces(mkts)
       setMcpServers(servers)
+      setSkills(skillList)
     } catch (err) {
       setPluginsError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -120,6 +128,7 @@ export function usePlugins() {
   }, [])
 
   return {
+    skills,
     installedPlugins,
     availablePlugins,
     marketplaces,

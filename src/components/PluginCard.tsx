@@ -1,5 +1,5 @@
 import type { Plugin } from '../../shared/types'
-import { componentCounts, plainText } from '../lib/plugin-view'
+import { componentCounts, plainText, sourceOrigin } from '../lib/plugin-view'
 
 interface Props {
   plugin: Plugin
@@ -22,6 +22,7 @@ export function PluginCard({
   onDetails
 }: Props) {
   const counts = componentCounts(plugin)
+  const origin = sourceOrigin(plugin.sourceUrl)
   const available = plugin.status === 'available'
   const isDisabled = plugin.status === 'disabled' || plugin.enabled === false
   const name = plainText(plugin.name, 80)
@@ -37,8 +38,21 @@ export function PluginCard({
         {plugin.version ? (
           <span className="plugin-chip">v{plainText(plugin.version, 24)}</span>
         ) : null}
+        {/*
+          The marketplace NAME is a string from a config file — anyone can set it
+          to "xAI Official". It is shown as a plain chip with no authority
+          styling, and the origin below is what a user should actually read.
+        */}
         {plugin.marketplace ? (
-          <span className="plugin-badge">{plainText(plugin.marketplace, 40)}</span>
+          <span className="plugin-chip">{plainText(plugin.marketplace, 40)}</span>
+        ) : null}
+        {origin ? (
+          <span
+            className="plugin-origin"
+            title={`Published from ${origin}. The name beside it is self-declared; this is not.`}
+          >
+            {origin}
+          </span>
         ) : null}
         {plugin.category ? (
           <span className="plugin-chip">{plainText(plugin.category, 32)}</span>

@@ -5,7 +5,8 @@ import {
   componentCounts,
   componentLine,
   installSource,
-  plainText
+  plainText,
+  sourceOrigin
 } from '../src/lib/plugin-view'
 import type { Plugin } from '../shared/types'
 
@@ -136,4 +137,59 @@ test('installSource uses sourceUrl and never free-form prose', () => {
 test('a plugin with no sourceUrl yields no install target rather than its name', () => {
   assert.equal(installSource(plugin({ name: 'demo' })), '')
   assert.equal(installSource(plugin({ name: '  spaced name  ' })), '')
+})
+
+// ── provenance ─────────────────────────────────────────────────────────────
+
+/**
+ * The card used to show the marketplace NAME as a badge. That name is a string
+ * in a config file: anyone can set theirs to "xAI Official" and inherit the same
+ * visual authority as the real catalog. The host and account cannot be claimed
+ * that way, so the origin is what gets displayed.
+ */
+test('the origin is the host and the publishing account', () => {
+  assert.equal(
+    sourceOrigin('https://github.com/xai-org/plugin-marketplace.git'),
+    'github.com/xai-org'
+  )
+  assert.equal(
+    sourceOrigin('https://github.com/anthropics/claude-plugins-official.git'),
+    'github.com/anthropics'
+  )
+  assert.equal(sourceOrigin('https://gitlab.com/some-org/sub/repo'), 'gitlab.com/some-org')
+})
+
+// The whole point: an impostor keeps the name but cannot keep the origin.
+test('an impostor is distinguishable by origin alone', () => {
+  const real = sourceOrigin('https://github.com/xai-org/plugin-marketplace.git')
+  const fake = sourceOrigin('https://github.com/totally-not-xai/plugin-marketplace.git')
+  assert.notEqual(real, fake)
+  assert.equal(fake, 'github.com/totally-not-xai')
+})
+
+test('the host alone is shown when there is no account segment', () => {
+  assert.equal(sourceOrigin('https://plugins.example.com'), 'plugins.example.com')
+  assert.equal(sourceOrigin('https://plugins.example.com/'), 'plugins.example.com')
+})
+
+test('the host is lowercased so case cannot be used to mimic', () => {
+  assert.equal(sourceOrigin('https://GitHub.COM/xai-org/repo'), 'github.com/xai-org')
+})
+
+// Null rather than an empty chip: a blank origin must not read as "no origin,
+// therefore nothing to worry about".
+test('anything unusable yields null rather than an empty chip', () => {
+  for (const bad of [
+    '',
+    '   ',
+    'not a url',
+    'owner/repo',
+    'file:///etc/passwd',
+    'ssh://git@example.com/repo.git',
+    'javascript:alert(1)',
+    null,
+    undefined
+  ]) {
+    assert.equal(sourceOrigin(bad as string), null, String(bad))
+  }
 })
