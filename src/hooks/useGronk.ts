@@ -200,6 +200,12 @@ export function useGronk() {
           void refreshSessions()
           break
         case 'user-message':
+          // The main process writes the session row when the prompt is SENT, but
+          // the list was only re-read on history-done and message-done — so the
+          // session you were actively typing into did not appear in the sidebar
+          // until its first reply finished, under the heading "No sessions in
+          // this project yet". The row already exists by now; this just looks.
+          void refreshSessions()
           setMessages((prev) => {
             if (prev.some((m) => m.id === event.message.id)) {
               return prev.map((m) =>
