@@ -109,6 +109,7 @@ export function installFakeBridge(overrides: Record<string, unknown> = {}): Fake
     respondPermission: async () => track('respondPermission', undefined),
     loadSession: async () => track('loadSession', { sessionId: 's1', restored: false }),
     getTranscript: async () => track('getTranscript', []),
+    searchSessions: async () => track('searchSessions', []),
     saveTranscript: async () => track('saveTranscript', undefined),
     deleteSession: async () => track('deleteSession', []),
     renameSession: async () => track('renameSession', null),

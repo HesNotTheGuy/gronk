@@ -5345,3 +5345,65 @@ html[data-theme='light'] .auth-card {
 .calendar-legend-label {
   margin: 0 4px;
 }
+
+/* ---------- Session search ----------
+   Spans Chat and Build together, because you remember what was said rather than
+   which surface you said it on. While a query is active the rails give way to
+   results, so the two lists never compete for the same space. */
+.sidebar-search {
+  padding: 8px 10px 4px;
+}
+
+.sidebar-search-input {
+  width: 100%;
+  padding: 7px 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.sidebar-search-input::placeholder {
+  color: var(--ink-4);
+}
+
+.sidebar-search-input:focus {
+  outline: none;
+  border-color: var(--line-hot);
+  background: var(--raised);
+}
+
+/* The results header is a label, not a disclosure — there is nothing to collapse
+   into, since clearing the box is what dismisses it. */
+.sidebar-rail-head.static {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: default;
+}
+
+.search-hit .meta {
+  color: var(--ink-4);
+}
+
+/* Two lines maximum: a snippet is a cue for recognising the conversation, and a
+   row that grows with the match stops the list being scannable. */
+.search-snippet {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+html[data-theme='light'] .sidebar-search-input {
+  background: var(--panel-2);
+  color: var(--ink);
+}

@@ -175,6 +175,7 @@ export function App() {
         projects={g.recentProjects}
         projectSessions={g.projectOnlySessions}
         chatSessions={g.chatSessions}
+        chatWorkspacePath={g.chatWorkspacePath}
         activeCwd={g.cwd}
         activeSessionId={g.sessionId}
         archivedCount={g.archivedSessions.length}

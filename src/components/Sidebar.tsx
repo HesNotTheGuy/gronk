@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { AppSurface, ProjectContext, SessionInfo } from '../../shared/types'
-import { folderName, pathsEqual } from '../../shared/path'
+import type {
+  AppSurface,
+  ProjectContext,
+  SessionInfo,
+  SessionSearchHit
+} from '../../shared/types'
+import { folderName, isChatSession, pathsEqual } from '../../shared/path'
 
 interface Props {
   alwaysApprove: boolean
@@ -15,6 +20,8 @@ interface Props {
   projectSessions: SessionInfo[]
   /** App-level chat sessions (not tied to a project) */
   chatSessions: SessionInfo[]
+  /** Sandbox root, so a search hit can say whether it came from Chat or a project */
+  chatWorkspacePath: string | null
   activeCwd: string | null
   activeSessionId: string | null
   /** Archived sessions across both surfaces — entry point is hidden at 0 */
@@ -82,6 +89,7 @@ export function Sidebar({
   projects,
   projectSessions,
   chatSessions,
+  chatWorkspacePath,
   activeCwd,
   activeSessionId,
   archivedCount,
@@ -111,6 +119,45 @@ export function Sidebar({
   const toggle = (key: 'folders' | 'sessions' | 'chats') => {
     setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   }
+
+  const [query, setQuery] = useState('')
+  const [hits, setHits] = useState<SessionSearchHit[] | null>(null)
+  const searching = query.trim().length > 0
+
+  /**
+   * Debounced, and every in-flight result is discarded unless it belongs to the
+   * text currently in the box. Without that check a slow scan of an early
+   * keystroke can land after a later one and repaint stale results.
+   */
+  useEffect(() => {
+    const term = query.trim()
+    if (!term) {
+      setHits(null)
+      return
+    }
+    let live = true
+    const timer = setTimeout(() => {
+      void window.gronk
+        .searchSessions(term)
+        .then((result) => {
+          if (live) setHits(result)
+        })
+        .catch(() => {
+          if (live) setHits([])
+        })
+    }, 140)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [query])
+
+  /** Search spans both surfaces, so a hit needs its own session object back. */
+  const byId = useMemo(() => {
+    const map = new Map<string, SessionInfo>()
+    for (const s of [...chatSessions, ...projectSessions]) map.set(s.id, s)
+    return map
+  }, [chatSessions, projectSessions])
 
   /** Only the open project's sessions — the all-projects view is ProjectHome's job */
   const folderSessionsAll = useMemo(() => {
@@ -153,8 +200,8 @@ export function Sidebar({
    * "Switch workspace / All" buttons existed to undo. Keeping the list on screen
    * removes the round trip and both buttons with it.
    */
-  const showChatRail = surface === 'chat'
-  const showProjectRails = surface === 'project'
+  const showChatRail = surface === 'chat' && !searching
+  const showProjectRails = surface === 'project' && !searching
 
   return (
     <aside className="sidebar">
@@ -197,6 +244,73 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-body">
+        {/* Search spans Chat and Build together: you remember what was said, not
+            which surface you said it on. While a query is active the rails give
+            way to results, so the two lists are never on screen at once. */}
+        {surface !== 'home' ? (
+          <div className="sidebar-search">
+            <input
+              type="search"
+              className="sidebar-search-input"
+              placeholder="Search all sessions"
+              value={query}
+              disabled={!authenticated}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setQuery('')
+              }}
+              aria-label="Search every session by title or message text"
+            />
+          </div>
+        ) : null}
+
+        {searching ? (
+          <div className="sidebar-rail open">
+            <div className="sidebar-rail-head static">
+              <span className="sidebar-rail-title">Results</span>
+              <span className="sidebar-rail-count">{hits ? hits.length || '' : ''}</span>
+            </div>
+            <div className="sidebar-rail-body">
+              {hits === null ? (
+                <div className="muted-note">Searching…</div>
+              ) : hits.length === 0 ? (
+                <div className="muted-note">Nothing matched “{query.trim()}”</div>
+              ) : (
+                hits.map((hit) => {
+                  const s = byId.get(hit.sessionId)
+                  if (!s) return null
+                  return (
+                    <button
+                      key={hit.sessionId}
+                      type="button"
+                      className={`session-item search-hit ${
+                        hit.sessionId === activeSessionId ? 'active' : ''
+                      }`}
+                      disabled={!authenticated}
+                      title={sessionTitle(s)}
+                      onClick={() => {
+                        setQuery('')
+                        onSelectSession(s)
+                      }}
+                    >
+                      <div className="name">{sessionTitle(s)}</div>
+                      <div className="meta">
+                        {isChatSession(s, chatWorkspacePath) ? 'Chat' : folderName(s.cwd)}
+                        {' · '}
+                        {new Date(s.updatedAt).toLocaleDateString()}
+                        {hit.messageMatches > 0 ? ` · ${hit.messageMatches} match${hit.messageMatches === 1 ? '' : 'es'}` : ''}
+                      </div>
+                      {/* Only for body hits. Echoing the title back under itself
+                          would say nothing. */}
+                      {hit.snippet ? <div className="search-snippet">{hit.snippet}</div> : null}
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        ) : null}
+
         {surface === 'home' ? (
           <div className="sidebar-section">
             <div className="muted-note">

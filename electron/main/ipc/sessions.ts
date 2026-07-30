@@ -18,6 +18,7 @@ import {
   renameSession,
   saveTranscript
 } from '../store'
+import { parseQuery, rankHits, scoreSession } from '../../../shared/session-search'
 import { rememberExportedPath } from './exported-paths'
 import { assertString } from './validate'
 import type { IpcContext } from './context'
@@ -47,6 +48,29 @@ export function registerSessionsIpc(ctx: IpcContext): void {
   ipcMain.handle('gronk:get-transcript', (e, sessionId: string) => {
     assertTrustedSender(e)
     return getTranscript(assertString(sessionId, 'sessionId'))
+  })
+
+  /**
+   * Full-text search across every session's transcript.
+   *
+   * Runs in the main process because the renderer has no store access, and
+   * shipping every transcript over IPC to filter them there would be both slow
+   * and pointless. Reads are already capped at 200 messages per session by
+   * saveTranscript, so the worst case is bounded by session count.
+   */
+  ipcMain.handle('gronk:search-sessions', (e, query: string) => {
+    assertTrustedSender(e)
+    const terms = parseQuery(assertString(query, 'query'))
+    if (terms.length === 0) return []
+
+    const sessions = listSessions()
+    const hits = []
+    for (const session of sessions) {
+      // A session whose transcript was never persisted still matches on title.
+      const hit = scoreSession(session, getTranscript(session.id), terms)
+      if (hit) hits.push(hit)
+    }
+    return rankHits(hits, sessions)
   })
 
   ipcMain.handle(

@@ -105,6 +105,17 @@ export interface PromptAttachment {
   previewUrl?: string
 }
 
+/** One session whose title or transcript matched a search query. */
+export interface SessionSearchHit {
+  sessionId: string
+  /** Matched the title rather than a message body — ranked above body hits. */
+  inTitle: boolean
+  messageMatches: number
+  /** Text around the first body match, or null when only the title matched. */
+  snippet: string | null
+  score: number
+}
+
 export interface PermissionRequest {
   /** JSON-RPC request id (number or string from the agent) */
   requestId: number | string
@@ -565,6 +576,8 @@ export interface GronkApi {
   listSessions: () => Promise<SessionInfo[]>
   loadSession: (sessionId: string) => Promise<{ sessionId: string; restored: boolean }>
   getTranscript: (sessionId: string) => Promise<ChatMessage[]>
+  /** Full-text search over every stored transcript. Empty query returns []. */
+  searchSessions: (query: string) => Promise<SessionSearchHit[]>
   saveTranscript: (sessionId: string, messages: ChatMessage[]) => Promise<void>
   deleteSession: (sessionId: string) => Promise<SessionInfo[]>
   renameSession: (sessionId: string, title: string) => Promise<SessionInfo | null>
