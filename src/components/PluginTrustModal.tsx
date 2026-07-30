@@ -65,10 +65,23 @@ export function PluginTrustModal({ open, plugin, busy, onCancel, onConfirm }: Pr
         <div className="settings-block">
           <div className="section-label">Source</div>
           <code className="path-code">{source || 'unknown source'}</code>
-          <div className="section-label">Pinned commit</div>
+          {/*
+            Was labelled "Pinned commit", which asserted something untrue: the
+            install argv carries no ref, and nothing re-reads the commit
+            afterwards, so this SHA never constrained what got installed. A
+            security label that implies a guarantee it does not provide is worse
+            than showing nothing, so it now says where the value came from and
+            what it does not do.
+          */}
+          <div className="section-label">Commit in the catalog</div>
           <code className="path-code trust-sha">
-            {sha || 'unknown — the CLI catalog does not report one'}
+            {sha || 'not reported by the catalog'}
           </code>
+          <p className="settings-hint">
+            {sha
+              ? 'What the marketplace listing recorded. The install fetches the source as it is now — Gronk does not pin it to this commit.'
+              : 'The catalog reports no commit for this plugin, so there is nothing to compare against.'}
+          </p>
           {plugin.marketplace ? (
             <p className="settings-hint">
               Marketplace: {plainText(plugin.marketplace, 60)}

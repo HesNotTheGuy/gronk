@@ -388,6 +388,35 @@ const MAX_URL_LENGTH = 2048
  * is allowed: an `ssh://`, `file://` or scp-style remote would be a different
  * and unaudited install path arriving from third-party JSON.
  */
+/**
+ * May this string be handed to `grok plugin install`?
+ *
+ * Two things reach that command: a URL the catalog supplied, and an `owner/repo`
+ * shorthand. Only catalog URLs read off DISK went through catalogRepoUrl's
+ * https-only gate — a `sourceUrl` arriving inside the CLI's own JSON did not, so
+ * a marketplace entry could specify `file:///C:/Windows/Temp/evil`,
+ * `ssh://git@attacker.example/repo.git` or `git@attacker.example:repo.git` and
+ * have it installed. Reproduced end to end before this existed.
+ *
+ * Applied at the install choke point, so it holds for every caller regardless of
+ * where the string came from.
+ */
+export function isInstallableSource(value: string): boolean {
+  const v = value.trim()
+  if (!v) return false
+  // A scheme-bearing string must be https. Checked before the shorthand rule so
+  // `git@host:repo` cannot pass as a path-like token.
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(v) || v.includes('://')) {
+    return /^https:\/\/[^/\s]/i.test(v)
+  }
+  // scp-style `user@host:path`, which git accepts and which is not https.
+  if (/@[^/\s]+:/.test(v)) return false
+  // Otherwise: an `owner/repo`-shaped shorthand, no traversal, no absolute path.
+  if (v.startsWith('/') || v.startsWith('\\') || /^[A-Za-z]:[\\/]/.test(v)) return false
+  if (v.includes('..')) return false
+  return /^[A-Za-z0-9._-]+\/[A-Za-z0-9._/-]+$/.test(v)
+}
+
 export function catalogRepoUrl(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const url = value.trim()

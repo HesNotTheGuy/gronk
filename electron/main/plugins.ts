@@ -34,7 +34,8 @@ import {
   mapPlugins,
   str,
   type RawMarketplace,
-  type RawMarketplaceCache
+  type RawMarketplaceCache,
+  isInstallableSource
 } from './plugins-map'
 import type {
   McpActionResult,
@@ -197,6 +198,15 @@ async function readMarketplaceCaches(): Promise<RawMarketplaceCache[]> {
 export async function installPlugin(source: string, trust: boolean): Promise<PluginActionResult> {
   const src = assertCliToken(source, 'source')
   if (typeof trust !== 'boolean') throw new Error('Invalid trust flag')
+  // The scheme gate lives HERE, not only where catalog URLs are read off disk:
+  // a sourceUrl arriving inside the CLI's own JSON reached this command
+  // unchecked, so a marketplace entry could name file://, ssh:// or
+  // git@host:repo and have it installed.
+  if (!isInstallableSource(src)) {
+    throw new Error(
+      `Invalid source: expected an https:// URL or an owner/repo name, got "${src.slice(0, 80)}"`
+    )
+  }
 
   const args = ['plugin', 'install', src]
   if (trust === true) args.push('--trust')

@@ -39,7 +39,44 @@ const PREVIEW_PARTITION = 'preview'
  * since the substring really is present. Scanning and validating are different
  * jobs and cannot share one pattern. Validation lives in isLocalPreviewUrl.
  */
-const LOCALHOST_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+[^\s"']*/i
+/**
+ * The tail excludes brackets and angle brackets, not just whitespace and quotes.
+ *
+ * With `[^\s"']*` a markdown banner — `[http://localhost:3000](http://localhost:3000)`
+ * — captured `http://localhost:3000](http://localhost:3000)` as ONE match, and
+ * trimming the final paren still left the wreckage in the middle. Brackets are
+ * legal in a URL but vanishingly rare in a dev server's banner, whereas being
+ * wrapped in them is common, so excluding them is the right trade.
+ */
+const LOCALHOST_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+[^\s"'<>()[\]]*/i
+
+/**
+ * Trailing characters that abut a URL in prose but are never part of one.
+ *
+ * The tail `[^\s"']*` above stops only at whitespace and quotes, so every one of
+ * these real banner shapes captured its own punctuation and then failed to
+ * parse, leaving the pane waiting forever with no error:
+ *
+ *   App running at http://localhost:3000.
+ *   (http://localhost:3000)
+ *   <http://localhost:3000>
+ *   [http://localhost:3000](http://localhost:3000)
+ */
+const TRAILING_PUNCTUATION = /[.,;:!?`)\]}>]+$/
+
+/**
+ * The dev server's URL from a chunk of its output, or null.
+ *
+ * Returns only what actually parses AND passes the same localhost gate the
+ * navigation guards use, so a malformed capture is dropped rather than handed
+ * to loadURL.
+ */
+export function extractDevServerUrl(text: string): string | null {
+  const match = text.match(LOCALHOST_URL)
+  if (!match) return null
+  const candidate = match[0].replace(TRAILING_PUNCTUATION, '')
+  return isLocalPreviewUrl(candidate) ? candidate : null
+}
 
 /**
  * Same scheme allow-list the main window uses. Handing an arbitrary string to
@@ -197,11 +234,16 @@ export function startPreview(cwd: string, override?: string): { ok: boolean; mes
   }
 
   const onData = (chunk: Buffer): void => {
-    const text = redactSecrets(chunk.toString())
-    emit('preview-log', text)
+    const raw = chunk.toString()
+    emit('preview-log', redactSecrets(raw))
     if (!urlFound) {
-      const m = text.match(LOCALHOST_URL)
-      if (m) attachView(m[0])
+      // Scan the RAW text, not the redacted copy. redactSecrets rewrites
+      // secret-shaped substrings, and a dev server that prints its own URL with
+      // a query string — http://localhost:5173/?api_key=… — had that URL
+      // mangled before it was ever matched, so the pane loaded a corrupted
+      // address. The log the user sees is still redacted.
+      const url = extractDevServerUrl(raw)
+      if (url) attachView(url)
     }
   }
   devProc.stdout?.on('data', onData)
@@ -219,14 +261,58 @@ export function startPreview(cwd: string, override?: string): { ok: boolean; mes
   return { ok: true, message: `Started: ${command}` }
 }
 
+/**
+ * Run a kill helper without letting its own failure reach the process.
+ *
+ * `spawn` reports ENOENT and EPERM ASYNCHRONOUSLY, as an 'error' event on the
+ * returned child — a try/catch around the spawn call cannot see them. With no
+ * listener attached, that event becomes an uncaughtException and takes the main
+ * process down with it. The empty handler is the entire point.
+ */
+function spawnKiller(command: string, args: string[]): void {
+  try {
+    const killer = spawn(command, args, { windowsHide: true })
+    killer.on('error', () => {
+      /* the helper is missing or refused; nothing useful to do, and it must not throw */
+    })
+  } catch {
+    /* synchronous failures too */
+  }
+}
+
+/**
+ * Kill whatever is still listening on the preview's port.
+ *
+ * `taskkill /T` walks the process TREE, and the tree link is broken the moment
+ * an intermediate exits — which is exactly what `npm run dev` does when the
+ * script hands the server to a detached grandchild and returns. Measured: the
+ * port stays bound after taskkill reports success. Sweeping by port catches the
+ * orphan the tree walk cannot see.
+ *
+ * Only ever targets a loopback listener on the port this preview discovered, so
+ * it cannot reach an unrelated service.
+ */
+function killListenerOnPort(port: number): void {
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return
+  if (process.platform === 'win32') {
+    // `for /f` over netstat: the PID is the last column of a LISTENING row.
+    spawnKiller('cmd', [
+      '/c',
+      `for /f "tokens=5" %a in ('netstat -ano ^| findstr /r /c:":${port} .*LISTENING"') do @taskkill /pid %a /t /f`
+    ])
+  } else {
+    spawnKiller('sh', ['-c', `lsof -ti tcp:${port} -sTCP:LISTEN | xargs -r kill -9`])
+  }
+}
+
 function killTree(proc: ChildProcess): void {
   if (!proc.pid) return
+  const port = currentUrl ? Number(new URL(currentUrl).port) : NaN
+
   if (process.platform === 'win32') {
-    try {
-      spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true })
-    } catch {
-      /* ignore */
-    }
+    spawnKiller('taskkill', ['/pid', String(proc.pid), '/T', '/F'])
+    // The tree walk misses an orphaned grandchild, so follow it with a sweep.
+    if (Number.isFinite(port)) killListenerOnPort(port)
   } else {
     try {
       process.kill(-proc.pid, 'SIGTERM')
@@ -237,6 +323,17 @@ function killTree(proc: ChildProcess): void {
         /* ignore */
       }
     }
+    // SIGTERM alone leaves a server that traps it running with the port bound.
+    const pid = proc.pid
+    setTimeout(() => {
+      try {
+        process.kill(-pid, 0)
+        process.kill(-pid, 'SIGKILL')
+      } catch {
+        /* already gone, which is the good case */
+      }
+      if (Number.isFinite(port)) killListenerOnPort(port)
+    }, 2000).unref?.()
   }
 }
 
