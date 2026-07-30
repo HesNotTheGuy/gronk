@@ -4,6 +4,48 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-07-30
+
+### Added
+
+- **Search every session** by title or message text, across Chat and Build
+  together, from the sidebar. Agent reasoning is searched too, because it often
+  names the file the visible answer only alludes to. Results say where they
+  matched and which surface they came from.
+
+### Fixed
+
+The preview pane was hardened for security in 0.1.2 but its actual operation had
+never been exercised. Six defects, all measured rather than inferred:
+
+- **The pane could never find some dev servers.** The URL scan ran on the
+  redacted copy of the output, so a server printing its own address with a query
+  string had that address mangled before it was matched. And the capture pattern
+  stopped only at whitespace, so `App running at http://localhost:3000.`,
+  `(http://localhost:3000)` and a markdown `[url](url)` all produced something
+  unparseable — after which the pane waited forever with no error.
+- **Stopping the preview could leave the dev server running.** A tree kill
+  breaks when an intermediate process exits, which is exactly what `npm run dev`
+  does when it hands the server to a detached grandchild; the port stayed bound.
+  A port sweep now follows, and POSIX escalates to SIGKILL.
+- **A failed kill could crash the app.** The guard around it could not catch the
+  error it was guarding, which arrives asynchronously and became an unhandled
+  exception in the main process.
+- **A stopped pane could come back**, and a failed start left the pane reporting
+  "running" forever with no process behind it.
+
+Plugins:
+
+- **The trust dialog said "Pinned commit" when nothing was pinned.** The install
+  never received that commit and never checked it afterwards. The label now says
+  what the value is and states that the install is not pinned to it.
+- **A plugin source could specify any scheme.** The https-only check covered
+  catalog entries read from disk but not ones arriving from the CLI, so a
+  marketplace listing could name a local file or an ssh target and have it
+  installed. The check now sits at the install itself.
+- **A successful install could empty the Installed list**, when the follow-up
+  read of the plugin list could not be parsed.
+
 ## [0.1.2] - 2026-07-28
 
 ### Fixed
@@ -100,6 +142,7 @@ private repository, so there is no earlier entry to compare against.
   warn on first launch.
 - No automatic updates. Code signing has to land first.
 
+[0.1.3]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.3
 [0.1.2]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.2
 [0.1.1]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.1
 [0.1.0]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.0
