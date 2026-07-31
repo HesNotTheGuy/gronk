@@ -66,6 +66,8 @@ const api: GronkApi = {
     void ipcRenderer.invoke('gronk:preview-set-bounds', rect)
   },
   previewSetUrl: (url: string) => ipcRenderer.invoke('gronk:preview-set-url', url),
+  previewPopOut: () => ipcRenderer.invoke('gronk:preview-pop-out'),
+  previewDock: () => ipcRenderer.invoke('gronk:preview-dock'),
   previewReload: () => ipcRenderer.invoke('gronk:preview-reload'),
   previewStatus: () => ipcRenderer.invoke('gronk:preview-status'),
   listSkills: () => ipcRenderer.invoke('gronk:list-skills'),

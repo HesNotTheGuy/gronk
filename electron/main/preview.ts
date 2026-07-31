@@ -14,6 +14,8 @@ export interface PreviewStatus {
   running: boolean
   url: string | null
   cwd: string | null
+  /** Showing in its own window rather than the docked pane. */
+  poppedOut?: boolean
   error?: string
 }
 
@@ -37,6 +39,8 @@ let urlFound = false
  * bumps the counter so anything in flight is stale by definition.
  */
 let runId = 0
+/** Detached preview window, when the pane has been popped out. */
+let popWindow: BrowserWindow | null = null
 
 const PREVIEW_PARTITION = 'preview'
 
@@ -95,6 +99,30 @@ function openExternalSafely(target: string): void {
 }
 
 /**
+ * The navigation policy, in one place.
+ *
+ * Applied to the docked view AND the popped-out window. Duplicating it would
+ * mean the detached window could silently lose a guard the pane still had, and
+ * a window with no localhost lock is a browser pointed at anything.
+ */
+function installNavigationGuards(wc: Electron.WebContents): void {
+  wc.setWindowOpenHandler(({ url: u }) => {
+    openExternalSafely(u)
+    return { action: 'deny' }
+  })
+  const keepLocal = (e: Electron.Event, u: string): void => {
+    if (isLocalPreviewUrl(u)) return
+    e.preventDefault()
+    openExternalSafely(u)
+  }
+  wc.on('will-navigate', keepLocal)
+  // will-navigate does not fire on an HTTP redirect. Without this a 3xx from the
+  // dev server walks the preview to any origin it likes, and the localhost lock
+  // only ever applied to the first hop.
+  wc.on('will-redirect', keepLocal)
+}
+
+/**
  * The pane runs in its own partition, so hardenSession() in index.ts never
  * reaches it: that configures session.defaultSession only. Without this the
  * preview keeps Electron's defaults, where a page can be granted the
@@ -105,6 +133,20 @@ function openExternalSafely(target: string): void {
  * projects. Containment comes from staying on localhost, with no preload and no
  * bridge to reach.
  */
+/**
+ * One definition, used by the docked view and the detached window alike.
+ *
+ * No `preload`, deliberately: without one the page has no window.gronk, so there
+ * is no IPC surface and nothing to reach the agent, the transcript store or the
+ * filesystem. Detaching into its own window must not quietly relax any of this.
+ */
+const PREVIEW_WEB_PREFERENCES = {
+  sandbox: true,
+  contextIsolation: true,
+  nodeIntegration: false,
+  partition: PREVIEW_PARTITION
+} as const
+
 function hardenPreviewSession(): void {
   const previewSession = session.fromPartition(PREVIEW_PARTITION)
   previewSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(false))
@@ -117,7 +159,12 @@ export function initPreview(win: BrowserWindow, emitter: Emit): void {
 }
 
 export function getPreviewStatus(): PreviewStatus {
-  return { running: !!devProc, url: currentUrl, cwd: currentCwd }
+  return {
+    running: !!devProc,
+    url: currentUrl,
+    cwd: currentCwd,
+    poppedOut: isPreviewPoppedOut()
+  }
 }
 
 /** Resolve the dev command: explicit override, else `npm run dev` when a dev script exists. */
@@ -149,30 +196,10 @@ function attachView(url: string): void {
     // Before the view exists, so no page can load under the default handlers.
     hardenPreviewSession()
     view = new WebContentsView({
-      webPreferences: {
-        // Isolated, sandboxed, no bridge — the preview never touches window.gronk.
-        sandbox: true,
-        contextIsolation: true,
-        nodeIntegration: false,
-        partition: PREVIEW_PARTITION
-      }
+      webPreferences: { ...PREVIEW_WEB_PREFERENCES }
     })
     // Keep the preview locked to localhost; external links go to the OS browser.
-    const wc = view.webContents
-    wc.setWindowOpenHandler(({ url: u }) => {
-      openExternalSafely(u)
-      return { action: 'deny' }
-    })
-    const keepLocal = (e: Electron.Event, u: string): void => {
-      if (isLocalPreviewUrl(u)) return
-      e.preventDefault()
-      openExternalSafely(u)
-    }
-    wc.on('will-navigate', keepLocal)
-    // will-navigate does not fire on an HTTP redirect. Without this, a 3xx from
-    // the dev server walks the pane to any origin it likes, and the localhost
-    // lock only ever applied to the first hop.
-    wc.on('will-redirect', keepLocal)
+    installNavigationGuards(view.webContents)
     hostWindow.contentView.addChildView(view)
   }
   view.setBounds(lastBounds)
@@ -211,8 +238,79 @@ export function setPreviewUrl(url: string): void {
   }
 }
 
+/** True while the preview is showing in its own window rather than the pane. */
+export function isPreviewPoppedOut(): boolean {
+  return !!popWindow && !popWindow.isDestroyed()
+}
+
+/**
+ * Move the preview into its own resizable window.
+ *
+ * The docked view is destroyed rather than hidden: two live WebContentsViews on
+ * the same URL would both hold the dev server's socket and both run its
+ * JavaScript, so a page with a timer or a websocket would do everything twice.
+ *
+ * The window gets the same webPreferences and the same navigation guards. A
+ * detached window that quietly lost the localhost lock would just be a browser.
+ */
+export function popOutPreview(): { ok: boolean; message: string } {
+  if (!currentUrl) return { ok: false, message: 'Nothing is previewing yet.' }
+  if (isPreviewPoppedOut()) {
+    popWindow!.focus()
+    return { ok: true, message: 'Already open.' }
+  }
+
+  hardenPreviewSession()
+  detachDockedView()
+
+  popWindow = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    minWidth: 380,
+    minHeight: 320,
+    title: 'Preview',
+    backgroundColor: '#000000',
+    // Not modal and not always-on-top: it is a second working surface, not a
+    // dialog, and the user decides which window is in front.
+    webPreferences: { ...PREVIEW_WEB_PREFERENCES }
+  })
+  installNavigationGuards(popWindow.webContents)
+
+  popWindow.on('closed', () => {
+    popWindow = null
+    // Closing the window means "put it back", not "stop the server". The dev
+    // process is untouched, so re-attaching restores the pane where it was.
+    if (currentUrl) attachView(currentUrl)
+    else status()
+  })
+
+  void popWindow.loadURL(currentUrl)
+  status()
+  return { ok: true, message: 'Preview opened in its own window.' }
+}
+
+/** Put a detached preview back into the pane. */
+export function dockPreview(): void {
+  if (!isPreviewPoppedOut()) return
+  // The 'closed' handler re-attaches, so this is the whole operation.
+  popWindow!.close()
+}
+
+/** Remove the in-window view without touching the dev server. */
+function detachDockedView(): void {
+  if (!view) return
+  try {
+    if (hostWindow && !hostWindow.isDestroyed()) hostWindow.contentView.removeChildView(view)
+    view.webContents.close()
+  } catch {
+    /* already gone */
+  }
+  view = null
+}
+
 export function reloadPreview(): void {
-  view?.webContents.reload()
+  if (isPreviewPoppedOut()) popWindow!.webContents.reload()
+  else view?.webContents.reload()
 }
 
 export function startPreview(cwd: string, override?: string): { ok: boolean; message: string } {
@@ -356,6 +454,13 @@ function killTree(proc: ChildProcess): void {
 export function stopPreview(): void {
   // Invalidate first: everything still queued from this run is now stale.
   runId++
+  // Close the detached window WITHOUT letting its 'closed' handler re-attach a
+  // pane for a preview that is being torn down.
+  if (popWindow && !popWindow.isDestroyed()) {
+    const w = popWindow
+    popWindow = null
+    w.destroy()
+  }
   if (view) {
     try {
       if (hostWindow && !hostWindow.isDestroyed()) hostWindow.contentView.removeChildView(view)

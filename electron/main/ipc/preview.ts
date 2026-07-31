@@ -12,7 +12,9 @@ import {
   setPreviewBounds,
   setPreviewUrl,
   startPreview,
-  stopPreview
+  stopPreview,
+  popOutPreview,
+  dockPreview
 } from '../preview'
 import { normalizeCwd } from '../store'
 import { assertOptionalString, assertString } from './validate'
@@ -46,6 +48,16 @@ export function registerPreviewIpc(): void {
   ipcMain.handle('gronk:preview-set-url', (e, url: string) => {
     assertTrustedSender(e)
     setPreviewUrl(assertString(url, 'url'))
+  })
+
+  ipcMain.handle('gronk:preview-pop-out', (e) => {
+    assertTrustedSender(e)
+    return popOutPreview()
+  })
+
+  ipcMain.handle('gronk:preview-dock', (e) => {
+    assertTrustedSender(e)
+    dockPreview()
   })
 
   ipcMain.handle('gronk:preview-reload', (e) => {

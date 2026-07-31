@@ -15,15 +15,42 @@ export function usePreview(cwd: string | null) {
   const [previewRunning, setPreviewRunning] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewPoppedOut, setPreviewPoppedOut] = useState(false)
 
+  /**
+   * Read the current state once, then follow events.
+   *
+   * Events alone were not enough: the dev server lives in the main process and
+   * outlives a renderer reload, so after one the UI believed no preview was
+   * running while the server was still up and the pane had vanished. Nothing
+   * else called previewStatus, which is why it looked like a dead IPC handler.
+   */
   useEffect(() => {
-    return window.gronk.onEvent((event: MainToRendererEvent) => {
+    let live = true
+    void window.gronk
+      .previewStatus()
+      .then((s) => {
+        if (!live || !s) return
+        setPreviewRunning(s.running)
+        setPreviewUrl(s.url)
+        setPreviewPoppedOut(!!s.poppedOut)
+      })
+      .catch(() => {
+        /* no preview to report */
+      })
+
+    const off = window.gronk.onEvent((event: MainToRendererEvent) => {
       // `preview-log` is deliberately ignored, as it was before the split.
       if (event.type !== 'preview-status') return
       setPreviewRunning(event.running)
       setPreviewUrl(event.url)
       setPreviewError(event.error || null)
+      setPreviewPoppedOut(!!event.poppedOut)
     })
+    return () => {
+      live = false
+      off()
+    }
   }, [])
 
   const startPreview = useCallback(async () => {
@@ -45,6 +72,9 @@ export function usePreview(cwd: string | null) {
 
   return {
     previewRunning,
+    previewPoppedOut,
+    popOutPreview: () => window.gronk.previewPopOut(),
+    dockPreview: () => window.gronk.previewDock(),
     previewUrl,
     previewError,
     startPreview,

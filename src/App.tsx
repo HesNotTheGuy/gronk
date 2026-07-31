@@ -15,6 +15,7 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
 import { YoloConfirm } from './components/YoloConfirm'
 import { CliInstall } from './components/CliInstall'
+import { PaneSplitter } from './components/PaneSplitter'
 import { PreviewPane } from './components/PreviewPane'
 import { UsageMeter } from './components/UsageMeter'
 import { useGronk } from './hooks/useGronk'
@@ -46,6 +47,23 @@ export function App() {
    */
   const [exportMenuPos, setExportMenuPos] = useState<{ top: number; right: number } | null>(null)
   const exportBtnRef = useRef<HTMLButtonElement | null>(null)
+
+  /**
+   * Preview width as a percentage, persisted so a resize survives a restart.
+   * Percent rather than pixels: a fixed pixel split taken on a wide monitor
+   * leaves no conversation at all on a narrow one.
+   */
+  const [previewPercent, setPreviewPercent] = useState<number>(() => {
+    const raw = Number(localStorage.getItem('gronk.preview.percent'))
+    return Number.isFinite(raw) && raw >= 20 && raw <= 75 ? raw : 44
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('gronk.preview.percent', String(Math.round(previewPercent)))
+    } catch {
+      /* private mode, or storage full: the split just does not persist */
+    }
+  }, [previewPercent])
 
   const surface = g.surface
   /** Main pane is live conversation (not browse home) */
@@ -583,11 +601,18 @@ export function App() {
             />
           </div>
           {g.previewRunning && inProject ? (
-            <PreviewPane
-              url={g.previewUrl}
-              error={g.previewError}
-              onStop={() => void g.stopPreview()}
-            />
+            <>
+              <PaneSplitter percent={previewPercent} onChange={setPreviewPercent} />
+              <PreviewPane
+                url={g.previewUrl}
+                error={g.previewError}
+                widthPercent={previewPercent}
+                poppedOut={g.previewPoppedOut}
+                onPopOut={() => void g.popOutPreview()}
+                onDock={() => void g.dockPreview()}
+                onStop={() => void g.stopPreview()}
+              />
+            </>
           ) : null}
           </div>
         )}

@@ -449,6 +449,8 @@ export type MainToRendererEvent =
       running: boolean
       url: string | null
       cwd: string | null
+      /** Showing in its own window rather than the docked pane. */
+      poppedOut?: boolean
       error?: string
     }
   | { type: 'preview-log'; text: string }
@@ -662,10 +664,15 @@ export interface GronkApi {
   previewSetBounds: (rect: { x: number; y: number; width: number; height: number }) => void
   previewSetUrl: (url: string) => Promise<void>
   previewReload: () => Promise<void>
+  /** Move the preview into its own window, or back into the pane. */
+  previewPopOut: () => Promise<{ ok: boolean; message: string }>
+  previewDock: () => Promise<void>
   previewStatus: () => Promise<{
     running: boolean
     url: string | null
     cwd: string | null
+    /** Showing in its own window rather than the docked pane. */
+    poppedOut?: boolean
     error?: string
   }>
   // Plugins & Skills

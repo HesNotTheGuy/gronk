@@ -4115,6 +4115,8 @@ html[data-theme='light'] .auth-card {
   min-width: 0;
 }
 
+/* flex-basis comes from the splitter as an inline style; 44% is only the
+   fallback for a render before that arrives. */
 .preview-pane {
   flex: 0 0 44%;
   min-width: 320px;
@@ -5590,4 +5592,40 @@ html[data-theme='light'] .plugin-origin {
   font-size: 11px;
   color: var(--ink-4);
   white-space: nowrap;
+}
+
+/* ---------- Pane splitter ----------
+   A 1px line would be almost unhittable, so the visible rule sits inside a wider
+   transparent grab area. The native preview view needs no involvement: the pane
+   reports its own bounding box to the main process, so moving this boundary
+   drags the WebContentsView with it. */
+.pane-splitter {
+  flex: 0 0 10px;
+  margin: 0 -5px;
+  position: relative;
+  z-index: 2;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+}
+
+.pane-splitter::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--line);
+  transition: background 0.12s var(--ease);
+}
+
+.pane-splitter:hover::after,
+.pane-splitter:focus-visible::after {
+  background: var(--line-hot);
+  width: 2px;
+}
+
+.pane-splitter:focus-visible {
+  outline: none;
 }
