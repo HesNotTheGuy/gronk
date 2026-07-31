@@ -5545,3 +5545,49 @@ html[data-theme='light'] .plugin-origin {
   color: var(--abort);
   border-color: var(--abort);
 }
+
+/* ---------- Remote image offered as a link ----------
+   Never an <img>: rendering model output as one fetches the URL the instant the
+   reply appears, which is the silent exfiltration channel. Shown as a link with
+   its destination host visible, so nothing loads until the user decides and they
+   can see where it would go. */
+.md-remote-img {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: 4px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  background: var(--panel-2);
+  text-decoration: none;
+  color: var(--ink-2);
+}
+
+.md-remote-img:hover {
+  border-color: var(--line-hot);
+  background: var(--hover);
+}
+
+.md-remote-img-icon {
+  color: var(--ink-4);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.md-remote-img-label {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The host is the part worth reading before clicking, so it is never truncated
+   away in favour of a caption the model chose. */
+.md-remote-img-host {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-4);
+  white-space: nowrap;
+}

