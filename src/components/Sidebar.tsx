@@ -5,6 +5,7 @@ import type {
   SessionInfo,
   SessionSearchHit
 } from '../../shared/types'
+import { SessionRow } from './SessionRow'
 import { folderName, isChatSession, pathsEqual } from '../../shared/path'
 
 interface Props {
@@ -32,6 +33,12 @@ interface Props {
   onOpenProject: (cwd?: string | null) => void
   onOpenChat: () => void
   onSelectSession: (s: SessionInfo) => void
+  onRenameSession: (id: string, title: string) => void
+  onArchiveSession: (id: string) => void
+  onExportSession: (id: string, format: 'md' | 'json') => void
+  onDeleteSession: (id: string) => void
+  /** Opens the Plugins & Skills panel without a detour through Settings. */
+  onOpenPlugins: () => void
   onNewProjectSession: () => void
   onOpenArchived: () => void
   onToggleAlwaysApprove: () => void
@@ -99,6 +106,11 @@ export function Sidebar({
   onOpenProject,
   onOpenChat,
   onSelectSession,
+  onRenameSession,
+  onArchiveSession,
+  onExportSession,
+  onDeleteSession,
+  onOpenPlugins,
   onNewProjectSession,
   onOpenArchived,
   onToggleAlwaysApprove,
@@ -280,30 +292,30 @@ export function Sidebar({
                   const s = byId.get(hit.sessionId)
                   if (!s) return null
                   return (
-                    <button
+                    <SessionRow
                       key={hit.sessionId}
-                      type="button"
-                      className={`session-item search-hit ${
-                        hit.sessionId === activeSessionId ? 'active' : ''
-                      }`}
-                      disabled={!authenticated}
-                      title={sessionTitle(s)}
-                      onClick={() => {
+                      session={s}
+                      active={hit.sessionId === activeSessionId}
+                      authenticated={authenticated}
+                      meta={
+                        `${isChatSession(s, chatWorkspacePath) ? 'Chat' : folderName(s.cwd)}` +
+                        ` · ${new Date(s.updatedAt).toLocaleDateString()}` +
+                        (hit.messageMatches > 0
+                          ? ` · ${hit.messageMatches} match${hit.messageMatches === 1 ? '' : 'es'}`
+                          : '')
+                      }
+                      // Only for body hits. Echoing the title back beneath itself
+                      // would say nothing.
+                      detail={hit.snippet}
+                      onSelect={() => {
                         setQuery('')
                         onSelectSession(s)
                       }}
-                    >
-                      <div className="name">{sessionTitle(s)}</div>
-                      <div className="meta">
-                        {isChatSession(s, chatWorkspacePath) ? 'Chat' : folderName(s.cwd)}
-                        {' · '}
-                        {new Date(s.updatedAt).toLocaleDateString()}
-                        {hit.messageMatches > 0 ? ` · ${hit.messageMatches} match${hit.messageMatches === 1 ? '' : 'es'}` : ''}
-                      </div>
-                      {/* Only for body hits. Echoing the title back under itself
-                          would say nothing. */}
-                      {hit.snippet ? <div className="search-snippet">{hit.snippet}</div> : null}
-                    </button>
+                      onRename={(t) => onRenameSession(s.id, t)}
+                      onArchive={() => onArchiveSession(s.id)}
+                      onExport={(f) => onExportSession(s.id, f)}
+                      onDelete={() => onDeleteSession(s.id)}
+                    />
                   )
                 })
               )}
@@ -354,17 +366,18 @@ export function Sidebar({
                   <div className="muted-note">No chats yet</div>
                 ) : (
                   chatList.map((s) => (
-                    <button
+                    <SessionRow
                       key={s.id}
-                      type="button"
-                      className={`session-item ${s.id === activeSessionId ? 'active' : ''}`}
-                      disabled={!authenticated}
-                      title={sessionTitle(s)}
-                      onClick={() => onSelectSession(s)}
-                    >
-                      <div className="name">{sessionTitle(s)}</div>
-                      <div className="meta">{new Date(s.updatedAt).toLocaleDateString()}</div>
-                    </button>
+                      session={s}
+                      active={s.id === activeSessionId}
+                      authenticated={authenticated}
+                      meta={new Date(s.updatedAt).toLocaleDateString()}
+                      onSelect={() => onSelectSession(s)}
+                      onRename={(t) => onRenameSession(s.id, t)}
+                      onArchive={() => onArchiveSession(s.id)}
+                      onExport={(f) => onExportSession(s.id, f)}
+                      onDelete={() => onDeleteSession(s.id)}
+                    />
                   ))
                 )}
                 {hiddenChats > 0 ? (
@@ -494,19 +507,18 @@ export function Sidebar({
                     </div>
                   ) : (
                     folderSessions.map((s) => (
-                      <button
+                      <SessionRow
                         key={s.id}
-                        type="button"
-                        className={`session-item ${s.id === activeSessionId ? 'active' : ''}`}
-                        disabled={!authenticated}
-                        title={sessionTitle(s)}
-                        onClick={() => onSelectSession(s)}
-                      >
-                        <div className="name">{sessionTitle(s)}</div>
-                        <div className="meta">
-                          {new Date(s.updatedAt).toLocaleDateString()}
-                        </div>
-                      </button>
+                        session={s}
+                        active={s.id === activeSessionId}
+                        authenticated={authenticated}
+                        meta={new Date(s.updatedAt).toLocaleDateString()}
+                        onSelect={() => onSelectSession(s)}
+                        onRename={(t) => onRenameSession(s.id, t)}
+                        onArchive={() => onArchiveSession(s.id)}
+                        onExport={(f) => onExportSession(s.id, f)}
+                        onDelete={() => onDeleteSession(s.id)}
+                      />
                     ))
                   )}
                   {hiddenFolderSessions > 0 ? (
@@ -548,6 +560,9 @@ export function Sidebar({
             <span className="archived-entry-count">{archivedCount}</span>
           </button>
         ) : null}
+        <button type="button" className="btn btn-ghost btn-block" onClick={onOpenPlugins}>
+          Plugins &amp; Skills
+        </button>
         <button type="button" className="btn btn-ghost btn-block" onClick={onOpenSettings}>
           Settings
         </button>

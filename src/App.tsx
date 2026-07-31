@@ -185,6 +185,11 @@ export function App() {
         onOpenProject={(cwd) => openProject(cwd)}
         onOpenChat={openChat}
         onSelectSession={(s) => void g.selectSession(s)}
+        onRenameSession={(id, t) => void g.renameSession(id, t)}
+        onArchiveSession={(id) => void g.archiveSession(id)}
+        onExportSession={(id, f) => void g.exportSession(id, f)}
+        onDeleteSession={(id) => void g.deleteSession(id)}
+        onOpenPlugins={() => setShowPlugins(true)}
         onNewProjectSession={() => void g.newChat()}
         onOpenArchived={() => g.setShowArchived(true)}
         onToggleAlwaysApprove={() => {

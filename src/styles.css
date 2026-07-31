@@ -5472,3 +5472,76 @@ html[data-theme='light'] .plugin-origin {
   border: 1px solid var(--line);
   white-space: nowrap;
 }
+
+/* ---------- Session row with actions ----------
+   The rail became the primary navigator, so Rename / Archive / Export / Delete
+   had to reach it. A row can no longer be a single button — a menu control
+   cannot nest inside one — so the click target and the menu are siblings. */
+.session-item-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.session-item-row .session-item {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The menu stays out of the way until the row is hovered or its menu is open,
+   so a dense list does not read as a column of dots. */
+.session-item-row .menu-btn.icon {
+  opacity: 0;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.session-item-row:hover .menu-btn.icon,
+.session-item-row .menu-btn.icon.active,
+.session-item-row .menu-btn.icon:focus-visible {
+  opacity: 1;
+}
+
+.menu-btn-glyph {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.session-rename-input {
+  width: 100%;
+  padding: 6px 8px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line-hot);
+  border-radius: 4px;
+}
+
+/* Delete confirms in place rather than in a modal: the row is the thing being
+   deleted, so the question belongs where the answer is. */
+.session-item-row.confirming {
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border-radius: 4px;
+}
+
+.session-confirm-text {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.session-confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-mini.danger {
+  color: var(--abort);
+  border-color: var(--abort);
+}

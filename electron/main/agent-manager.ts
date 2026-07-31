@@ -445,9 +445,36 @@ export class AgentManager {
     }
   }
 
+  /**
+   * How long to let an in-flight turn wind down before the process is killed.
+   *
+   * Switching away used to sever a running turn outright: dispose() closed the
+   * pipe mid-stream, so the agent never learned it was interrupted and the
+   * partial reply was simply abandoned. A cancel gives it the chance to stop
+   * cleanly, but must never let a wedged agent block the UI, so it is raced
+   * against a short timer rather than awaited.
+   */
+  private static readonly CANCEL_GRACE_MS = 1500
+
   private async stopProcessOnly(): Promise<void> {
     // No child, no boot posture: the gate must not outlive the process it describes.
     this.bootAlwaysApprove = false
+
+    // A turn is in flight only when a message is still open. Cancel it before
+    // tearing anything down, so the agent stops on purpose instead of losing its
+    // pipe mid-sentence.
+    if (this.client && this.sessionId && this.activeMessageId) {
+      const sessionId = this.sessionId
+      try {
+        await Promise.race([
+          this.client.sessionCancel(sessionId),
+          new Promise((resolve) => setTimeout(resolve, AgentManager.CANCEL_GRACE_MS))
+        ])
+      } catch {
+        // An agent that cannot be cancelled is about to be killed anyway.
+      }
+    }
+
     // Totals belong to one live session; a new process starts a new accounting run.
     this.usage.reset()
     this.permissions.clear()

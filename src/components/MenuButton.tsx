@@ -19,6 +19,15 @@ interface Props {
   onSelect: (id: string) => void
   disabled?: boolean
   title?: string
+  /**
+   * `labelled` is the composer's "Mode: Default ▾". `icon` is a bare glyph for a
+   * dense row, where a label would not fit and the options name themselves.
+   */
+  trigger?: 'labelled' | 'icon'
+  /** Composer menus open upward; a row near the top of a list must open down. */
+  placement?: 'up' | 'down'
+  /** Glyph for the icon trigger. */
+  glyph?: string
 }
 
 /**
@@ -27,20 +36,46 @@ interface Props {
  * it is never clipped by the composer's overflow; it opens upward from the button.
  * Closes on outside-click, Escape, and window resize.
  */
-export function MenuButton({ label, value, valueLabel, options, onSelect, disabled, title }: Props) {
+export function MenuButton({
+  label,
+  value,
+  valueLabel,
+  options,
+  onSelect,
+  disabled,
+  title,
+  trigger = 'labelled',
+  placement = 'up',
+  glyph = '⋯'
+}: Props) {
   const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState<{ left: number; bottom: number; maxHeight: number } | null>(null)
+  const [pos, setPos] = useState<{
+    left: number
+    bottom?: number
+    top?: number
+    maxHeight: number
+  } | null>(null)
   const btnRef = useRef<HTMLButtonElement | null>(null)
   const popRef = useRef<HTMLDivElement | null>(null)
 
   const place = (): void => {
     const r = btnRef.current?.getBoundingClientRect()
     if (!r) return
-    setPos({
-      left: r.left,
-      bottom: window.innerHeight - r.top + 6, // sit just above the button, grow upward
-      maxHeight: Math.max(140, r.top - 16) // never taller than the space above the button
-    })
+    if (placement === 'down') {
+      // Right-aligned to the trigger so a menu on a narrow row cannot run off
+      // the edge, and capped to the space actually below it.
+      setPos({
+        left: Math.max(8, r.right - 200),
+        top: r.bottom + 6,
+        maxHeight: Math.max(140, window.innerHeight - r.bottom - 16)
+      })
+    } else {
+      setPos({
+        left: r.left,
+        bottom: window.innerHeight - r.top + 6, // sit just above the button, grow upward
+        maxHeight: Math.max(140, r.top - 16) // never taller than the space above the button
+      })
+    }
   }
 
   const toggle = (): void => {
@@ -76,18 +111,26 @@ export function MenuButton({ label, value, valueLabel, options, onSelect, disabl
       <button
         ref={btnRef}
         type="button"
-        className={`menu-btn ${open ? 'active' : ''}`}
+        className={`menu-btn ${trigger === 'icon' ? 'icon' : ''} ${open ? 'active' : ''}`}
         disabled={disabled}
         title={title}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={toggle}
       >
-        <span className="menu-btn-label">{label}</span>
-        <span className="menu-btn-value">{current}</span>
-        <span className="menu-btn-caret" aria-hidden>
-          ▾
-        </span>
+        {trigger === 'icon' ? (
+          <span className="menu-btn-glyph" aria-hidden>
+            {glyph}
+          </span>
+        ) : (
+          <>
+            <span className="menu-btn-label">{label}</span>
+            <span className="menu-btn-value">{current}</span>
+            <span className="menu-btn-caret" aria-hidden>
+              ▾
+            </span>
+          </>
+        )}
       </button>
       {open && pos
         ? createPortal(
@@ -96,7 +139,12 @@ export function MenuButton({ label, value, valueLabel, options, onSelect, disabl
               className="menu-pop"
               role="listbox"
               aria-label={label}
-              style={{ position: 'fixed', left: pos.left, bottom: pos.bottom, maxHeight: pos.maxHeight }}
+              style={{
+                position: 'fixed',
+                left: pos.left,
+                ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }),
+                maxHeight: pos.maxHeight
+              }}
             >
               {options.map((o) => (
                 <button
