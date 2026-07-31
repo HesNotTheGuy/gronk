@@ -4,6 +4,40 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-07-30
+
+### Added
+
+- **Your skills are visible.** A Skills tab lists every skill on this machine —
+  the ones you added and the ones bundled with the Grok CLI — with the
+  description each one declares. A skill is a folder containing `SKILL.md`;
+  dropping it into `~/.grok/skills` is the entire install, and the tab says so.
+- **Session actions in the sidebar.** Rename, Archive, Export and Delete now sit
+  behind a menu on each row, including search results. They were previously
+  reachable only from the browse screens.
+- **Plugins & Skills has its own entry** in the sidebar, instead of being buried
+  inside Settings.
+- **Plugins show where they came from.** Each card now displays the account that
+  published it, such as `github.com/xai-org`, beside the marketplace's own name.
+
+### Changed
+
+- **A marketplace name is no longer treated as a credential.** It was shown as a
+  badge, but that name is a string anyone can set — including to "xAI Official".
+  It is now a plain label, and the publishing account sits next to it, because
+  that is the part that cannot be claimed without controlling it. Gronk marks
+  nothing as verified, since it has no way to know.
+
+### Fixed
+
+- **A new session appeared in the sidebar only after its first reply finished**,
+  so the list said "no sessions yet" while you were sitting in one.
+- **Switching away mid-reply severed the turn.** The agent is now told to stop
+  before its process is closed, so it ends deliberately instead of losing the
+  connection mid-sentence.
+- Skill descriptions written in the common multi-line YAML style are read
+  properly instead of appearing as a single `>`.
+
 ## [0.1.3] - 2026-07-30
 
 ### Added
@@ -142,6 +176,7 @@ private repository, so there is no earlier entry to compare against.
   warn on first launch.
 - No automatic updates. Code signing has to land first.
 
+[0.1.4]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.4
 [0.1.3]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.3
 [0.1.2]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.2
 [0.1.1]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.1
