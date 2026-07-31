@@ -4,7 +4,7 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.4] - 2026-07-30
+## [0.1.5] - 2026-07-30
 
 ### Added
 
@@ -30,6 +30,16 @@ Notable changes to Gronk. Format based on
 
 ### Fixed
 
+- **A failed plugin install showed no reason.** The error was set and then
+  immediately cleared by the refresh that followed it, so every failed install,
+  enable, disable and uninstall reported a message that never reached the screen.
+- **Search counted results it would not show.** Archived sessions matched and
+  were counted in the header, then dropped from the list underneath.
+- **Search re-read your entire history on every keystroke**, once per session.
+  It now reads once per query.
+- **Generated images were unreachable if you relocate the Grok CLI** with
+  `GROK_HOME`. Two places rebuilt the CLI's home by hand and ignored the
+  override, so the app looked in a directory the CLI was not writing to.
 - **A new session appeared in the sidebar only after its first reply finished**,
   so the list said "no sessions yet" while you were sitting in one.
 - **Switching away mid-reply severed the turn.** The agent is now told to stop
@@ -176,7 +186,7 @@ private repository, so there is no earlier entry to compare against.
   warn on first launch.
 - No automatic updates. Code signing has to land first.
 
-[0.1.4]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.4
+[0.1.5]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.5
 [0.1.3]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.3
 [0.1.2]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.2
 [0.1.1]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.1
