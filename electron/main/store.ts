@@ -698,3 +698,29 @@ export function appendPermissionAudit(entry: PermissionAuditEntry): PermissionAu
 export function getPermissionAudit(): PermissionAuditEntry[] {
   return readStore().permissionAudit
 }
+
+/**
+ * Every non-archived session paired with its transcript, from ONE store read.
+ *
+ * Search needed sessions plus every transcript. Composing that from
+ * listSessions() and getTranscript() re-read and re-parsed the entire store file
+ * once per session, on every keystroke — 10 full parses of a 200 KB file for 9
+ * sessions, and it grows linearly. This reads once.
+ *
+ * Deliberately does NOT heal duplicate messages the way getTranscript does:
+ * this is a read-only query on a debounced path, and writing the store back on
+ * every keystroke is exactly what a search must never do.
+ */
+export function listSessionsWithTranscripts(): Array<{
+  session: SessionInfo
+  messages: ChatMessage[]
+}> {
+  const data = readStore()
+  const sessions = dedupeSessions(data.sessions).slice(0, 50).map(withResolvedSurface)
+  return sessions
+    .filter((s) => !s.archived)
+    .map((session) => ({
+      session,
+      messages: dedupeTranscriptMessages(data.transcripts[session.id] ?? [])
+    }))
+}

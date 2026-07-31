@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import { EventEmitter } from 'node:events'
 import path from 'node:path'
+import { grokHome } from '../grok-home'
 import os from 'node:os'
 import fs from 'node:fs'
 import type {
@@ -453,7 +454,9 @@ export function resolveGrokBinary(override?: string): string | null {
   const exe = isWin ? 'grok.exe' : 'grok'
   const candidates: string[] = []
 
-  candidates.push(path.join(home, '.grok', 'bin', exe))
+  // Same override as everywhere else: a relocated CLI install must be found
+  // by the launcher too, not only by the readers of its state.
+  candidates.push(path.join(grokHome(), 'bin', exe))
 
   if (process.platform === 'darwin') {
     candidates.push('/usr/local/bin/grok', '/opt/homebrew/bin/grok')

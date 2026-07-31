@@ -19,11 +19,19 @@ import {
   MAX_IMAGE_BYTES,
   mimeForImageExt
 } from '../ipc-guard'
+import { grokHome } from '../grok-home'
 import { getRecentProjects, normalizeCwd } from '../store'
 import { isConsentedExportPath } from './exported-paths'
 
+/**
+ * Uses the shared helper rather than rebuilding the path, because this value is
+ * BOTH the place images are looked for and the allow-list root they are checked
+ * against. Hard-coding `~/.grok` dropped the CLI's own `GROK_HOME` override, so
+ * with it set the CLI wrote generated images to one directory while this probed
+ * another, and the containment check would have rejected them even if found.
+ */
 function grokSessionsRoot(): string {
-  return path.join(app.getPath('home'), '.grok', 'sessions')
+  return path.join(grokHome(), 'sessions')
 }
 
 function resolveImageCandidates(filePath: string): string[] {

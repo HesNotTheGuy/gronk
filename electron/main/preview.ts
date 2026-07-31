@@ -63,14 +63,11 @@ const LOCALHOST_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+[^\s"'<>
 /**
  * Trailing characters that abut a URL in prose but are never part of one.
  *
- * The tail `[^\s"']*` above stops only at whitespace and quotes, so every one of
- * these real banner shapes captured its own punctuation and then failed to
- * parse, leaving the pane waiting forever with no error:
- *
- *   App running at http://localhost:3000.
- *   (http://localhost:3000)
- *   <http://localhost:3000>
- *   [http://localhost:3000](http://localhost:3000)
+ * The pattern above already refuses brackets, so what reaches here is the
+ * sentence punctuation that survives them: `App running at
+ * http://localhost:3000.` and `ready http://localhost:3000;` both capture their
+ * own final character, and the result then fails to parse, leaving the pane
+ * waiting forever with no error.
  */
 const TRAILING_PUNCTUATION = /[.,;:!?`)\]}>]+$/
 

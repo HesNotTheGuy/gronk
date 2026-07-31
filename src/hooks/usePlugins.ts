@@ -64,7 +64,14 @@ export function usePlugins() {
       setPluginsError(null)
       try {
         const res = await action()
-        if (!res.ok) setPluginsError(res.message)
+        if (!res.ok) {
+          setPluginsError(res.message)
+          // Stop here. A failed command changed nothing, so there is nothing to
+          // re-read — and refreshPlugins opens with setPluginsError(null), which
+          // would erase the message set one line above and leave the user with a
+          // failure they never got to read.
+          return
+        }
         if (res.plugins) setInstalledPlugins(res.plugins)
         else await refreshPlugins()
       } catch (err) {

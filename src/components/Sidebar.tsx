@@ -47,10 +47,6 @@ interface Props {
   onSignIn: () => void
 }
 
-function sessionTitle(s: SessionInfo): string {
-  return (s.title || s.id.slice(0, 8)).trim()
-}
-
 /** Enough to hop between what you actually work in; the rest live in Build. */
 const SWITCHER_LIMIT = 8
 
@@ -266,7 +262,9 @@ export function Sidebar({
               className="sidebar-search-input"
               placeholder="Search all sessions"
               value={query}
-              disabled={!authenticated}
+              // Not disabled when signed out: a query typed before the session
+              // expired could then never be cleared, leaving the results pane
+              // stuck over the rails with no way back.
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') setQuery('')

@@ -15,6 +15,7 @@ import {
   deleteSession,
   getTranscript,
   listSessions,
+  listSessionsWithTranscripts,
   renameSession,
   saveTranscript
 } from '../store'
@@ -63,14 +64,18 @@ export function registerSessionsIpc(ctx: IpcContext): void {
     const terms = parseQuery(assertString(query, 'query'))
     if (terms.length === 0) return []
 
-    const sessions = listSessions()
+    // One store read for everything. Archived sessions are excluded because the
+    // sidebar builds its row lookup from the active lists, so an archived hit was
+    // counted in the results header and then silently dropped when it could not
+    // be rendered. Archived work is reachable from its own view.
+    const entries = listSessionsWithTranscripts()
     const hits = []
-    for (const session of sessions) {
+    for (const { session, messages } of entries) {
       // A session whose transcript was never persisted still matches on title.
-      const hit = scoreSession(session, getTranscript(session.id), terms)
+      const hit = scoreSession(session, messages, terms)
       if (hit) hits.push(hit)
     }
-    return rankHits(hits, sessions)
+    return rankHits(hits, entries.map((e) => e.session))
   })
 
   ipcMain.handle(
