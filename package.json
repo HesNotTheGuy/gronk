@@ -37,6 +37,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.test.json",
     "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/ts-loader.mjs \"tests/*.test.ts\"",
     "test:live": "node ./scripts/test-live.mjs",
+    "test:preview": "node ./scripts/preview-lifecycle/run.mjs",
     "verify": "npm run typecheck && npm test",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",

@@ -41,6 +41,8 @@ let urlFound = false
 let runId = 0
 /** Detached preview window, when the pane has been popped out. */
 let popWindow: BrowserWindow | null = null
+/** Set while stopPreview() runs, so the window's 'closed' handler stays out of it. */
+let tearingDown = false
 
 const PREVIEW_PARTITION = 'preview'
 
@@ -278,6 +280,13 @@ export function popOutPreview(): { ok: boolean; message: string } {
 
   popWindow.on('closed', () => {
     popWindow = null
+    // destroy() emits 'closed' SYNCHRONOUSLY, and stopPreview() destroys the
+    // window while currentUrl is still set (killTree needs it for the port). So
+    // without this the teardown re-attached a pane for the preview it was tearing
+    // down, loaded a URL into a server being killed, and emitted a preview-status
+    // still carrying that URL — the UI flashed "running" after the user hit stop.
+    // Measured, not theorised: the harness caught the stray event.
+    if (tearingDown) return
     // Closing the window means "put it back", not "stop the server". The dev
     // process is untouched, so re-attaching restores the pane where it was.
     if (currentUrl) attachView(currentUrl)
@@ -455,24 +464,32 @@ export function stopPreview(): void {
   // Invalidate first: everything still queued from this run is now stale.
   runId++
   // Close the detached window WITHOUT letting its 'closed' handler re-attach a
-  // pane for a preview that is being torn down.
-  if (popWindow && !popWindow.isDestroyed()) {
-    const w = popWindow
-    popWindow = null
-    w.destroy()
-  }
-  if (view) {
-    try {
-      if (hostWindow && !hostWindow.isDestroyed()) hostWindow.contentView.removeChildView(view)
-      view.webContents.close()
-    } catch {
-      /* ignore */
+  // pane for a preview that is being torn down. The flag is what actually does
+  // that: 'closed' fires synchronously from destroy() and branches on
+  // currentUrl, which killTree still needs for the port and so cannot be
+  // cleared first.
+  tearingDown = true
+  try {
+    if (popWindow && !popWindow.isDestroyed()) {
+      const w = popWindow
+      popWindow = null
+      w.destroy()
     }
-    view = null
-  }
-  if (devProc) {
-    killTree(devProc)
-    devProc = null
+    if (view) {
+      try {
+        if (hostWindow && !hostWindow.isDestroyed()) hostWindow.contentView.removeChildView(view)
+        view.webContents.close()
+      } catch {
+        /* ignore */
+      }
+      view = null
+    }
+    if (devProc) {
+      killTree(devProc)
+      devProc = null
+    }
+  } finally {
+    tearingDown = false
   }
   const hadState = currentUrl || currentCwd
   currentUrl = null
