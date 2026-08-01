@@ -4,6 +4,37 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-08-01
+
+### Added
+
+- **The preview pane resizes.** Drag the divider between the conversation and the
+  dev-server preview to give either side more room.
+- **Pop the preview into its own window.** Useful on a second monitor. Closing
+  that window puts the preview back in the pane and leaves the dev server
+  running. The detached window keeps every restriction the pane has: sandboxed,
+  locked to localhost, no bridge to the agent, and its own throwaway session that
+  writes nothing to disk.
+
+### Changed
+
+- **Images from the model are never fetched.** A remote image in a reply now
+  renders as a link showing the host it points at, so you decide whether to open
+  it. Loading one automatically would have told that server you had read the
+  message, and a unique URL per reply turns an image tag into a tracking pixel
+  that also leaks your IP. Images the model generates still render inline, and
+  images served by your own dev server are unaffected.
+
+### Fixed
+
+- **Stopping a popped-out preview no longer flashes "running".** Teardown
+  destroyed the detached window in a way that immediately rebuilt the pane it was
+  removing, reporting the dev server as alive for a moment after it had been
+  stopped.
+- **The preview survives a window reload.** The pane read its state only from
+  live events, so after a reload the app believed nothing was previewing while
+  the dev server was still up.
+
 ## [0.1.5] - 2026-07-30
 
 ### Added
@@ -186,6 +217,7 @@ private repository, so there is no earlier entry to compare against.
   warn on first launch.
 - No automatic updates. Code signing has to land first.
 
+[0.1.6]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.6
 [0.1.5]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.5
 [0.1.3]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.3
 [0.1.2]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.2
