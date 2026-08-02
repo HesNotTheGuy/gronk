@@ -82,7 +82,7 @@ scan. Green there is necessary and not sufficient.
 Two checks need a display and cannot run in CI:
 
 ```bash
-npm run test:visual     # renders 33 app states against a committed baseline
+npm run test:visual     # renders 34 app states against a committed baseline
 npm run test:preview    # drives the dev-server preview under real Electron
 ```
 
@@ -92,6 +92,66 @@ it must be a change somebody intended.
 
 This project has twice shipped bugs past a fully green suite, both times because
 nothing rendered anything. Assume that class of bug is still possible.
+
+## Things about this repo that will otherwise confuse you
+
+**A fork's pull request shows no checks until it is approved.** Workflow runs
+from outside contributors require approval, so an unapproved PR looks like CI
+failed when it simply has not started. Approve the run, then judge the result.
+Approving a run is not approving the change.
+
+**Push protection can reject a contributor's push.** Secret scanning blocks a
+push containing anything key-shaped before it reaches GitHub. If someone reports
+a rejected push, that is the feature working, and the fix is theirs to make: they
+rotate the key and rewrite the commit. Never advise disabling it.
+
+**`main` refuses force pushes and deletions.** This was verified by attempting
+one, not assumed. Do not try to route around it.
+
+**Visual baselines are machine-specific.** They are rendered with one font stack,
+so a contributor cannot meaningfully run `npm run test:visual` and neither can
+CI. Only a maintainer's comparison counts. Scenarios can pin their own window
+size, and some do, because a layout bug that only appears below a certain width
+is invisible to a suite that captures everything at one comfortable size.
+
+## Verify before you believe, including your own findings
+
+Today's session produced several confident, wrong claims. Each cost less to check
+than to act on.
+
+- An audit reported two "live bugs" where CSS classes had no rules. Both were
+  marker classes; a sibling class carried the styling. Nothing was broken.
+- An audit reported the packaged content security policy might never reach the
+  renderer. Measured under real Electron, it does.
+- An agent reported a test file was an unfinished stub. It had 380 lines and 22
+  tests; the agent had read it mid-write.
+- A probe reported the CSP was absent, because the probe installed its own
+  listener with an inline script that the CSP correctly blocked. The tool was
+  broken, not the thing it measured.
+
+So: when a finding would change what someone does, reproduce it first. Quote the
+command and its output rather than the conclusion.
+
+**A guard that cannot fail is worse than no guard**, because it reads as
+coverage. When you add or accept one, break the thing on purpose and confirm it
+goes red. Two checks in this repo were found to pass vacuously: one compared a
+value that the API does not report, so "correct" and "not reported" looked
+identical, and one scanned for handlers with a pattern that matched none and
+reported perfect compliance. Both now carry an assertion that the scan found
+something before judging what it found.
+
+## Known and already logged
+
+Do not re-report these as new findings:
+
+- Grok cannot ask a question mid-task; `_x.ai/ask_user_question` is unimplemented
+  and needs a captured message before it can be built
+- Several Grok messages in one turn are concatenated into a single bubble, losing
+  their ordering against tool calls, because a message is text plus a tool array
+  rather than ordered parts
+- A message with many images renders as a column of full-width cards rather than
+  a gallery
+- About twenty em dashes remain in user-facing UI strings
 
 ## Releasing
 

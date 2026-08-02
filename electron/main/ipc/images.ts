@@ -43,6 +43,19 @@ function resolveImageCandidates(filePath: string): string[] {
 
   if (isAbs) {
     candidates.push(path.normalize(trimmed))
+    // A leading slash is also how a web page names a file relative to its server
+    // root, and the agent writes those whenever it has built something served
+    // over HTTP. Node reads `/x.svg` as absolute, on Windows against the current
+    // drive, so every such reference resolved to C:\x.svg and was reported
+    // missing while the file sat in the project all along.
+    //
+    // Trying it under the project as well costs nothing and grants nothing:
+    // every candidate is realpathed and containment-checked before a byte is
+    // read, so this widens where we LOOK, never what is allowed.
+    const cwd = agentManager.getCwd()
+    if (cwd && /^[\\/]/.test(trimmed)) {
+      candidates.push(path.resolve(cwd, trimmed.replace(/^[\\/]+/, '')))
+    }
   } else {
     const rel = trimmed.replace(/^\.[\\/]/, '')
     const cwd = agentManager.getCwd()
