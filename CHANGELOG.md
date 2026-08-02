@@ -4,6 +4,17 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-08-02
+
+### Fixed
+
+- **Images could be refused from a folder that was allowed.** An image the agent
+  referred to was checked against a list of permitted folders, but one side of
+  that comparison followed shortcuts on disk and the other did not, so a folder
+  reached through one never matched. The result was "Path outside allowed image
+  roots" for a file that was genuinely inside a permitted folder. macOS was most
+  affected, since its temporary folder is reached that way by default.
+
 ## [0.1.6] - 2026-08-01
 
 ### Added
@@ -217,6 +228,7 @@ private repository, so there is no earlier entry to compare against.
   warn on first launch.
 - No automatic updates. Code signing has to land first.
 
+[0.1.7]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.7
 [0.1.6]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.6
 [0.1.5]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.5
 [0.1.3]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.3
