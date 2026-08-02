@@ -39,6 +39,24 @@ const CHANNEL_TOLERANCE = 8
 /** Fraction of pixels allowed to differ before a scenario is called changed. */
 const MAX_CHANGED_FRACTION = 0.001
 
+/**
+ * Rasterisation has to be deterministic, or the comparison is worthless.
+ *
+ * The first baseline was captured at the display's own scale factor with GPU
+ * rasterisation and subpixel text. Re-running it hours later on the SAME machine
+ * reported every one of the 30 scenarios as changed, 2 to 8 percent each, with
+ * layout pixel-identical and only glyphs and antialiased edges moving. That is
+ * not a regression, it is the harness measuring the compositor's mood.
+ *
+ * Forcing 1x, disabling subpixel text, and rendering in software removes the
+ * three inputs that drifted. Software rendering is slower and that is fine: this
+ * runs once before a release.
+ */
+app.commandLine.appendSwitch('force-device-scale-factor', '1')
+app.commandLine.appendSwitch('disable-lcd-text')
+app.commandLine.appendSwitch('disable-font-subpixel-positioning')
+app.disableHardwareAcceleration()
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const report = []
 
