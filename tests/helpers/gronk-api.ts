@@ -127,7 +127,12 @@ export function installFakeBridge(overrides: Record<string, unknown> = {}): Fake
     previewSetBounds: () => undefined,
     previewSetUrl: async () => track('previewSetUrl', undefined),
     previewReload: async () => track('previewReload', undefined),
-    previewStatus: async () => track('previewStatus', { running: false, url: null, cwd: null }),
+    previewStatus: async () =>
+      track('previewStatus', { running: false, url: null, cwd: null, poppedOut: false }),
+    previewPopOut: async () => track('previewPopOut', { ok: true, message: '' }),
+    previewDock: async () => track('previewDock', undefined),
+
+    listSkills: async () => track('listSkills', []),
 
     listInstalledPlugins: async () => track('listInstalledPlugins', []),
     listAvailablePlugins: async () => track('listAvailablePlugins', []),

@@ -22,12 +22,42 @@
  */
 const { app, BrowserWindow, session } = require('electron')
 const http = require('node:http')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 
 const preview = require('./preview.cjs')
 
 const results = []
 const check = (name, pass, detail = '') => results.push({ name, pass: !!pass, detail })
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/** Poll until the value is truthy or the budget runs out. Returns it, or null. */
+async function until(fn, budgetMs) {
+  const step = 250
+  for (let waited = 0; waited < budgetMs; waited += step) {
+    const value = await fn()
+    if (value) return value
+    await wait(step)
+  }
+  return null
+}
+
+/** GET a URL, resolving to null when nothing is listening. */
+function httpGet(url) {
+  return new Promise((resolve) => {
+    const req = http.get(url, { timeout: 2000 }, (res) => {
+      let body = ''
+      res.on('data', (c) => (body += c))
+      res.on('end', () => resolve(body))
+    })
+    req.on('error', () => resolve(null))
+    req.on('timeout', () => {
+      req.destroy()
+      resolve(null)
+    })
+  })
+}
 
 /** Windows the harness itself did not create. */
 const previewWindows = (host) =>
@@ -76,12 +106,19 @@ app.whenReady().then(async () => {
     if (popped[0]) {
       const wc = popped[0].webContents
       const prefs = wc.getLastWebPreferences() || {}
+      // STRICT equality on purpose. `!prefs.nodeIntegration` and
+      // `prefs.contextIsolation !== false` both pass when the key is merely
+      // ABSENT, which is how the partition check silently asserted nothing:
+      // getLastWebPreferences() does not echo every key it is given. A check
+      // that cannot distinguish "correct" from "not reported" is decoration.
       check('detached window: sandboxed', prefs.sandbox === true, `sandbox=${prefs.sandbox}`)
-      check('detached window: context isolated', prefs.contextIsolation !== false,
+      check('detached window: context isolated', prefs.contextIsolation === true,
         `contextIsolation=${prefs.contextIsolation}`)
-      check('detached window: no nodeIntegration', !prefs.nodeIntegration,
+      check('detached window: no nodeIntegration', prefs.nodeIntegration === false,
         `nodeIntegration=${prefs.nodeIntegration}`)
-      check('detached window: NO preload', !prefs.preload, `preload=${prefs.preload || 'none'}`)
+      // preload is NOT echoed back when absent, so a readback here would be
+      // exactly the vacuous check described above. Proven from inside the page
+      // instead, below: no preload ran means no window.gronk exists.
 
       // getLastWebPreferences() does not echo `partition`, so comparing it there
       // reports undefined and proves nothing. Session identity is the real check.
@@ -97,12 +134,21 @@ app.whenReady().then(async () => {
         wc.getURL())
 
       // No preload means no bridge: nothing here can reach the agent, the
-      // transcript store or the filesystem.
-      const reach = await wc.executeJavaScript(
-        `({ gronk: typeof window.gronk, req: typeof window.require, proc: typeof window.process })`
-      )
-      check('detached page has no window.gronk', reach.gronk === 'undefined', JSON.stringify(reach))
+      // transcript store or the filesystem. Asserted from INSIDE the page,
+      // which cannot pass vacuously the way a webPreferences readback can.
+      const reach = await wc.executeJavaScript(`({
+        gronk: typeof window.gronk,
+        req: typeof window.require,
+        proc: typeof window.process,
+        mod: typeof window.module,
+        buf: typeof window.Buffer
+      })`)
+      check('detached page has no window.gronk (proves no preload ran)',
+        reach.gronk === 'undefined', JSON.stringify(reach))
       check('detached page has no require', reach.req === 'undefined', JSON.stringify(reach))
+      check('detached page has no process', reach.proc === 'undefined', JSON.stringify(reach))
+      check('detached page has no module', reach.mod === 'undefined', JSON.stringify(reach))
+      check('detached page has no Buffer', reach.buf === 'undefined', JSON.stringify(reach))
 
       // Off-localhost navigation is refused. Opt-in: passing means the URL is
       // handed to openExternalSafely(), which pops a real tab in the user's
@@ -148,6 +194,68 @@ app.whenReady().then(async () => {
     const resurrected = events.filter((e) => e.type === 'preview-status' && e.payload?.url)
     check('stopPreview: emitted no status carrying a URL', resurrected.length === 0,
       JSON.stringify(resurrected.map((e) => e.payload.url)))
+
+    // ---- startPreview: spawn, stdout scan, kill ------------------------
+    // Previously untested end to end. setPreviewUrl() above reaches attachView
+    // directly, so the whole dev-process half of preview.ts - resolveCommand,
+    // spawn, the stdout URL scan, and the platform kill path - never ran.
+    // A tiny node server stands in for a dev server: no npm script, no CLI.
+    const projectDir = path.join(os.tmpdir(), 'gronk-preview-lifecycle-project')
+    fs.rmSync(projectDir, { recursive: true, force: true })
+    fs.mkdirSync(projectDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(projectDir, 'dev-server.js'),
+      [
+        "const http = require('http')",
+        "const s = http.createServer((_q, r) => {",
+        "  r.writeHead(200, { 'Content-Type': 'text/html' })",
+        "  r.end('<h1>spawned dev server</h1>')",
+        '})',
+        // Printed the way a real dev server announces itself, so the stdout
+        // scanner is tested against a realistic line rather than a bare URL.
+        "s.listen(0, '127.0.0.1', () => {",
+        "  console.log('  \\u279c  Local:   http://localhost:' + s.address().port + '/')",
+        '})'
+      ].join('\n')
+    )
+
+    // No package.json, so resolveCommand finds nothing and must say so.
+    const noCommand = preview.startPreview(projectDir)
+    check('startPreview with no dev script explains why',
+      noCommand.ok === false && /no dev command/i.test(noCommand.message), noCommand.message)
+    check('startPreview with no dev script did not mark itself running',
+      preview.getPreviewStatus().running === false)
+
+    // Explicit override: exercises spawn + the stdout URL scan + attachView.
+    const started = preview.startPreview(projectDir, 'node dev-server.js')
+    check('startPreview reported success', started.ok === true, JSON.stringify(started))
+
+    const found = await until(() => preview.getPreviewStatus().url, 20000)
+    check('found the dev URL in the spawned process stdout', !!found, `url=${found}`)
+
+    if (found) {
+      check('discovered URL is a localhost dev URL', /^http:\/\/localhost:\d+\/?$/.test(found), found)
+      check('pane attached for the spawned server', host.contentView.children.length === 1,
+        `children=${host.contentView.children.length}`)
+      check('status reports running', preview.getPreviewStatus().running === true)
+
+      const port = new URL(found).port
+      const body = await httpGet(`http://127.0.0.1:${port}/`)
+      check('the spawned dev server actually served a page',
+        /spawned dev server/.test(body || ''), String(body).slice(0, 60))
+
+      // The kill path is the part that has bitten this project before: npm hands
+      // the server to a grandchild and the tree walk misses it.
+      preview.stopPreview()
+      const released = await until(async () => (await httpGet(`http://127.0.0.1:${port}/`)) === null, 15000)
+      check('stopPreview released the port', !!released,
+        released ? '' : 'something is still listening on the port')
+      check('stopPreview cleared running state', preview.getPreviewStatus().running === false)
+      check('stopPreview removed the pane', host.contentView.children.length === 0,
+        `children=${host.contentView.children.length}`)
+    }
+
+    fs.rmSync(projectDir, { recursive: true, force: true })
 
     host.destroy()
   } catch (err) {
