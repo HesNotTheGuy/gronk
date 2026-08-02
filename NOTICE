@@ -10,7 +10,7 @@ http://www.apache.org/licenses/LICENSE-2.0
 
 Scope
 
-This licence covers only the source code in this repository — the Gronk
+This licence covers only the source code in this repository, the Gronk
 application itself.
 
 The Grok Build CLI is NOT part of Gronk and is NOT redistributed here. Gronk
@@ -22,6 +22,18 @@ this project grants any rights to it.
 Gronk is an independent project. It is not affiliated with, endorsed by, or
 sponsored by xAI. "Grok" is a trademark of xAI, used here solely to describe the
 software this application connects to.
+
+--------------------------------------------------------------------------------
+
+Application icon
+
+The rock icon (build/icon.png, build/icon.ico, build/icons/) was generated with
+Claude, an AI assistant made by Anthropic. It is not taken from an icon set, so
+no third party is owed attribution for it and no licence restricts its use.
+
+Recorded because an audit of this repository could otherwise not tell where the
+icons came from, and an unexplained image in a shipped binary is exactly the kind
+of thing that should not need archaeology to settle.
 
 --------------------------------------------------------------------------------
 
