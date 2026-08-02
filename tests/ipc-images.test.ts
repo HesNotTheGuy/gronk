@@ -129,6 +129,30 @@ test('a symlink inside an allowed root cannot reach a file outside it', (t) => {
   assert.match(String(result.error), /outside allowed image roots/i)
 })
 
+test('an allowed root reached through a symlink still matches', (t) => {
+  const { userData } = setup()
+  const real = path.join(userData, 'real-root')
+  fs.mkdirSync(real)
+  const file = path.join(real, 'inside.png')
+  fs.writeFileSync(file, PNG_1PX)
+
+  const linkedRoot = path.join(userData, 'linked-root')
+  try {
+    fs.symlinkSync(real, linkedRoot, 'dir')
+  } catch {
+    t.skip('symlink creation not permitted on this machine')
+    return
+  }
+
+  // Reaching the same file through the link. The candidate realpaths to
+  // .../real-root/inside.png while the root is .../linked-root, so comparing a
+  // resolved candidate against an unresolved root refused it. This is exactly
+  // what happens on macOS, where the temp dir lives behind /private.
+  const result = readLocalImageSafe(path.join(linkedRoot, 'inside.png'))
+  assert.equal(result.error, undefined, `symlinked root was refused: ${result.error}`)
+  assert.ok(result.dataUrl?.startsWith('data:image/png;base64,'))
+})
+
 test('refuses a file over the size cap', () => {
   const { userData } = setup()
   const file = path.join(userData, 'huge.png')

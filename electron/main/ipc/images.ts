@@ -118,12 +118,32 @@ function isAllowedImagePath(resolved: string): boolean {
 
   for (const root of roots) {
     try {
+      // Compare fully resolved to fully resolved. The candidate has already been
+      // through realpath, so a root that is itself behind a symlink could never
+      // match: on macOS the temp dir is /var/folders/... which really lives at
+      // /private/var/folders/..., and the same applies to any data dir the user
+      // reaches through a link. That asymmetry silently refused images that were
+      // genuinely inside an allowed root.
+      //
+      // This does not loosen the jail. Both sides are canonicalised, which is
+      // the comparison the check was always meant to make; the raw root is still
+      // tried as well so nothing that worked before stops working.
       if (isPathInside(root, resolved)) return true
+      if (isPathInside(realpathOrSelf(root), resolved)) return true
     } catch {
       /* ignore */
     }
   }
   return false
+}
+
+/** realpath, falling back to the input when the path does not exist yet. */
+function realpathOrSelf(target: string): string {
+  try {
+    return fs.realpathSync(target)
+  } catch {
+    return target
+  }
 }
 
 export function readLocalImageSafe(filePath: string): {
