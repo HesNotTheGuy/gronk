@@ -24,15 +24,19 @@ import { fileURLToPath } from 'node:url'
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const OFFLINE = process.argv.includes('--offline')
 
-function run(command, args, label) {
+function run(command, args, label, { shell = false } = {}) {
   console.log(`\n=== ${label} ===`)
   console.log(`$ ${command} ${args.join(' ')}\n`)
-  // shell:true on Windows so `npm` resolves to npm.cmd. Every argument here is a
-  // literal from this file — nothing user-supplied reaches the shell.
+  // The shell is opt-in per step, and off by default, because a shell re-parses
+  // the whole command line and that includes the program, not just the
+  // arguments. cmd.exe splits `C:\Program Files\nodejs\node.exe` at the space
+  // and reports `C:\Program` as an unknown command, so every step launched with
+  // process.execPath has to run without one. Injection is not the worry either
+  // way: every value here is a literal from this file or a path this file built.
   const result = spawnSync(command, args, {
     cwd: ROOT,
     stdio: 'inherit',
-    shell: process.platform === 'win32'
+    shell
   })
   if (result.error) throw result.error
   return result.status ?? 1
@@ -51,7 +55,11 @@ if (!hasLockfile) {
   console.log('No package-lock.json found; falling back to `npm install`.')
 }
 
-const installStatus = run('npm', installArgs, 'Install with lifecycle scripts disabled')
+// The one step that needs a shell: on Windows npm ships as npm.cmd, and
+// spawnSync will not start a .cmd on its own.
+const installStatus = run('npm', installArgs, 'Install with lifecycle scripts disabled', {
+  shell: process.platform === 'win32'
+})
 if (installStatus !== 0) {
   console.error('\nInstall failed.')
   process.exit(installStatus)
