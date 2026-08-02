@@ -9,7 +9,7 @@ import { getAuthStatus } from '../auth'
 import { assertTrustedSender } from '../ipc-guard'
 import { addRecentProject, getSettings, normalizeCwd } from '../store'
 import { isChatWorkspace } from '../../../shared/path'
-import { assertString } from './validate'
+import { assertCliName, assertString } from './validate'
 import type {
   PermissionDecision,
   PromptAttachment,
@@ -49,7 +49,14 @@ export function registerAgentIpc(): void {
         addRecentProject(normalized)
       }
       const settings = getSettings()
-      const model = options?.model ?? settings.model
+      // Validated because it becomes an argv entry: `-m <model>`. Every other
+      // string that reaches the CLI goes through assertCliToken/assertCliName,
+      // and this one did not, so a value beginning with '-' could be read by
+      // grok as a flag rather than as the model name. The stored setting is
+      // checked too, not just the renderer override: the store is a file on
+      // disk and is not a trusted input either.
+      const rawModel = options?.model ?? settings.model
+      const model = rawModel ? assertCliName(rawModel, 'model') : undefined
       // Forward the override as-is. Substituting settings.alwaysApprove here would
       // re-derive the stored posture in a second place; agent-manager folds an
       // absent override against the store itself via requestedPermissionMode.

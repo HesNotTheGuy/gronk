@@ -31,6 +31,7 @@
   "scripts": {
     "setup": "node ./scripts/setup.mjs",
     "security-check": "node ./scripts/security-check.mjs",
+    "pr:audit": "node ./scripts/pr-audit.mjs",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",

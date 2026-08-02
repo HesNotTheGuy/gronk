@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest something Gronk should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: |
+        Describe the situation, not the solution. "I want a button that does X"
+        skips the part where there might be a better answer than a button.
+      placeholder: |
+        When Grok prints a localhost URL in its reply, I have to copy it into a
+        browser by hand, even though Gronk has a preview pane right there.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What do you do instead today
+      description: If there is a workaround, knowing it helps judge how much this hurts.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      description: |
+        Gronk is a front end for the Grok Build CLI. Anything about how the agent
+        thinks, which tools it has, or what it is allowed to do belongs to the
+        CLI rather than here.
+      options:
+        - label: This is about the desktop app, not about the Grok CLI's own behaviour
+          required: true

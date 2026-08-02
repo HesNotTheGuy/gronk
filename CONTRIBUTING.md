@@ -34,6 +34,34 @@ it will almost always pass in CI.
   or decides should have a test. UI layout does not.
 - **Comments explain why.** The code already says what it does.
 
+## How a pull request gets reviewed
+
+Fork the repo, branch, push to your fork, open a pull request against `main`.
+Nobody else has write access here, so that is the only route in, including for
+trivial changes.
+
+CI runs typecheck and the full test suite on Windows, macOS and Linux, plus a
+scan of the lockfile. That is the objective part and it has to be green.
+
+Two checks cannot run in CI, because they need a real display:
+
+```bash
+npm run test:visual     # renders 30 app states, compares against a baseline
+npm run test:preview    # drives the dev-server preview under real Electron
+```
+
+A maintainer runs those before merging anything that touches `src/`. You do not
+need to run them. Say which screens your change affects and they will be looked
+at. If a screen legitimately changed, the baseline gets updated in the same
+merge; that is expected, not a failure.
+
+Changes are also read against the invariants in [CLAUDE.md](CLAUDE.md). That file
+exists so review is a checklist rather than a mood, and it is worth a look before
+you write anything that touches the main process.
+
+Expect questions rather than silence. A change that gets a lot of them is
+usually one that needed them, not one that is unwelcome.
+
 ## Where things live
 
 ```

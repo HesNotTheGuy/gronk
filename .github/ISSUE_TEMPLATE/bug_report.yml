@@ -1,0 +1,76 @@
+name: Bug report
+description: Something in Gronk does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before anything else: **do not paste an API key, token, or the contents
+        of a private conversation.** Gronk stores transcripts as readable text,
+        so a screenshot of a session can contain more than you meant to share.
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: |
+        This matters more than usual. Gronk is developed and tested on Windows.
+        The macOS and Linux builds come from CI and have never been run by the
+        author, so a bug there is genuinely unknown territory rather than a
+        regression.
+      options:
+        - Windows
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Gronk version
+      description: Shown at the bottom of the sidebar, for example 0.1.7.
+      placeholder: "0.1.7"
+    validations:
+      required: true
+
+  - type: input
+    id: cli
+    attributes:
+      label: Grok CLI version
+      description: Run `grok --version`. Put "unknown" if it will not run.
+      placeholder: "0.2.112"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+      placeholder: |
+        1. Opened a project
+        2. Clicked PREVIEW
+        3. Expected the pane to load. It stayed blank.
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Any error shown
+      description: |
+        Copy the exact text of any red banner or message. Exact wording is much
+        more useful than a description of it.
+      render: text
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked that no API key, token, or private conversation content is in this report
+          required: true
+        - label: I am using the installer from the Releases page, or I built from source
+          required: true

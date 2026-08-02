@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/HesNotTheGuy/gronk/security/advisories/new
+    about: Report privately. Do not open a public issue for a security bug.
+  - name: I ran it on macOS or Linux
+    url: https://github.com/HesNotTheGuy/gronk/discussions
+    about: Those builds come from CI and have never been run by the author. Telling us it worked is as useful as telling us it did not.
