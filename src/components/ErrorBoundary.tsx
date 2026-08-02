@@ -47,7 +47,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="crash-kicker">Gronk hit an error</div>
           <h2>{error.message || 'Unexpected error'}</h2>
           <p className="crash-copy">
-            The interface stopped rendering. Your sessions and transcripts are saved on disk — try
+            The interface stopped rendering. Your sessions and transcripts are saved on disk. Try
             again, or reload the window.
           </p>
           <pre className="crash-detail">{detail}</pre>

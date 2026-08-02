@@ -55,7 +55,7 @@ export function costNote(auth: AuthStatus | null | undefined): string {
   }
   return (
     'What these tokens would cost at API rates. You are signed in with a Grok ' +
-    'account, so nothing is billed per token — this usage counts against your ' +
+    'account, so nothing is billed per token. This usage counts against your ' +
     "plan's quota instead. Shown for scale, not as a charge."
   )
 }

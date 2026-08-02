@@ -33,7 +33,7 @@ export function useExportNotice(setError: Dispatch<SetStateAction<string | null>
           // A cancel is the user's own choice — stay silent. An empty transcript is
           // not, and would otherwise read as a dead menu item.
           if (result.reason === 'empty') {
-            setError('Nothing to export yet — this session has no saved transcript.')
+            setError('Nothing to export yet. This session has no saved transcript.')
           }
           return
         }

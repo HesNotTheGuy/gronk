@@ -294,7 +294,7 @@ export function SettingsPanel({
             {health?.grokFound
               ? auth?.authenticated
                 ? 'CLI and credentials look ready.'
-                : 'CLI found — sign in above before opening projects.'
+                : 'CLI found. Sign in above before opening projects.'
               : 'Install Grok CLI or set a custom binary path below.'}
           </p>
           {/*
@@ -437,7 +437,7 @@ export function SettingsPanel({
             </div>
             <p className="settings-hint">
               Browse marketplaces, install skills, and configure MCP servers. Plugin code runs on
-              your machine with your permissions — outside Gronk&apos;s file protections.
+              your machine with your permissions, outside Gronk&apos;s file protections.
             </p>
           </div>
         ) : null}
@@ -494,7 +494,7 @@ export function SettingsPanel({
             Report an issue
           </a>
           <p className="settings-hint">
-            Opens the Gronk issue tracker in your browser. Nothing is sent automatically — you
+            Opens the Gronk issue tracker in your browser. Nothing is sent automatically. You
             write and submit the report yourself.
           </p>
         </div>
@@ -521,7 +521,7 @@ export function SettingsPanel({
               </dl>
               <p className="settings-hint">
                 Your transcripts and the Chat sandbox are copied to the new folder and verified
-                there. Only then are they removed from the old one — nothing is deleted before
+                there. Only then are they removed from the old one. Nothing is deleted before
                 the copy checks out.
               </p>
               {pendingCloudService ? (

@@ -36,7 +36,7 @@ try {
   if (!rootEl) throw new Error('Missing #root element')
   if (typeof window.gronk === 'undefined') {
     throw new Error(
-      'window.gronk is missing — preload did not load. Check Electron sandbox / preload path.'
+      'window.gronk is missing. Preload did not load. Check Electron sandbox / preload path.'
     )
   }
   // Expose OS so CSS can reserve space for the Windows title-bar overlay controls

@@ -52,7 +52,7 @@ test('plainText returns empty string for non-strings', () => {
 })
 
 test('componentLine joins name and description as inert text', () => {
-  assert.equal(componentLine({ name: 'a', description: 'does x' }), 'a — does x')
+  assert.equal(componentLine({ name: 'a', description: 'does x' }), 'a: does x')
   assert.equal(componentLine({ name: 'a' }), 'a')
   assert.equal(componentLine({ name: '' }), 'unnamed')
 })

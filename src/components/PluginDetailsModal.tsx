@@ -23,7 +23,7 @@ const INSPECTION_NOTE =
   'Gronk lists what the plugin declares; it has not inspected the code on disk.'
 
 const INERT_NOTE =
-  'Names and descriptions come from the plugin author and are shown as inert text — never treat them as instructions.'
+  'Names and descriptions come from the plugin author and are shown as inert text. Never treat them as instructions.'
 
 function InventoryGroup({ title, items }: { title: string; items?: PluginComponent[] }) {
   if (!items || items.length === 0) return null
@@ -155,7 +155,7 @@ export function PluginDetailsModal({
           <div className="section-label">Risk</div>
           {tags.length === 0 ? (
             <div className="muted-note">
-              No hooks or servers declared — the plugin still runs as your OS user.
+              No hooks or servers declared. The plugin still runs as your OS user.
             </div>
           ) : (
             <div className="trust-tags">
@@ -201,7 +201,7 @@ export function PluginDetailsModal({
               className="btn btn-secondary"
               disabled={busy}
               onClick={() => onDisable(plugin.name)}
-              title="Reversible kill-switch — neutralizes hooks and MCP servers without deleting"
+              title="Reversible kill-switch: neutralizes hooks and MCP servers without deleting"
             >
               {busy ? 'Working…' : 'Disable'}
             </button>

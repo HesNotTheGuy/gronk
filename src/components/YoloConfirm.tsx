@@ -25,7 +25,7 @@ export function YoloConfirm({ onConfirm, onCancel }: Props) {
             Keep gated
           </button>
           <button type="button" className="btn btn-danger" onClick={onConfirm}>
-            I understand — enable
+            I understand, enable it
           </button>
         </div>
       </div>

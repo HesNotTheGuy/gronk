@@ -481,7 +481,7 @@ function rawPayload(rawInput: unknown): { text: string; truncated: boolean } {
     serialised = typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput, null, 2)
   } catch {
     // Circular or otherwise unserialisable: say so rather than showing nothing.
-    serialised = '[payload could not be serialised — deny unless you know what this is]'
+    serialised = '[payload could not be serialised: deny unless you know what this is]'
   }
   return {
     text: inertText(serialised, PERMISSION_LIMITS.rawChars, true),

@@ -114,7 +114,7 @@ export function McpServersPanel({ servers, busyName, onAdd, onRemove }: Props) {
       )}
 
       <p className="settings-hint">
-        Values shown here are redacted by Gronk — environment variables and auth headers set on a
+        Values shown here are redacted by Gronk. Environment variables and auth headers set on a
         server are never displayed in full. MCP servers run as processes on your machine, outside
         Gronk&apos;s file protections.
       </p>
@@ -170,8 +170,8 @@ export function McpServersPanel({ servers, busyName, onAdd, onRemove }: Props) {
           </label>
 
           <p className="settings-hint">
-            {TRANSPORTS.find((t) => t.id === transport)?.hint} · Project scope is coming later —
-            servers added here apply to every project.
+            {TRANSPORTS.find((t) => t.id === transport)?.hint} · Project scope is coming later.
+            Servers added here apply to every project.
           </p>
           <p className="settings-hint">
             Secrets are not entered here. Configure environment variables and auth headers with{' '}

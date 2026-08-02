@@ -35,14 +35,14 @@ export function AuthGate({
         <p className="auth-copy">
           This app does not ship with anyone else&apos;s login. Credentials are never baked into Gronk
           or copied between installs. Sign-in goes through the official Grok CLI on{' '}
-          <strong>this</strong> computer, for <strong>this</strong> OS user — so if you are signed in
-          here, that does not sign anyone else in on their machine.
+          <strong>this</strong> computer, for <strong>this</strong> OS user. Being signed in here
+          does not sign anyone else in on their machine.
         </p>
 
         <ul className="auth-bullets">
           <li>Browser login opens xAI OAuth (recommended)</li>
           <li>Device code works when a browser can&apos;t open here</li>
-          <li>Tokens stay in the local CLI store — not in Gronk settings</li>
+          <li>Tokens stay in the local CLI store, not in Gronk settings</li>
           <li>Sign out clears credentials on this machine only</li>
         </ul>
 

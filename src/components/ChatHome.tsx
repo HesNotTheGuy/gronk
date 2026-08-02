@@ -56,7 +56,7 @@ export function ChatHome({
         </div>
         {sessions.length === 0 ? (
           <div className="browse-empty">
-            No chats yet. Start one — it will show up here to resume later.
+            No chats yet. Start one and it will show up here to resume later.
           </div>
         ) : (
           <div className="browse-grid">

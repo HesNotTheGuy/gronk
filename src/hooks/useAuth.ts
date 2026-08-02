@@ -60,8 +60,8 @@ export function useAuth({ refreshMeta, clearLiveSession }: AuthDeps) {
       setAuthBusy(true)
       setAuthMessage(
         method === 'device'
-          ? 'Device login started — complete the code in your browser…'
-          : 'Browser login started — complete sign-in in the window that opens…'
+          ? 'Device login started. Complete the code in your browser…'
+          : 'Browser login started. Complete sign-in in the window that opens…'
       )
       setDeviceHint(null)
       try {

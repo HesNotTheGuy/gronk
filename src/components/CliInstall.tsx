@@ -33,7 +33,7 @@ export function CliInstall({ open, platform, installing, result, onInstall, onCl
             <div>
               <strong>Installing…</strong>
               <p className="settings-hint">
-                Running the official installer — this can take a minute. Don&apos;t close Gronk.
+                Running the official installer. This can take a minute. Don&apos;t close Gronk.
               </p>
             </div>
           </div>

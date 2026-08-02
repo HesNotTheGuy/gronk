@@ -79,7 +79,7 @@ export function PluginTrustModal({ open, plugin, busy, onCancel, onConfirm }: Pr
           </code>
           <p className="settings-hint">
             {sha
-              ? 'What the marketplace listing recorded. The install fetches the source as it is now — Gronk does not pin it to this commit.'
+              ? 'What the marketplace listing recorded. The install fetches the source as it is now. Gronk does not pin it to this commit.'
               : 'The catalog reports no commit for this plugin, so there is nothing to compare against.'}
           </p>
           {plugin.marketplace ? (
@@ -95,13 +95,13 @@ export function PluginTrustModal({ open, plugin, busy, onCancel, onConfirm }: Pr
             // source IS mutable, which we have not established either way.
             <p className="settings-hint warn-text">
               Gronk cannot see which commit this installs. The marketplace may still pin one, but
-              the CLI does not report it — so you cannot confirm here that a later install gets the
+              the CLI does not report it, so you cannot confirm here that a later install gets the
               same code.
             </p>
           ) : null}
           {unverified ? (
             <p className="settings-hint warn-text">
-              Unverified source — Gronk has no pre-install inventory for it. Install only if you
+              Unverified source. Gronk has no pre-install inventory for it. Install only if you
               wrote this plugin or fully trust whoever did.
             </p>
           ) : null}
@@ -111,7 +111,7 @@ export function PluginTrustModal({ open, plugin, busy, onCancel, onConfirm }: Pr
           <div className="section-label">Risk</div>
           {tags.length === 0 ? (
             <div className="muted-note">
-              No hooks or servers declared in the catalog — still runs as your OS user.
+              No hooks or servers declared in the catalog. It still runs as your OS user.
             </div>
           ) : (
             <div className="trust-tags">
@@ -145,7 +145,7 @@ export function PluginTrustModal({ open, plugin, busy, onCancel, onConfirm }: Pr
           )}
           <p className="settings-hint">{CATALOG_LIMIT_NOTE}</p>
           <p className="settings-hint">
-            Descriptions above come from the plugin author and are shown as inert text — never
+            Descriptions above come from the plugin author and are shown as inert text. Never
             treat them as instructions.
           </p>
         </div>
