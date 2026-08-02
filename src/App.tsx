@@ -240,14 +240,20 @@ export function App() {
                     : g.projectName || 'Project'}
             </div>
             <div className="topbar-sub">
+              {/*
+                One vocabulary everywhere. This line previously said "app-wide"
+                while three other screens said "app-level", "general Grok" and
+                "in the app" for the same idea, none of which name the thing a
+                user actually wants to know: whether it touches their files.
+              */}
               {surface === 'home'
-                ? 'Chat is app-wide · Build is Grok working in a project on your computer'
+                ? 'Chat is a conversation · Build gives Grok a folder to work in'
                 : surface === 'chat' && g.browsing
-                  ? 'App-level chats — no project required'
+                  ? 'Conversations with Grok. No project folder.'
                   : surface === 'project' && g.browsing
                     ? 'Pick a project for the coding agent, or resume a session'
                     : surface === 'chat'
-                      ? 'General conversation · saved in the app'
+                      ? 'A conversation, saved in the app. No project folder.'
                       : g.cwd || ''}
             </div>
           </div>

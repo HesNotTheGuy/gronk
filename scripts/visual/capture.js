@@ -218,6 +218,27 @@ const SCENARIOS = [
     name: 'cloudsync',
     state: 'default',
     steps: [{ clickText: 'Settings' }, { wait: 900 }, { clickText: 'Move…' }, { wait: 1000 }]
+  },
+  // The two project menus. __shots.tsx opens these itself, because a menu is not
+  // a route: it exists only after a click and closes on the next one, so a bare
+  // ?state= would photograph the view underneath. Only a wait is needed here.
+  { name: 'project-menu', state: 'project-menu', steps: [{ wait: 2500 }] },
+  { name: 'folder-menu', state: 'folder-menu', steps: [{ wait: 2500 }] },
+  {
+    // The reason the active-state work happened at all: a project you already
+    // have open used to render with a selection-style border on a screen you
+    // reached without selecting anything. Getting there needs a project opened
+    // and then a walk back to the browse list, since nothing sets an active cwd
+    // on arrival. Without this scenario the fix has no picture and could regress
+    // to exactly the ambiguity it was built to remove.
+    name: 'browse-with-active-project',
+    state: 'default',
+    steps: [
+      { clickText: SESSION_TITLE },
+      { wait: 1800 },
+      { clickText: 'Build' },
+      { wait: 1600 }
+    ]
   }
 ]
 

@@ -5,6 +5,8 @@ import type {
   SessionInfo,
   SessionSearchHit
 } from '../../shared/types'
+import { MenuButton } from './MenuButton'
+import type { MenuOption } from './MenuButton'
 import { SessionRow } from './SessionRow'
 import { folderName, isChatSession, pathsEqual } from '../../shared/path'
 
@@ -54,6 +56,31 @@ const SWITCHER_LIMIT = 8
 const LIST_LIMIT = 40
 
 const COLLAPSE_KEY = 'gronk.sidebar.collapse.v2'
+
+/**
+ * One item, for now.
+ *
+ * "Remove from recents" belongs here too, and nothing can build it yet: the
+ * bridge exposes getRecentProjects and addRecentProject and no way to forget
+ * one. An item wired to nothing would be a lie, and the obvious substitute is
+ * the one thing this must never do, since a menu row next to a project called
+ * anything like "Remove" will be read as "delete my folder" by somebody. So it
+ * waits for the IPC rather than shipping in a shape that could be misread.
+ */
+const PROJECT_OPTIONS: MenuOption[] = [
+  { id: 'reveal', label: 'Show in folder', description: 'Open it in your file manager' }
+]
+
+/**
+ * revealLocalPath already accepts a project directory: its containment check
+ * allows every recent project cwd as a root, and a path equal to its root counts
+ * as inside. Nothing in the main process had to change for this.
+ */
+function revealProject(cwd: string): void {
+  // Failure means the folder moved or went away, and the rail has nowhere to
+  // say so, so the file manager simply not opening is the whole message.
+  void window.gronk.revealLocalPath(cwd).catch(() => undefined)
+}
 
 function loadCollapse(): { folders: boolean; sessions: boolean; chats: boolean } {
   try {
@@ -236,7 +263,7 @@ export function Sidebar({
             type="button"
             className={`nav-item ${surface === 'chat' ? 'active' : ''}`}
             onClick={onGoChat}
-            title="App-level chats — no project"
+            title="Conversations with Grok. No project folder."
           >
             Chat
           </button>
@@ -295,6 +322,7 @@ export function Sidebar({
                       session={s}
                       active={hit.sessionId === activeSessionId}
                       authenticated={authenticated}
+                      chatWorkspacePath={chatWorkspacePath}
                       meta={
                         `${isChatSession(s, chatWorkspacePath) ? 'Chat' : folderName(s.cwd)}` +
                         ` · ${new Date(s.updatedAt).toLocaleDateString()}` +
@@ -324,9 +352,9 @@ export function Sidebar({
         {surface === 'home' ? (
           <div className="sidebar-section">
             <div className="muted-note">
-              <strong>Chat</strong> is general Grok in the app.
+              <strong>Chat</strong> is a conversation. No project folder.
               <br />
-              <strong>Build</strong> is Grok working in a project on your computer.
+              <strong>Build</strong> gives Grok a folder on your computer to work in.
             </div>
           </div>
         ) : null}
@@ -369,6 +397,7 @@ export function Sidebar({
                       session={s}
                       active={s.id === activeSessionId}
                       authenticated={authenticated}
+                      chatWorkspacePath={chatWorkspacePath}
                       meta={new Date(s.updatedAt).toLocaleDateString()}
                       onSelect={() => onSelectSession(s)}
                       onRename={(t) => onRenameSession(s.id, t)}
@@ -432,18 +461,34 @@ export function Sidebar({
                   ) : (
                     folderSwitcher.map((p) => {
                       const active = !!activeCwd && pathsEqual(p.cwd, activeCwd)
+                      const name = p.name || folderName(p.cwd)
+                      // Same shape as a session row: the card still opens the
+                      // project, and the menu is its sibling rather than a
+                      // control nested inside a button, which is not allowed.
                       return (
-                        <button
-                          key={p.cwd}
-                          type="button"
-                          className={`project-card ${active ? 'active' : ''}`}
-                          disabled={!authenticated}
-                          title={p.cwd}
-                          onClick={() => onOpenProject(p.cwd)}
-                        >
-                          <div className="name">{p.name || folderName(p.cwd)}</div>
-                          <div className="path">{p.cwd}</div>
-                        </button>
+                        <div key={p.cwd} className="project-item-row">
+                          <button
+                            type="button"
+                            className={`project-card ${active ? 'active' : ''}`}
+                            disabled={!authenticated}
+                            title={p.cwd}
+                            onClick={() => onOpenProject(p.cwd)}
+                          >
+                            <div className="name">{name}</div>
+                            <div className="path">{p.cwd}</div>
+                          </button>
+                          <MenuButton
+                            label="Project actions"
+                            title={`Actions for ${name}`}
+                            trigger="icon"
+                            placement="down"
+                            options={PROJECT_OPTIONS}
+                            onSelect={(id) => {
+                              if (id === 'reveal') revealProject(p.cwd)
+                            }}
+                            disabled={!authenticated}
+                          />
+                        </div>
                       )
                     })
                   )}
@@ -510,6 +555,7 @@ export function Sidebar({
                         session={s}
                         active={s.id === activeSessionId}
                         authenticated={authenticated}
+                        chatWorkspacePath={chatWorkspacePath}
                         meta={new Date(s.updatedAt).toLocaleDateString()}
                         onSelect={() => onSelectSession(s)}
                         onRename={(t) => onRenameSession(s.id, t)}

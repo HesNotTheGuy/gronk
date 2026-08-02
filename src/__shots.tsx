@@ -590,6 +590,54 @@ const api: Record<string, unknown> = {
   revealLocalPath: async () => ({ ok: true })
 }
 
+/**
+ * Two states are a menu rather than a screen.
+ *
+ * A menu is not a route: it exists only after a click, and it closes on the next
+ * one, so `?state=NAME` alone would render the view underneath and photograph
+ * nothing. The capture script can drive clicks, but a state also has to be
+ * openable by hand, since typing the URL into a browser is how anyone actually
+ * looks at one. The harness therefore performs the clicks itself, polling for
+ * each target instead of betting on a delay, and the capture entry needs only a
+ * wait.
+ *
+ * Both project menus live on the Build surface, which the app does not start on,
+ * hence the nav click first.
+ */
+const MENU_SCENARIOS: Record<string, string> = {
+  // Sidebar rail: the dots are invisible until hovered, and opening the menu is
+  // what makes them show, which is the state worth looking at anyway.
+  'project-menu': '.project-item-row .menu-btn.icon',
+  // Build browse home: the same actions on the larger project block.
+  'folder-menu': '.workspace-folder-actions .menu-btn.icon'
+}
+
+function navItem(text: string): HTMLElement | null {
+  for (const el of Array.from(document.querySelectorAll('.nav-item'))) {
+    if ((el.textContent || '').trim() === text && el instanceof HTMLElement) return el
+  }
+  return null
+}
+
+async function clickWhenPresent(find: () => HTMLElement | null): Promise<boolean> {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const el = find()
+    if (el) {
+      el.click()
+      return true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return false
+}
+
+function openMenuScenario(selector: string): void {
+  void (async () => {
+    if (!(await clickWhenPresent(() => navItem('Build')))) return
+    await clickWhenPresent(() => document.querySelector<HTMLElement>(selector))
+  })()
+}
+
 const globals = window as unknown as Record<string, unknown>
 globals.gronk = api
 /** Lets the capture script push main-process events in. */
@@ -603,3 +651,6 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>
 )
+
+const menuTarget = MENU_SCENARIOS[SCENARIO]
+if (menuTarget) openMenuScenario(menuTarget)

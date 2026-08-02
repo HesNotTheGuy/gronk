@@ -64,7 +64,22 @@ const PREVIEW_PARTITION = 'preview'
  * legal in a URL but vanishingly rare in a dev server's banner, whereas being
  * wrapped in them is common, so excluding them is the right trade.
  */
-const LOCALHOST_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+[^\s"'<>()[\]]*/i
+/**
+ * `[::]` and `0.0.0.0` are here on purpose, and they are not loopback.
+ *
+ * They are what a server prints when it binds EVERY interface, which is the
+ * common default: `python -m http.server 8765` announces `http://[::]:8765/`
+ * and was never detected, while the same server with `--bind 127.0.0.1` was.
+ * The server is reachable on localhost either way; only the announcement
+ * differs, so the pane sat blank for a server that was up.
+ *
+ * They are recognised HERE, in the scanner, and rewritten to localhost below.
+ * isLocalPreviewUrl is deliberately left alone: it gates what the pane may
+ * NAVIGATE to, and teaching it these hosts would let the pane load a
+ * non-loopback address.
+ */
+const DEV_SERVER_URL =
+  /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|\[::\]|0\.0\.0\.0):\d+[^\s"'<>()[\]]*/i
 
 /**
  * Trailing characters that abut a URL in prose but are never part of one.
@@ -78,16 +93,34 @@ const LOCALHOST_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+[^\s"'<>
 const TRAILING_PUNCTUATION = /[.,;:!?`)\]}>]+$/
 
 /**
+ * A wildcard bind address at the START of an already-extracted URL.
+ *
+ * Anchored, unlike the scanner above, and that is the point: it rewrites the
+ * host it was handed rather than hunting for one anywhere in the string, so
+ * `http://localhost:3000/#0.0.0.0:1` cannot be dragged through it. The scheme
+ * is captured and put back rather than assumed, so https stays https.
+ */
+const WILDCARD_BIND_HOST = /^(https?:\/\/)(?:\[::\]|0\.0\.0\.0):/i
+
+/**
  * The dev server's URL from a chunk of its output, or null.
+ *
+ * A wildcard bind host is normalised to localhost first. "All interfaces"
+ * includes loopback, so the address the server announced and the address we
+ * load differ only in name; rewriting once here means every later consumer
+ * (the navigation guard, killTree's port parse, the address bar) sees an
+ * address that is loopback by construction.
  *
  * Returns only what actually parses AND passes the same localhost gate the
  * navigation guards use, so a malformed capture is dropped rather than handed
- * to loadURL.
+ * to loadURL. The rewrite buys no exemption from that gate: the localhost URL
+ * it produces still has to pass isLocalPreviewUrl on its own merits.
  */
 export function extractDevServerUrl(text: string): string | null {
-  const match = text.match(LOCALHOST_URL)
+  const match = text.match(DEV_SERVER_URL)
   if (!match) return null
-  const candidate = match[0].replace(TRAILING_PUNCTUATION, '')
+  const trimmed = match[0].replace(TRAILING_PUNCTUATION, '')
+  const candidate = trimmed.replace(WILDCARD_BIND_HOST, '$1localhost:')
   return isLocalPreviewUrl(candidate) ? candidate : null
 }
 

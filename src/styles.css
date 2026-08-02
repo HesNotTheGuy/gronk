@@ -1296,9 +1296,13 @@ button {
   overflow: hidden;
 }
 
+/* Was a 45% accent border plus an inset left bar, which is this app's selection
+   vocabulary and therefore claimed the user had picked this block. They had not;
+   they landed here with a project already open. The wording now carries that
+   (RETURN on the button, an OPEN pill by the count), so the accent is down to
+   the weakest tint that still finds the block in a long list. */
 .workspace-folder-block.active {
-  border-color: color-mix(in srgb, var(--ignite) 45%, var(--line));
-  box-shadow: inset 2px 0 0 var(--ignite);
+  border-color: color-mix(in srgb, var(--ignite) 18%, var(--line));
 }
 
 .workspace-folder-head {
@@ -4882,6 +4886,16 @@ html[data-theme='light'] .auth-card {
   gap: 6px;
 }
 
+/* The dots land in a row of .btn-mini controls, so they borrow that weight
+   instead of arriving as the loudest thing in the folder header. Border, radius
+   and hover already match; only the fill and the resting ink differ. Stretch
+   alignment on the row is what keeps all three the same height. */
+.workspace-folder-actions .menu-btn.icon {
+  padding: 0 9px;
+  background: var(--panel);
+  color: var(--ink-3);
+}
+
 @media (max-width: 720px) {
   .export-banner {
     margin: 10px 12px 0;
@@ -5479,20 +5493,23 @@ html[data-theme='light'] .plugin-origin {
    The rail became the primary navigator, so Rename / Archive / Export / Delete
    had to reach it. A row can no longer be a single button — a menu control
    cannot nest inside one — so the click target and the menu are siblings. */
-.session-item-row {
+.session-item-row,
+.project-item-row {
   display: flex;
   align-items: stretch;
   gap: 2px;
 }
 
-.session-item-row .session-item {
+.session-item-row .session-item,
+.project-item-row .project-card {
   flex: 1;
   min-width: 0;
 }
 
 /* The menu stays out of the way until the row is hovered or its menu is open,
    so a dense list does not read as a column of dots. */
-.session-item-row .menu-btn.icon {
+.session-item-row .menu-btn.icon,
+.project-item-row .menu-btn.icon {
   opacity: 0;
   padding: 0 8px;
   border: none;
@@ -5503,7 +5520,10 @@ html[data-theme='light'] .plugin-origin {
 
 .session-item-row:hover .menu-btn.icon,
 .session-item-row .menu-btn.icon.active,
-.session-item-row .menu-btn.icon:focus-visible {
+.session-item-row .menu-btn.icon:focus-visible,
+.project-item-row:hover .menu-btn.icon,
+.project-item-row .menu-btn.icon.active,
+.project-item-row .menu-btn.icon:focus-visible {
   opacity: 1;
 }
 
@@ -5628,4 +5648,73 @@ html[data-theme='light'] .plugin-origin {
 
 .pane-splitter:focus-visible {
   outline: none;
+}
+
+/* ---------- "Open" is a state, and states need words ----------
+   The Build browse screen marked the project currently open with an accent
+   border and a left bar. That is the same treatment a picked item gets
+   everywhere else in the app, so it told the user they had selected something on
+   a screen they reached without selecting anything. No amount of tuning fixes
+   that, because an outline has no way to mean "running" and every way to mean
+   "chosen". So the meaning moved into language the user reads anyway: the
+   primary action says RETURN, and this pill sits next to the session count.
+   The accent stays, tinted down far enough to be a locator rather than a claim. */
+.open-pill {
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  /* --signal on purpose, the same colour the header's ONLINE pill uses, because
+     both mean "this one is live right now". Reusing it also keeps this off
+     --ignite, which the rest of the app spends on "this one is selected" and
+     which is exactly the confusion being undone here. */
+  color: var(--signal);
+  border-color: color-mix(in srgb, var(--signal) 35%, var(--line-2));
+  background: var(--signal-dim);
+}
+
+/* ONLINE breathes; this does not. The whole point of the change is to spend less
+   of the user's attention on a fact they did not ask about, and a pulsing dot
+   would spend more of it than the border it replaced. */
+.open-pill .dot {
+  width: 5px;
+  height: 5px;
+  background: var(--signal);
+  box-shadow: 0 0 8px var(--signal);
+}
+
+/* Count and pill are one sentence about the folder. Stacked, they would read as
+   two unrelated readouts in a column that is already right-aligned. */
+.workspace-folder-count-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The activity row stacks a heat bar over its label. The pill shares the label's
+   line so it lands beside the other words describing the session. */
+.activity-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* A flex item floors at min-content, which would cancel the label's ellipsis and
+   let a long frequency string push the pill out of the card. */
+.activity-foot .activity-label {
+  min-width: 0;
+}
+
+.activity-foot .open-pill {
+  flex-shrink: 0;
+}
+
+/* The card's own .active accent never reaches this screen: .activity-session-wrap
+   .browse-card strips border and background from the card so the wrapper can own
+   the frame. So the softened accent goes on the wrapper, matched to the folder
+   block above it, and the open session and the open project read as one fact
+   stated twice rather than two different kinds of highlight. */
+.activity-session-wrap.active {
+  border-color: color-mix(in srgb, var(--ignite) 18%, var(--line));
 }

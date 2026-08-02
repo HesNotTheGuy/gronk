@@ -5,13 +5,82 @@
  */
 
 import { dialog, ipcMain } from 'electron'
+import fs from 'node:fs'
 import { agentManager } from '../agent-manager'
 import { listProjectFiles } from '../fs-utils'
-import { assertTrustedSender } from '../ipc-guard'
+import { assertTrustedSender, isPathInside } from '../ipc-guard'
 import { normalizeCwd } from '../store'
 import { readLocalImageSafe, revealLocalPathSafe } from './images'
 import { assertOptionalString, assertString } from './validate'
 import type { IpcContext } from './context'
+
+/**
+ * realpath, falling back to the input when the path does not exist yet.
+ *
+ * Deliberately a second copy of the helper in ./images.ts, which keeps its own
+ * private. Worth hoisting into ipc-guard.ts once a third caller wants it; until
+ * then a shared export would be indirection around three lines whose entire
+ * contract is that they never throw.
+ */
+function realpathOrSelf(target: string): string {
+  try {
+    return fs.realpathSync(target)
+  } catch {
+    return target
+  }
+}
+
+/**
+ * FIX-13: may the renderer list files under `root`? `activeCwd` is the open
+ * agent project, or null when no session is running.
+ *
+ * isPathInside rather than a hand-rolled `startsWith(activeCwd + '/')`, because
+ * the separator is a backslash on Windows: the hand-rolled form could not match
+ * a single subdirectory there, and comparison on that platform also has to fold
+ * case. The trailing separator isPathInside appends is what stops
+ * `/home/me/project-secrets` from counting as inside `/home/me/project`.
+ */
+export function isListProjectFilesAllowed(root: string, activeCwd: string | null): boolean {
+  // Skipping the check with no session open is a deliberate decision, not an
+  // oversight. The app browses the filesystem before any project exists: the
+  // folder picker and the drop-to-open flow both list a directory the user has
+  // just chosen, at a moment when there is no agent cwd to confine them to.
+  // Refusing here would break opening a project at all.
+  //
+  // What bounds it. The handler is still behind assertTrustedSender, so only
+  // Gronk's own renderer frame reaches this at all. The window closes the
+  // instant a session starts, since every later call is measured against that
+  // project. And listProjectFiles returns names and paths only, never file
+  // contents; reading bytes goes through the jail in agent/fs-bridge.ts, which
+  // refuses outright when there is no root. Narrowing this is a product
+  // decision about the open flow rather than a one-line change here, so the
+  // behaviour is pinned by a test in tests/ipc-files.test.ts and any future
+  // change to it has to show up in that diff.
+  if (!activeCwd) return true
+
+  const nActive = normalizeCwd(activeCwd)
+
+  // Canonicalise the renderer's path before comparing, the way ./images.ts
+  // canonicalises a candidate image. A lexical test cannot see through a
+  // symlink, so `<project>/link-to-elsewhere` read as contained while pointing
+  // anywhere on disk. A path that does not exist yet is left alone by
+  // realpathOrSelf and so is still compared lexically, which is what keeps a
+  // directory the user is about to create listable.
+  const target = realpathOrSelf(normalizeCwd(root))
+
+  // Both forms of the root are tried because the project itself can sit behind
+  // a link: the macOS temp dir is /var/folders/... which really lives under
+  // /private, and the same goes for any home directory reached through one. A
+  // resolved target could never match that unresolved root, so paths genuinely
+  // inside the open project were being refused.
+  //
+  // This only makes the comparison correct, it does not widen it. Everything
+  // the old string prefix accepted with no symlink involved is still accepted,
+  // and a target that resolves out of the project is now refused where before
+  // it passed.
+  if (isPathInside(nActive, target)) return true
+  return isPathInside(realpathOrSelf(nActive), target)
+}
 
 export function registerFilesIpc(ctx: IpcContext): void {
   ipcMain.handle('gronk:select-folder', async (e) => {
@@ -45,14 +114,8 @@ export function registerFilesIpc(ctx: IpcContext): void {
     (e, cwd: string, query?: string, limit?: number) => {
       assertTrustedSender(e)
       const root = assertString(cwd, 'cwd')
-      // FIX-13: only allow listing under the active agent project when one is open
-      const active = agentManager.getCwd()
-      if (active) {
-        const nRoot = normalizeCwd(root)
-        const nActive = normalizeCwd(active)
-        if (nRoot !== nActive && !nRoot.startsWith(nActive + '/')) {
-          throw new Error('listProjectFiles restricted to the open project')
-        }
+      if (!isListProjectFilesAllowed(root, agentManager.getCwd())) {
+        throw new Error('listProjectFiles restricted to the open project')
       }
       const q = assertOptionalString(query, 'query')
       const lim =

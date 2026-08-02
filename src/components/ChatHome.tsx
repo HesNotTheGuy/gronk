@@ -33,8 +33,8 @@ export function ChatHome({
           Talk with <span>Grok</span>
         </h1>
         <p className="home-copy">
-          App-level chats with Grok — no project folder. History stays in Gronk; same account as the
-          CLI, not a website wrap.
+          Conversations with Grok, with no project folder, so nothing here reads or edits your files.
+          History stays in Gronk. Same account as the CLI, not a website wrap.
         </p>
         <div className="home-actions">
           {authenticated ? (
