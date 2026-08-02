@@ -25,6 +25,17 @@ const isWin = process.platform === 'win32'
 const gh = (args) =>
   spawnSync(isWin ? 'gh.exe' : 'gh', args, { encoding: 'utf8', shell: isWin, maxBuffer: 64 * 1024 * 1024 })
 
+/**
+ * Who owns this repository, asked rather than hardcoded.
+ *
+ * A hardcoded username silently stops working the moment the repo is
+ * transferred or the account is renamed, and it fails OPEN: every author would
+ * look external, the warning would fire constantly, and a constant warning is
+ * one nobody reads.
+ */
+const ownerResult = gh(['repo', 'view', '--json', 'owner', '--jq', '.owner.login'])
+const OWNER = String(ownerResult.stdout || '').trim()
+
 const meta = gh(['pr', 'view', pr, '--json', 'title,author,headRepositoryOwner,additions,deletions,changedFiles,isCrossRepository'])
 if (meta.status !== 0) {
   console.error(`could not read PR #${pr}`)
@@ -147,9 +158,40 @@ for (const [file, added] of files) {
 
 const dedupe = (arr) => [...new Set(arr)]
 
+const author = info.author?.login ?? 'unknown'
+/**
+ * Anyone who is not the repository owner, including an unreadable author.
+ *
+ * Unknown counts as external on purpose. The failure this guards against is
+ * merging someone else's change while half-remembering it was your own, and an
+ * author the API could not report is exactly the case where that confusion is
+ * most likely.
+ */
+const EXTERNAL = !OWNER || author.toLowerCase() !== OWNER.toLowerCase()
+
 console.log(`\nPR #${pr}  ${info.title}`)
-console.log(`by ${info.author?.login ?? 'unknown'}${info.isCrossRepository ? ' (from a fork)' : ''}`)
+console.log(`by ${author}${info.isCrossRepository ? ' (from a fork)' : ''}`)
 console.log(`${info.changedFiles} files, +${info.additions} -${info.deletions}\n`)
+
+if (EXTERNAL) {
+  console.log('┌──────────────────────────────────────────────────────────────┐')
+  console.log('│  NOT YOUR PULL REQUEST                                       │')
+  console.log('└──────────────────────────────────────────────────────────────┘')
+  console.log(`  Author:     ${author}`)
+  console.log(`  Repo owner: ${OWNER || '(could not read)'}`)
+  console.log('')
+  console.log('  You are the only account that can merge, so the only way this')
+  console.log('  lands is you clicking the button. Before you do:')
+  console.log('')
+  console.log('    1. Read every line yourself. Not a summary of it.')
+  console.log('    2. Run it. Green CI is necessary and not sufficient; visual')
+  console.log('       and preview checks cannot run there.')
+  console.log('    3. Ask why this person wants this change.')
+  console.log('')
+  console.log('  This exits non-zero no matter how clean the diff is. That is')
+  console.log('  the point: a clean audit is not consent.')
+  console.log('')
+}
 
 const highs = dedupe(high)
 const mediums = dedupe(medium)
@@ -183,9 +225,14 @@ if (highs.length) {
   console.log('  Do NOT check this out until the items above are understood.')
   console.log('  A change under .claude/ or CLAUDE.md is read as instructions by any')
   console.log('  assistant you open in that directory.')
+} else if (EXTERNAL) {
+  console.log(`  gh pr checkout ${pr}      only in a throwaway worktree, after reading it`)
 } else {
   console.log(`  gh pr checkout ${pr}      then: npm run verify, npm run test:visual`)
 }
 console.log('')
 
-process.exit(highs.length ? 1 : 0)
+// External authorship alone is enough to withhold a green light, independent of
+// whether the diff tripped anything. The exit code is the signal a script or a
+// habit reads, and "someone else wrote this" should never look like "all clear".
+process.exit(highs.length || EXTERNAL ? 1 : 0)
