@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ImageRef } from '../lib/image-refs'
 
 type LoadState =
@@ -20,6 +21,29 @@ export function LocalImage({
 }) {
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [lightbox, setLightbox] = useState(false)
+
+  /**
+   * Escape closes it, and the page behind stops scrolling while it is open.
+   *
+   * The key handler used to sit on the overlay div as onKeyDown. That div has no
+   * tabIndex and nothing ever focused it, so it never received a keystroke and
+   * the branch was unreachable: clicking the backdrop worked, and the one key
+   * anybody actually reaches for did nothing. A document listener has no such
+   * requirement.
+   */
+  useEffect(() => {
+    if (!lightbox) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setLightbox(false)
+    }
+    document.addEventListener('keydown', onKey)
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previousOverflow
+    }
+  }, [lightbox])
 
   useEffect(() => {
     let cancelled = false
@@ -104,32 +128,33 @@ export function LocalImage({
           </button>
         </figcaption>
       </figure>
-      {lightbox ? (
-        <div
-          className="local-image-lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label={image.label}
-          onClick={() => setLightbox(false)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setLightbox(false)
-          }}
-        >
-          <img
-            src={state.dataUrl}
-            alt={image.caption || image.label}
-            className="local-image-lightbox-img"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <button
-            type="button"
-            className="local-image-lightbox-close"
-            onClick={() => setLightbox(false)}
-          >
-            Close
-          </button>
-        </div>
-      ) : null}
+      {lightbox
+        ? createPortal(
+            <div
+              className="local-image-lightbox"
+              role="dialog"
+              aria-modal="true"
+              aria-label={image.label}
+              onClick={() => setLightbox(false)}
+            >
+              <div className="local-image-lightbox-frame" onClick={(e) => e.stopPropagation()}>
+                <img
+                  src={state.dataUrl}
+                  alt={image.caption || image.label}
+                  className="local-image-lightbox-img"
+                />
+                <button
+                  type="button"
+                  className="local-image-lightbox-close"
+                  onClick={() => setLightbox(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </>
   )
 }

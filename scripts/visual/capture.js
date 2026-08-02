@@ -222,6 +222,21 @@ const SCENARIOS = [
   // The two project menus. __shots.tsx opens these itself, because a menu is not
   // a route: it exists only after a click and closes on the next one, so a bare
   // ?state= would photograph the view underneath. Only a wait is needed here.
+  {
+    // Pinned at half-screen width, which is where the overflow was reported and
+    // the only width at which it reproduces. The image is oversized on purpose
+    // so the max-width cap actually binds.
+    name: 'lightbox-narrow',
+    state: 'lightbox',
+    width: 1000,
+    height: 820,
+    steps: [
+      { clickText: SESSION_TITLE },
+      { wait: 1800 },
+      { click: '.local-image-btn' },
+      { wait: 900 }
+    ]
+  },
   { name: 'project-menu', state: 'project-menu', steps: [{ wait: 2500 }] },
   { name: 'folder-menu', state: 'folder-menu', steps: [{ wait: 2500 }] },
   {
@@ -375,7 +390,15 @@ app.whenReady().then(async () => {
 
   for (const scenario of SCENARIOS) {
     const entry = { name: scenario.name, steps: [] }
+    // A scenario may pin its own window size. The lightbox overflow only
+    // appeared below roughly 1490px wide, because a 1200px cap happened to be
+    // smaller than the pane above that. Capturing everything at one comfortable
+    // width is how a layout bug hides from a layout test.
+    const w = scenario.width || WIDTH
+    const h = scenario.height || HEIGHT
     try {
+      win.setBounds({ x: 0, y: 0, width: w, height: h })
+      await wait(200)
       await win.loadURL(`${BASE}?state=${scenario.state}`)
       // A hidden window does not composite, so CSS animations never advance and
       // anything using `animation: ... both` freezes on its first keyframe. The
@@ -402,7 +425,7 @@ app.whenReady().then(async () => {
 
       // Resize to logical pixels so a HiDPI machine and a 1x machine produce
       // comparable images, and so the committed baseline stays a sane size.
-      const image = (await win.webContents.capturePage()).resize({ width: WIDTH, height: HEIGHT })
+      const image = (await win.webContents.capturePage()).resize({ width: w, height: h })
       const png = image.toPNG()
       entry.bytes = png.length
 

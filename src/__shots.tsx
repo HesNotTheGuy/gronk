@@ -215,7 +215,11 @@ function transcript(): unknown[] {
     assistant.toolCalls = [{ ...TOOL_CALLS[0], status: 'in_progress' }]
   }
 
-  if (SCENARIO === 'remoteimg') {
+  // 'lightbox' reuses this transcript purely because it is the one that renders
+  // a generated image, which is what the capture script clicks to open the
+  // viewer. It differs only in the image it is served: readLocalImage hands the
+  // lightbox scenario a deliberately oversized one.
+  if (SCENARIO === 'remoteimg' || SCENARIO === 'lightbox') {
     assistant.text = [
       'Here are two references I found:',
       '![Sunset over a harbour](https://images.example.com/harbour-sunset.jpg)',
@@ -582,8 +586,14 @@ const api: Record<string, unknown> = {
 
   readLocalImage: async (p: string) => ({
     // Mirrors the real handler, which reads the file and returns a data URL.
+    //
+    // The lightbox scenario gets a deliberately oversized one. With the small
+    // image the max-width cap never binds, so the overflow this exists to catch
+    // simply cannot happen and the scenario would pass while proving nothing.
     dataUrl:
-      'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMjAiIGhlaWdodD0iMTQwIj48cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE0MCIgZmlsbD0iIzEyMTUxNiIvPjxjaXJjbGUgY3g9IjgwIiBjeT0iNzAiIHI9IjM0IiBmaWxsPSIjZWFmZmZiIiBvcGFjaXR5PSIwLjkiLz48dGV4dCB4PSIxMzYiIHk9Ijc2IiBmaWxsPSIjZWFmZmZiIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0Ij5nZW5lcmF0ZWQ8L3RleHQ+PC9zdmc+',
+      SCENARIO === 'lightbox'
+        ? 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNDAwIiBoZWlnaHQ9IjE1MDAiPjxyZWN0IHdpZHRoPSIyNDAwIiBoZWlnaHQ9IjE1MDAiIGZpbGw9IiMwZTExMTIiLz48Y2lyY2xlIGN4PSI4MjAiIGN5PSI3NTAiIHI9IjM4MCIgZmlsbD0iI2VhZmZmYiIgb3BhY2l0eT0iMC44NSIvPjx0ZXh0IHg9IjEzMDAiIHk9Ijc4MCIgZmlsbD0iI2VhZmZmYiIgZm9udC1mYW1pbHk9Im1vbm9zcGFjZSIgZm9udC1zaXplPSI5NiI+d2lkZSBpbWFnZTwvdGV4dD48L3N2Zz4='
+        : 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMjAiIGhlaWdodD0iMTQwIj48cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE0MCIgZmlsbD0iIzEyMTUxNiIvPjxjaXJjbGUgY3g9IjgwIiBjeT0iNzAiIHI9IjM0IiBmaWxsPSIjZWFmZmZiIiBvcGFjaXR5PSIwLjkiLz48dGV4dCB4PSIxMzYiIHk9Ijc2IiBmaWxsPSIjZWFmZmZiIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0Ij5nZW5lcmF0ZWQ8L3RleHQ+PC9zdmc+',
     path: p,
     mimeType: 'image/svg+xml'
   }),

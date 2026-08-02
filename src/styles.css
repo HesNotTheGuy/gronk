@@ -3330,20 +3330,46 @@ html[data-theme='light'] .code-block {
   cursor: zoom-out;
 }
 
+/*
+ * The frame is what the image is measured against, not the window.
+ *
+ * The image was capped at min(96vw, 1200px), and vw is always the whole window
+ * even when the overlay is not. At 1273px wide that resolved to 1200px inside a
+ * pane only 983px across, so the picture ran off the right edge and the page
+ * grew a horizontal scrollbar. It looked correct maximised purely because the
+ * 1200px cap happened to be smaller than the pane at that size. Percentages are
+ * measured against whatever actually contains this, so it fits either way.
+ */
+.local-image-lightbox-frame {
+  position: relative;
+  display: flex;
+  max-width: min(96%, 1200px);
+  max-height: 92%;
+  cursor: default;
+}
+
 .local-image-lightbox-img {
-  max-width: min(96vw, 1200px);
-  max-height: 88vh;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
   object-fit: contain;
   border: 1px solid var(--line-2);
   border-radius: var(--radius);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
-  cursor: default;
 }
 
+/*
+ * Anchored to the picture, not to the window corner.
+ *
+ * It used to float at the top right of whatever the overlay turned out to be,
+ * which left it hovering over the conversation with no visible relationship to
+ * the image it closed.
+ */
 .local-image-lightbox-close {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 12px;
+  right: 12px;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.08em;
