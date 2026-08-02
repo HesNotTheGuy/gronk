@@ -68,11 +68,40 @@ export type MessageRole = 'user' | 'assistant' | 'system'
 
 export type MessageSendStatus = 'sending' | 'sent' | 'failed'
 
+/**
+ * One piece of a turn, in the order the agent produced it.
+ *
+ * Grok narrates before each tool call, so a three-step image edit is text,
+ * tool, text, tool, text. `text` and `toolCalls` are two parallel fields on one
+ * message and cannot express that order: every narration was concatenated into
+ * a single bubble rendered after every tool card, with the sentences run
+ * together ("...regenerating.Editing the image...") and each introduction sitting
+ * below the call it introduced.
+ *
+ * A tool part is a REFERENCE by id, not a copy. Status keeps streaming into the
+ * `toolCalls` entry for the whole turn; duplicating it here would give the same
+ * fact two homes and one of them would go stale.
+ */
+export type MessagePart =
+  | { kind: 'text'; text: string }
+  | { kind: 'tool'; toolCallId: string }
+
 export interface ChatMessage {
   id: string
   role: MessageRole
   /** Accumulated assistant/user text */
   text: string
+  /**
+   * The turn's contents in arrival order, when the sender recorded them.
+   *
+   * Optional on purpose, and permanently. Transcripts are persisted, so every
+   * conversation already on a user's disk predates this field. `text` and
+   * `toolCalls` are still written exactly as before, which means a message with
+   * no `parts` renders the way it always did and there is nothing to migrate.
+   * Treat this as an index over the other two fields, never as a replacement:
+   * anything that reads a whole turn's prose must keep reading `text`.
+   */
+  parts?: MessagePart[]
   /** Streaming thought/reasoning */
   thought?: string
   toolCalls?: ToolCallInfo[]
@@ -90,6 +119,51 @@ export interface ChatMessage {
   fromHistory?: boolean
   /** Attached image previews (data URLs) for UI only */
   attachments?: PromptAttachment[]
+}
+
+/**
+ * Extend the open text run, or start a new one.
+ *
+ * Streaming delivers a sentence a token at a time, so pushing a part per chunk
+ * would shatter one narration into dozens of parts and, downstream, dozens of
+ * bubbles. A chunk that lands on text is folded into it instead.
+ *
+ * Both the main process (for the persisted transcript) and the renderer (for
+ * what is on screen) build parts from the same stream of chunks, and they must
+ * agree, so they share this one function rather than each keeping a copy.
+ */
+export function appendTextPart(
+  parts: MessagePart[] | undefined,
+  text: string
+): MessagePart[] {
+  const next = parts ? [...parts] : []
+  if (!text) return next
+  const last = next[next.length - 1]
+  if (last && last.kind === 'text') {
+    next[next.length - 1] = { kind: 'text', text: last.text + text }
+    return next
+  }
+  next.push({ kind: 'text', text })
+  return next
+}
+
+/**
+ * Record where a tool call sits in the turn.
+ *
+ * An id that is already placed is left alone: Grok announces a call once and
+ * then streams status updates for the same id, and a permission prompt can
+ * announce it a third time. Each of those would otherwise punch another slot
+ * into the order and the card would appear once per update.
+ */
+export function appendToolPart(
+  parts: MessagePart[] | undefined,
+  toolCallId: string
+): MessagePart[] {
+  const next = parts ? [...parts] : []
+  if (!toolCallId) return next
+  if (next.some((p) => p.kind === 'tool' && p.toolCallId === toolCallId)) return next
+  next.push({ kind: 'tool', toolCallId })
+  return next
 }
 
 export interface PromptAttachment {

@@ -12,6 +12,7 @@ import type {
   SessionUsage,
   ToolCallInfo
 } from '../../shared/types'
+import { appendTextPart, appendToolPart } from '../../shared/types'
 import { folderName, isChatWorkspace, pathsEqual } from '../../shared/path'
 import {
   createAssistantPlaceholder,
@@ -215,6 +216,11 @@ export function useGronk() {
             return [...prev, event.message]
           })
           break
+        // Chunks and tool calls both extend `parts`, which is what puts a
+        // narration above the call it introduces instead of merging every
+        // narration in the turn into one trailing bubble. `text` and `toolCalls`
+        // are still maintained in full: they are what a transcript written by an
+        // older build has, and what the renderer falls back to.
         case 'message-chunk':
           setMessages((prev) => {
             const exists = prev.some((m) => m.id === event.messageId)
@@ -225,13 +231,20 @@ export function useGronk() {
                   id: event.messageId,
                   role: 'assistant' as const,
                   text: event.text,
+                  parts: appendTextPart(undefined, event.text),
                   createdAt: Date.now(),
                   streaming: true
                 }
               ]
             }
             return prev.map((m) =>
-              m.id === event.messageId ? { ...m, text: m.text + event.text } : m
+              m.id === event.messageId
+                ? {
+                    ...m,
+                    text: m.text + event.text,
+                    parts: appendTextPart(m.parts, event.text)
+                  }
+                : m
             )
           })
           break
@@ -252,7 +265,11 @@ export function useGronk() {
               const idx = tools.findIndex((t) => t.toolCallId === event.toolCall.toolCallId)
               if (idx >= 0) tools[idx] = { ...tools[idx], ...event.toolCall }
               else tools.push(event.toolCall)
-              return { ...m, toolCalls: tools }
+              return {
+                ...m,
+                toolCalls: tools,
+                parts: appendToolPart(m.parts, event.toolCall.toolCallId)
+              }
             })
           )
           break
@@ -271,7 +288,14 @@ export function useGronk() {
                   ...event.patch
                 } as ToolCallInfo)
               }
-              return { ...m, toolCalls: tools }
+              // A permission prompt shows the gated call through this event
+              // before any `tool-call` arrives, so the slot has to be claimed
+              // here too. Repeat status updates fold into the existing one.
+              return {
+                ...m,
+                toolCalls: tools,
+                parts: appendToolPart(m.parts, event.toolCallId)
+              }
             })
           )
           break
