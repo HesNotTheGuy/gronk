@@ -125,6 +125,25 @@ npm run dist:win    # installers, per platform
 macOS installers can only be built on macOS. Run the "Build installers" workflow
 from the Actions tab if you do not have one.
 
+### Checks that need a screen
+
+`npm run verify` runs in CI on every push. These two need a display, so they run
+locally before a release:
+
+```bash
+npm run test:visual     # render 30 app states, compare against the baseline
+npm run test:preview    # drive the dev-server preview under real Electron
+```
+
+`test:visual` exists because the rest of the suite cannot see the screen. The
+activity heatmap once shipped with no CSS at all and every test passed, because
+they asserted its data and the data was correct. When a state changes, look at
+the magenta regions in `tests/visual/diff/`, then accept it with
+`npm run test:visual:update` if the change was intended.
+
+Baselines are rendered by one machine's font stack, so comparing them on a
+different OS reports differences that are not regressions.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues go through
