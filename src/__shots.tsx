@@ -1,0 +1,605 @@
+/**
+ * Screenshot / visual-inspection harness. NOT part of the app, NOT shipped,
+ * gitignored.
+ *
+ * Mounts the real <App/> in a plain browser against a fake `window.gronk`, so
+ * states can be looked at without launching Electron and without a single byte
+ * of the author's real data. Every project name, path, session and message here
+ * is invented.
+ *
+ * A scenario is chosen with ?state=NAME. The point is coverage of the states
+ * nobody has ever actually rendered: the activity heatmap shipped in v0.1.0
+ * completely unstyled because every test asserted its data and no one looked at
+ * it.
+ *
+ * Run: npx vite --config vite.shots.config.ts
+ */
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { App } from './App'
+import './styles.css'
+
+const HOUR = 3600_000
+const DAY = 24 * HOUR
+const NOW = Date.now()
+
+const SCENARIO = new URLSearchParams(location.search).get('state') || 'default'
+
+/** Deterministic PRNG so the activity heatmap is identical on every capture. */
+function makeRandom(seed: number): () => number {
+  let state = seed
+  return () => {
+    state = (state * 1664525 + 1013904223) % 4294967296
+    return state / 4294967296
+  }
+}
+
+const PROJECTS = [
+  { cwd: '/home/dev/projects/orbital-api', name: 'orbital-api' },
+  { cwd: '/home/dev/projects/flux-dashboard', name: 'flux-dashboard' },
+  { cwd: '/home/dev/projects/packet-relay', name: 'packet-relay' }
+]
+
+const CHAT_WORKSPACE = '/home/dev/.gronk/chat-workspace'
+
+const SESSIONS = [
+  {
+    id: 's-orbital-1',
+    cwd: PROJECTS[0].cwd,
+    title: 'Rate limiter drops bursts under load',
+    createdAt: NOW - 2 * HOUR,
+    updatedAt: NOW - 18 * 60_000,
+    surface: 'project' as const,
+    messageCount: 24,
+    userTurns: 9
+  },
+  {
+    id: 's-flux-1',
+    cwd: PROJECTS[1].cwd,
+    title: 'Migrate charts to the new theme tokens',
+    createdAt: NOW - 2 * DAY,
+    updatedAt: NOW - 26 * HOUR,
+    surface: 'project' as const,
+    messageCount: 41,
+    userTurns: 15
+  },
+  {
+    id: 's-packet-1',
+    cwd: PROJECTS[2].cwd,
+    title: 'Retry backoff never resets after success',
+    createdAt: NOW - 4 * DAY,
+    updatedAt: NOW - 3 * DAY,
+    surface: 'project' as const,
+    messageCount: 12,
+    userTurns: 5
+  },
+  {
+    id: 's-chat-1',
+    cwd: CHAT_WORKSPACE,
+    title: 'Difference between a mutex and a semaphore',
+    createdAt: NOW - 5 * HOUR,
+    updatedAt: NOW - 4 * HOUR,
+    surface: 'chat' as const,
+    messageCount: 8,
+    userTurns: 3
+  },
+  {
+    id: 's-chat-2',
+    cwd: CHAT_WORKSPACE,
+    title: 'Explain CRDTs without the maths',
+    createdAt: NOW - 6 * DAY,
+    updatedAt: NOW - 6 * DAY,
+    surface: 'chat' as const,
+    messageCount: 14,
+    userTurns: 6
+  }
+]
+
+function buildActivity() {
+  const random = makeRandom(20260127)
+  const days: Array<{ date: string; userTurns: number; messages: number; sessions: number }> = []
+  let peak = 0
+  let total = 0
+
+  for (let i = 364; i >= 0; i--) {
+    const at = new Date(NOW - i * DAY)
+    const weekday = at.getDay()
+    const roll = random()
+    const quiet = weekday === 0 || weekday === 6 ? 0.75 : 0.22
+    const onHoliday = (i < 250 && i > 236) || (i < 96 && i > 88)
+    const userTurns = roll < quiet || onHoliday ? 0 : 1 + Math.floor(random() * 14)
+
+    if (userTurns > peak) peak = userTurns
+    total += userTurns
+    days.push({
+      date: at.toISOString().slice(0, 10),
+      userTurns,
+      messages: userTurns * 2 + (userTurns ? Math.floor(random() * 4) : 0),
+      sessions: userTurns ? 1 + Math.floor(random() * 2) : 0
+    })
+  }
+
+  let currentStreak = 0
+  for (let i = days.length - 1; i >= 0 && days[i].userTurns > 0; i--) currentStreak++
+  let longestStreak = 0
+  let run = 0
+  for (const day of days) {
+    run = day.userTurns > 0 ? run + 1 : 0
+    if (run > longestStreak) longestStreak = run
+  }
+
+  return {
+    days,
+    from: days[0].date,
+    to: days[days.length - 1].date,
+    peak,
+    totalUserTurns: total,
+    currentStreak,
+    longestStreak
+  }
+}
+
+const DIFF = `@@ -14,9 +14,13 @@ export class RateLimiter {
+-  private tokens = this.capacity
++  private tokens: number
++  private lastRefill = Date.now()
+
+-  allow(): boolean {
+-    if (this.tokens <= 0) return false
+-    this.tokens--
++  allow(cost = 1): boolean {
++    this.refill()
++    if (this.tokens < cost) return false
++    this.tokens -= cost
+     return true
+   }`
+
+const TOOL_CALLS = [
+  {
+    toolCallId: 't1',
+    title: 'src/limit/rate-limiter.ts',
+    kind: 'read',
+    status: 'completed' as const,
+    rawInput: { path: 'src/limit/rate-limiter.ts' }
+  },
+  {
+    toolCallId: 't2',
+    title: 'src/limit/rate-limiter.ts',
+    kind: 'edit',
+    status: 'completed' as const,
+    rawInput: { path: 'src/limit/rate-limiter.ts' },
+    content: DIFF
+  },
+  {
+    toolCallId: 't3',
+    title: 'npm test -- rate-limiter',
+    kind: 'execute',
+    status: 'completed' as const,
+    rawInput: { command: 'npm test -- rate-limiter' },
+    content:
+      '✓ refills over time (4 ms)\n✓ allows a burst up to capacity (2 ms)\n✓ rejects past capacity, then recovers (11 ms)\n\n3 passing'
+  }
+]
+
+const ASSISTANT_TEXT = `The bucket never refills. \`tokens\` is initialised once from \`capacity\` and only ever decremented, so the limiter is really a **one-shot quota**: after the first \`capacity\` requests it refuses everything until the process restarts.
+
+A token bucket needs to earn tokens back over time:
+
+\`\`\`ts
+private refill(): void {
+  const elapsed = Date.now() - this.lastRefill
+  const earned = (elapsed / 1000) * this.refillPerSecond
+  if (earned < 1) return
+  this.tokens = Math.min(this.capacity, this.tokens + earned)
+  this.lastRefill = Date.now()
+}
+\`\`\`
+
+I have applied that, plus a \`cost\` parameter so an expensive call can draw more
+than one token. Tests cover the burst case that was failing.`
+
+function transcript(): unknown[] {
+  const assistant: Record<string, unknown> = {
+    id: 'm2',
+    role: 'assistant',
+    text: ASSISTANT_TEXT,
+    thought:
+      'The field is assigned from capacity at construction and never restored. That is a quota, not a bucket.',
+    createdAt: NOW - 8 * 60_000,
+    toolCalls: TOOL_CALLS
+  }
+
+  if (SCENARIO === 'streaming') {
+    assistant.text = 'The bucket never refills. `tokens` is initialised once from `capacity` and'
+    assistant.streaming = true
+    assistant.toolCalls = [{ ...TOOL_CALLS[0], status: 'in_progress' }]
+  }
+
+  if (SCENARIO === 'remoteimg') {
+    assistant.text = [
+      'Here are two references I found:',
+      '![Sunset over a harbour](https://images.example.com/harbour-sunset.jpg)',
+      '![](https://cdn.another-host.net/a/b/diagram.png)',
+      'And a generated one, which the agent refers to by path:',
+      '![Generated concept](images/concept-01.png)'
+    ].join('\n\n')
+    assistant.toolCalls = []
+    assistant.thought = undefined
+  }
+
+  if (SCENARIO === 'toolfail') {
+    assistant.toolCalls = [
+      TOOL_CALLS[0],
+      {
+        ...TOOL_CALLS[2],
+        status: 'failed',
+        error: 'Command exited with code 1',
+        content:
+          '✗ rejects past capacity, then recovers\n\n  Expected: true\n  Received: false\n\n  at rate-limiter.test.ts:48:5\n\n1 failing'
+      }
+    ]
+    assistant.text =
+      'That change did not hold. The burst test still fails, so the refill is not running on the path the test exercises. Reading the test next.'
+  }
+
+  return [
+    {
+      id: 'm1',
+      role: 'user',
+      text: 'The rate limiter drops whole bursts once traffic spikes. Find out why and fix it.',
+      createdAt: NOW - 9 * 60_000,
+      sendStatus: 'sent'
+    },
+    assistant
+  ]
+}
+
+/**
+ * `apikey` flips the credential to XAI_API_KEY, which is what decides whether
+ * the usage meter may state a dollar figure: an API key really does draw down
+ * prepaid credit, a grok.com session does not.
+ */
+const AUTH_OK =
+  SCENARIO === 'apikey'
+    ? {
+        state: 'authenticated',
+        authenticated: true,
+        method: 'api_key_env',
+        accountLabel: 'XAI_API_KEY',
+        hasEnvApiKey: true
+      }
+    : {
+        state: 'authenticated',
+        authenticated: true,
+        method: 'session',
+        accountLabel: 'grok.com',
+        hasAuthFile: true
+      }
+
+const AUTH_OUT = { state: 'unauthenticated', authenticated: false, method: null }
+
+const LOCATION = {
+  dataDir: '/home/dev/.gronk',
+  defaultDir: '/home/dev/.gronk',
+  isDefault: true,
+  storePath: '/home/dev/.gronk/gronk-store.json',
+  chatWorkspacePath: CHAT_WORKSPACE,
+  storeBytes: 2_412_544,
+  previousChatWorkspaces: []
+}
+
+const PLUGINS = [
+  {
+    name: 'code-review',
+    version: '1.4.0',
+    description: 'Structured review pass over a diff, with severity ratings.',
+    marketplace: 'xAI Official',
+    sourceUrl: 'https://github.com/xai-org/plugin-marketplace.git',
+    category: 'quality',
+    status: 'installed' as const,
+    enabled: true,
+    skillCount: 3,
+    hasHooks: true,
+    hasAgents: false,
+    hasMcp: false,
+    sha: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
+    components: {
+      skills: [
+        { name: 'review-diff', description: 'Review a unified diff' },
+        { name: 'severity', description: 'Rate findings by severity' },
+        { name: 'summarise', description: 'Condense a review to a summary' }
+      ]
+    }
+  },
+  {
+    name: 'sql-explain',
+    version: '0.9.2',
+    description: 'Explains a query plan in plain language.',
+    marketplace: 'xAI Official',
+    // The impostor: identical self-declared name, different origin.
+    sourceUrl: 'https://github.com/totally-not-xai/sql-explain.git',
+    category: 'data',
+    status: 'installed' as const,
+    enabled: true,
+    skillCount: 1,
+    hasHooks: false,
+    hasAgents: false,
+    hasMcp: true
+  },
+  {
+    name: 'changelog',
+    version: '2.0.1',
+    description: 'Drafts release notes from commits since the last tag.',
+    marketplace: 'Community',
+    sourceUrl: 'https://github.com/some-dev/changelog.git',
+    category: 'release',
+    status: 'disabled' as const,
+    enabled: false,
+    skillCount: 2,
+    hasHooks: false,
+    hasAgents: true,
+    hasMcp: false
+  }
+]
+
+const MCP_SERVERS = [
+  {
+    name: 'filesystem',
+    transport: 'stdio' as const,
+    scope: 'user' as const,
+    commandOrUrl: 'npx',
+    args: ['-y', 'mcp-server-filesystem'],
+    status: 'ok' as const
+  },
+  {
+    name: 'postgres',
+    transport: 'stdio' as const,
+    scope: 'project' as const,
+    commandOrUrl: 'npx',
+    args: ['-y', 'mcp-server-postgres'],
+    status: 'error' as const,
+    detail: 'connection refused on 127.0.0.1:5432'
+  }
+]
+
+// ── scenario switches ──────────────────────────────────────────────────────
+
+const authenticated = SCENARIO !== 'signin'
+const empty = SCENARIO === 'empty'
+const noCli = SCENARIO === 'nocli'
+const yolo = SCENARIO === 'yolo'
+
+/** Any scenario named light* renders the light theme, which applyTheme picks up. */
+const lightTheme = SCENARIO.startsWith('light')
+
+const settings = {
+  permissionMode: yolo ? ('bypassPermissions' as const) : ('default' as const),
+  alwaysApprove: yolo,
+  alwaysApproveAck: yolo,
+  theme: (lightTheme ? 'light' : 'dark') as 'light' | 'dark',
+  model: 'grok-4.5'
+}
+
+/**
+ * A real fresh install, not an empty array.
+ *
+ * The main process emits every day in the window zero-filled — dayKeyRange
+ * clamps the span to at least 1 and a heatmap cannot be laid out with holes — so
+ * `days: []` never reaches the renderer. Seeding it that way produced orphaned
+ * weekday captions and the nonsense summary "No prompts in the last 0 days yet",
+ * neither of which a user can actually hit.
+ */
+const emptyActivity = (() => {
+  const days = []
+  for (let i = 364; i >= 0; i--) {
+    days.push({
+      date: new Date(NOW - i * DAY).toISOString().slice(0, 10),
+      userTurns: 0,
+      messages: 0,
+      sessions: 0
+    })
+  }
+  return {
+    days,
+    from: days[0].date,
+    to: days[days.length - 1].date,
+    peak: 1,
+    totalUserTurns: 0,
+    currentStreak: 0,
+    longestStreak: 0
+  }
+})()
+
+const handlers: Array<(e: unknown) => void> = []
+
+const api: Record<string, unknown> = {
+  platform: 'win32',
+  onEvent: (handler: (e: unknown) => void) => {
+    handlers.push(handler)
+    return () => {
+      const i = handlers.indexOf(handler)
+      if (i >= 0) handlers.splice(i, 1)
+    }
+  },
+
+  getSettings: async () => ({ ...settings }),
+  setSettings: async (partial: object) => ({ ...settings, ...partial }),
+  getRecentProjects: async () => (empty ? [] : PROJECTS),
+  addRecentProject: async () => PROJECTS,
+  listSessions: async () => (empty ? [] : SESSIONS),
+  listModels: async () => [
+    { id: 'grok-4.5', name: 'Grok 4.5', isDefault: true },
+    { id: 'grok-4.5-fast', name: 'Grok 4.5 Fast' },
+    { id: 'grok-code', name: 'Grok Code' }
+  ],
+  getPermissionAudit: async () => [],
+  getConnectionState: async () => (SCENARIO === 'streaming' ? 'ready' : 'ready'),
+  getGrokPath: async () => (noCli ? null : 'C:\\Program Files\\grok\\grok.exe'),
+  getChatWorkspacePath: async () => CHAT_WORKSPACE,
+  getHealth: async () => ({
+    grokFound: !noCli,
+    grokPath: noCli ? null : 'C:\\Program Files\\grok\\grok.exe',
+    nodeOk: true,
+    platform: 'win32',
+    auth: authenticated ? AUTH_OK : AUTH_OUT
+  }),
+  getAuthStatus: async () => (authenticated ? AUTH_OK : AUTH_OUT),
+  getStoreHealth: async () =>
+    SCENARIO === 'degraded'
+      ? {
+          source: 'backup',
+          degraded: true,
+          schemaVersion: 1,
+          message:
+            'gronk-store.json could not be read and the last good backup was loaded instead. Sessions written since that backup are missing.'
+        }
+      : null,
+  getCliVersion: async () =>
+    noCli
+      ? null
+      : { current: '0.2.112', channel: 'stable', verifiedAgainst: '0.2.112', status: 'ok' },
+  getActivityCalendar: async () => (empty ? emptyActivity : buildActivity()),
+
+  getDataLocation: async () => ({ ...LOCATION }),
+  // The cloud-sync warning path: the folder picker returns a OneDrive path.
+  chooseDataDir: async () => 'C:\\Users\\sam\\OneDrive\\Documents\\gronk-data',
+  moveDataDir: async () => ({ ok: true, message: '', location: { ...LOCATION } }),
+  resetDataDir: async () => ({ ok: true, message: '', location: { ...LOCATION } }),
+
+  startAgent: async () => ({ sessionId: 's-orbital-1' }),
+  stopAgent: async () => undefined,
+  sendPrompt: async () => ({ messageId: 'm-new' }),
+  cancelPrompt: async () => undefined,
+  respondPermission: async () => undefined,
+  loadSession: async () => ({ sessionId: 's-orbital-1', restored: true }),
+  getTranscript: async () => transcript(),
+  // Realistic mixed results: one title hit, two body hits, across both surfaces.
+  searchSessions: async (query: string) => {
+    if (!query.trim()) return []
+    return [
+      { sessionId: 's-orbital-1', inTitle: true, messageMatches: 2, snippet: null, score: 1002 },
+      {
+        sessionId: 's-packet-1',
+        inTitle: false,
+        messageMatches: 3,
+        snippet:
+          '…the backoff never resets after a success, so one bad minute keeps every later request slow for the rest of the run…',
+        score: 3
+      },
+      {
+        sessionId: 's-chat-1',
+        inTitle: false,
+        messageMatches: 1,
+        snippet: '…a mutex admits one holder; a semaphore admits n, which is the only real difference…',
+        score: 1
+      }
+    ]
+  },
+  saveTranscript: async () => undefined,
+  deleteSession: async () => SESSIONS,
+  renameSession: async () => null,
+  archiveSession: async () => null,
+  exportTranscript: async () => ({ ok: false, reason: 'cancelled' }),
+  listProjectFiles: async () => [
+    'src/limit/rate-limiter.ts',
+    'src/limit/rate-limiter.test.ts',
+    'src/server/routes.ts',
+    'README.md'
+  ],
+  selectFolder: async () => null,
+  selectFile: async () => null,
+  login: async () => ({ ok: true, method: 'oauth', message: '', auth: AUTH_OK }),
+  logout: async () => ({ ok: true, message: '', auth: AUTH_OUT }),
+  installCli: async () => ({ ok: true, message: '', grokPath: null, installed: false }),
+
+  previewStart: async () => ({ ok: true, message: '' }),
+  previewStop: async () => undefined,
+  previewSetBounds: () => undefined,
+  previewSetUrl: async () => undefined,
+  previewReload: async () => undefined,
+  previewStatus: async () =>
+    SCENARIO === 'preview' || SCENARIO === 'preview-popped'
+      ? {
+          running: true,
+          url: 'http://localhost:5173',
+          cwd: PROJECTS[0].cwd,
+          poppedOut: SCENARIO === 'preview-popped'
+        }
+      : { running: false, url: null, cwd: null },
+  previewPopOut: async () => ({ ok: true, message: '' }),
+  previewDock: async () => undefined,
+
+  listSkills: async () => [
+    {
+      name: 'snap-lens-studio',
+      description:
+        "Guide for building Snapchat Lenses (AR) in Snap's Lens Studio — the desktop editor, scripting API and publishing flow.",
+      source: 'user' as const,
+      directory: 'snap-lens-studio'
+    },
+    {
+      name: 'code-review',
+      description:
+        'Run an extremely strict maintainability review for abstraction quality, giant files, and spaghetti-condition growth.',
+      source: 'bundled' as const,
+      directory: 'code-review'
+    },
+    {
+      name: 'build-with-ai',
+      description:
+        'Default to xAI when building AI/LLM features into an app. Use whenever adding or scaffolding AI functionality.',
+      source: 'bundled' as const,
+      directory: 'build-with-ai'
+    }
+  ],
+  listInstalledPlugins: async () => PLUGINS,
+  listAvailablePlugins: async () => [
+    {
+      name: 'perf-budget',
+      version: '1.0.0',
+      description: 'Flags bundle-size regressions against a budget.',
+      marketplace: 'xAI Official',
+      category: 'quality',
+      status: 'available' as const,
+      skillCount: 2,
+      hasHooks: true,
+      hasAgents: false,
+      hasMcp: false
+    }
+  ],
+  listMarketplaces: async () => [
+    { name: 'xAI Official', kind: 'git', url: 'https://github.com/xai/plugins', branch: 'main' },
+    { name: 'Community', kind: 'git', url: 'https://github.com/example/plugins', branch: 'main' }
+  ],
+  installPlugin: async () => ({ ok: true, message: '' }),
+  enablePlugin: async () => ({ ok: true, message: '' }),
+  disablePlugin: async () => ({ ok: true, message: '' }),
+  uninstallPlugin: async () => ({ ok: true, message: '' }),
+  listMcpServers: async () => MCP_SERVERS,
+  addMcpServer: async () => ({ ok: true, message: '' }),
+  removeMcpServer: async () => ({ ok: true, message: '' }),
+  mcpDoctor: async () => MCP_SERVERS,
+
+  readLocalImage: async (p: string) => ({
+    // Mirrors the real handler, which reads the file and returns a data URL.
+    dataUrl:
+      'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMjAiIGhlaWdodD0iMTQwIj48cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE0MCIgZmlsbD0iIzEyMTUxNiIvPjxjaXJjbGUgY3g9IjgwIiBjeT0iNzAiIHI9IjM0IiBmaWxsPSIjZWFmZmZiIiBvcGFjaXR5PSIwLjkiLz48dGV4dCB4PSIxMzYiIHk9Ijc2IiBmaWxsPSIjZWFmZmZiIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0Ij5nZW5lcmF0ZWQ8L3RleHQ+PC9zdmc+',
+    path: p,
+    mimeType: 'image/svg+xml'
+  }),
+  revealLocalPath: async () => ({ ok: true })
+}
+
+const globals = window as unknown as Record<string, unknown>
+globals.gronk = api
+/** Lets the capture script push main-process events in. */
+globals.__emit = (event: unknown) => {
+  for (const handler of [...handlers]) handler(event)
+}
+globals.__scenario = SCENARIO
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+)

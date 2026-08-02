@@ -38,6 +38,8 @@
     "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./tests/ts-loader.mjs \"tests/*.test.ts\"",
     "test:live": "node ./scripts/test-live.mjs",
     "test:preview": "node ./scripts/preview-lifecycle/run.mjs",
+    "test:visual": "node ./scripts/visual/run.mjs",
+    "test:visual:update": "node ./scripts/visual/run.mjs --update",
     "verify": "npm run typecheck && npm test",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",

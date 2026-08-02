@@ -24,11 +24,14 @@ SKILLS-PLUGINS-SPEC.md
 # Author's own tooling, not part of the app.
 scripts/make-icon.mjs
 
-# Screenshot harness: mounts the app in a browser against fake data to capture
-# README images. Regenerated on demand, never shipped.
-src/__shots.html
-src/__shots.tsx
-vite.shots.config.ts
+# The shots harness (src/__shots.*, vite.shots.config.ts) is now tracked: it is
+# what `npm run test:visual` renders, so it has to be in the repo. It is excluded
+# from the app build by vite.shots.config.ts being a separate config, and from
+# the packaged asar by electron-builder's files list.
+
+# Fresh renders and diffs from `npm run test:visual`. Only the baseline is kept.
+tests/visual/current/
+tests/visual/diff/
 
 # AI coding-assistant working directories. Ignored here rather than only in
 # .git/info/exclude, which is per-clone and never published — without this a
