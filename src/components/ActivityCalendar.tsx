@@ -20,7 +20,7 @@ const LEGEND_STEPS = Array.from({ length: INTENSITY_LEVELS + 1 }, (_, i) => i)
  *
  * Every colour, size and gap belongs to `src/styles.css`. Intensity travels as a
  * `level-N` class rather than as a computed style so the palette can be replaced
- * without touching this file — see the class list in the styling notes.
+ * without touching this file. See the class list in the styling notes.
  *
  * Self-contained on purpose: it fetches its own data through
  * `useActivityCalendar`, so mounting it anywhere costs the host component no

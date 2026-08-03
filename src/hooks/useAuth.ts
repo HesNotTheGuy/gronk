@@ -4,7 +4,7 @@ import type { AuthStatus, LoginMethod, MainToRendererEvent } from '../../shared/
 interface AuthDeps {
   /**
    * Re-read the app-wide metadata after the account changes. Stable for the
-   * lifetime of the hook — see the forward handle in useGronk.
+   * lifetime of the hook. See the forward handle in useGronk.
    */
   refreshMeta: () => Promise<void>
   /**
@@ -19,7 +19,7 @@ interface AuthDeps {
 /**
  * Grok account state.
  *
- * Subscribes to `onEvent` itself for the `auth` event — main pushes one whenever
+ * Subscribes to `onEvent` itself for the `auth` event: main pushes one whenever
  * the CLI's credentials change under us, and this is the only consumer.
  * `onEvent` supports independent subscribers and returns an unsubscribe
  * function, which the effect returns so a remount cannot leave a second handler

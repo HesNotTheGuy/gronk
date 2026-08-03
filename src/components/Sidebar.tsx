@@ -24,7 +24,7 @@ interface Props {
   chatWorkspacePath: string | null
   activeCwd: string | null
   activeSessionId: string | null
-  /** Archived sessions across both surfaces — entry point is hidden at 0 */
+  /** Archived sessions across both surfaces. The entry point is hidden at 0 */
   archivedCount: number
   onGoHome: () => void
   onGoChat: () => void
@@ -50,13 +50,13 @@ interface Props {
 /** Enough to hop between what you actually work in; the rest live in Build. */
 const SWITCHER_LIMIT = 8
 
-/** Rails are a hop list, not an archive — the browse homes hold the full set. */
+/** Rails are a hop list, not an archive: the browse homes hold the full set. */
 const LIST_LIMIT = 40
 
 const COLLAPSE_KEY = 'gronk.sidebar.collapse.v2'
 
 /**
- * Project rail actions. "Remove from list" only forgets the recent entry — it
+ * Project rail actions. "Remove from list" only forgets the recent entry. It
  * never deletes the folder on disk. The wording must stay that careful.
  */
 function projectOptions(pinned: boolean): MenuOption[] {
@@ -106,7 +106,7 @@ function loadCollapse(): { folders: boolean; sessions: boolean; chats: boolean }
 }
 
 /**
- * Left rail — the navigator for whichever surface you are on.
+ * Left rail: the navigator for whichever surface you are on.
  *
  * It stays put whether you are browsing or inside a conversation, so choosing
  * Build shows your projects immediately rather than after you have already
@@ -197,7 +197,7 @@ export function Sidebar({
     return map
   }, [chatSessions, projectSessions])
 
-  /** Only the open project's sessions — the all-projects view is ProjectHome's job */
+  /** Only the open project's sessions. The all-projects view is ProjectHome's job */
   const folderSessionsAll = useMemo(() => {
     if (!activeCwd) return []
     return projectSessions
@@ -221,7 +221,7 @@ export function Sidebar({
 
   /**
    * Every rail count describes the rows actually rendered, and any list that got
-   * cut says how much it is hiding — a header that disagrees with its own body
+   * cut says how much it is hiding. A header that disagrees with its own body
    * is worse than no count at all.
    */
   const hiddenChats = chatListAll.length - chatList.length
@@ -233,7 +233,7 @@ export function Sidebar({
    *
    * They used to be hidden while browsing, so picking Build gave you a browse
    * screen with an empty rail, and the list of projects only appeared after you
-   * had already chosen one — the moment you no longer needed it. Worse, getting
+   * had already chosen one, the moment you no longer needed it. Worse, getting
    * back to the list meant leaving the project entirely, which is what the
    * "Switch workspace / All" buttons existed to undo. Keeping the list on screen
    * removes the round trip and both buttons with it.
@@ -600,7 +600,7 @@ export function Sidebar({
             Sign in
           </button>
         ) : null}
-        {/* Stays hidden until there is something archived — archiving is meant to be quiet */}
+        {/* Stays hidden until there is something archived: archiving is meant to be quiet */}
         {archivedCount > 0 ? (
           <button
             type="button"

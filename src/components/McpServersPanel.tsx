@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import type { McpAddInput, McpServer, McpTransport } from '../../shared/types'
 import { plainText } from '../lib/plugin-view'
 
-/** Same shape the main process enforces — reject anything that could be read as a CLI flag. */
+/** Same shape the main process enforces: reject anything that could be read as a CLI flag. */
 const NAME_RE = new RegExp('^[A-Za-z0-9._@/-]+$')
 
 const TRANSPORTS: Array<{ id: McpTransport; label: string; hint: string }> = [
@@ -66,7 +66,7 @@ export function McpServersPanel({ servers, busyName, onAdd, onRemove }: Props) {
       return
     }
     setFormError(null)
-    // MVP: user scope only — the CLI helper has no cwd, so -s project would write into
+    // MVP: user scope only. The CLI helper has no cwd, so -s project would write into
     // Gronk's own directory instead of the project (SKILLS-PLUGINS-SPEC §5).
     onAdd({ name: n, commandOrUrl: target, transport, scope: 'user' })
     reset()

@@ -105,9 +105,9 @@ export function HomeView({
         </div>
       </div>
 
-      {/* Single scrollable feed — one panel so sections never overlay each other */}
+      {/* Single scrollable feed: one panel so sections never overlay each other */}
       <section className="home-feed">
-        {/* Fetches its own data — no props, so Home does not have to thread the
+        {/* Fetches its own data. No props, so Home does not have to thread the
             calendar through every parent that renders it. */}
         <div className="home-feed-block">
           <ActivityCalendar />

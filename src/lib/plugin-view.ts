@@ -19,7 +19,7 @@ export interface ComponentCounts {
 /**
  * Counts derived from `components.*` only.
  * The flat `skill_count` / `has_*` summary fields are unreliable for
- * `status: "available"` catalog entries (SKILLS-PLUGINS-SPEC §1) — never read them.
+ * `status: "available"` catalog entries (SKILLS-PLUGINS-SPEC §1). Never read them.
  */
 export function componentCounts(plugin: Plugin): ComponentCounts {
   const c = plugin?.components
@@ -32,7 +32,7 @@ export function componentCounts(plugin: Plugin): ComponentCounts {
   }
 }
 
-/** C0/C1 controls, zero-width joiners and bidi overrides — used to disguise catalog text. */
+/** C0/C1 controls, zero-width joiners and bidi overrides, all used to disguise catalog text. */
 function isUnsafeChar(code: number): boolean {
   return (
     code < 0x20 ||
@@ -45,7 +45,7 @@ function isUnsafeChar(code: number): boolean {
 
 /**
  * Every plugin/skill/component string comes from a third-party marketplace catalog and is
- * UNTRUSTED. It is rendered as inert plain text — never markdown, never HTML, never as
+ * UNTRUSTED. It is rendered as inert plain text: never markdown, never HTML, never as
  * instructions. Collapses whitespace and strips control / bidi-override characters.
  */
 export function plainText(value: string | null | undefined, max = 260): string {
@@ -132,15 +132,15 @@ export function auditPlugin(plugin: Plugin): RiskTag[] {
 /**
  * Where a plugin actually comes from, e.g. `github.com/xai-org`.
  *
- * The card used to show `plugin.marketplace` as a badge — a name typed into a
- * config file, which anyone can set to "xAI Official" and inherit the same
- * visual authority as the real catalog. The host and account CANNOT be forged
+ * The card used to show `plugin.marketplace` as a badge. That is a name typed
+ * into a config file, which anyone can set to "xAI Official" and inherit the
+ * same visual authority as the real catalog. The host and account CANNOT be forged
  * that way: publishing under github.com/xai-org means controlling that account.
  *
  * So the origin is displayed and the name is not treated as a credential.
  * Deliberately no allow-list of "verified" publishers: that would be Gronk
  * vouching for third parties it has never checked, and any badge simply moves
- * the target — people stop reading the origin and scan for the mark instead.
+ * the target: people stop reading the origin and scan for the mark instead.
  *
  * Returns null when there is no usable URL, so the caller renders nothing rather
  * than an empty chip that reads as "no origin, therefore fine".
@@ -172,13 +172,13 @@ export function sourceOrigin(url: string | null | undefined): string | null {
 /**
  * What `grok plugin install <SOURCE>` receives. Never derived from free-form catalog prose.
  *
- * `<SOURCE>` must be a git URL, a `user/repo` shorthand, or a local path — verified against
+ * `<SOURCE>` must be a git URL, a `user/repo` shorthand, or a local path. Verified against
  * `grok plugin install --help` on 0.2.111. There is NO install-by-name form, so a plugin
  * name is not a usable source: the CLI would read it as a path or a repo shorthand and
  * install the wrong thing, or nothing. Returning '' instead leaves the trust modal's
  * confirm button disabled, which is the honest outcome when Gronk cannot name a target.
  *
- * For a catalog entry that declares its own repository, `sourceUrl` is that repository —
+ * For a catalog entry that declares its own repository, `sourceUrl` is that repository,
  * the same one the pinned commit refers to. Entries that declare none fall back to the
  * marketplace repo URL, which installs from the marketplace rather than the plugin's
  * upstream; that asymmetry is why the trust modal shows the source it is about to use.

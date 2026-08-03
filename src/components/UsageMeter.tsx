@@ -23,7 +23,7 @@ function formatExact(n: number): string {
 
 /**
  * Null when there is no cost to show. The CLI reports 0 ticks for turns it did
- * not price, and "$0.00" would assert the turn was free — a stronger claim than
+ * not price, and "$0.00" would assert the turn was free, a stronger claim than
  * the data supports.
  */
 function formatCost(usd?: number): string | null {
@@ -69,7 +69,7 @@ function UsageColumn({
           <dt>Out</dt>
           <dd title={formatExact(usage.outputTokens)}>{formatTokens(usage.outputTokens)}</dd>
         </div>
-        {/* Cached reads are why a large input can still be cheap — hiding them
+        {/* Cached reads are why a large input can still be cheap. Hiding them
             would make the input figure look alarming for no reason. */}
         <div className="usage-cell cached">
           <dt>Cached</dt>
@@ -124,7 +124,7 @@ function UsageColumn({
 /**
  * Token and cost readout for the live session.
  *
- * Deliberately state-only — no effects, no callbacks into props. The panel it
+ * Deliberately state-only: no effects, no callbacks into props. The panel it
  * sits next to shipped an infinite render loop from an effect that depended on
  * an inline-arrow prop's identity; there is nothing here for that bug to attach
  * to. There is also no percentage-full gauge: the CLI exposes no context-window

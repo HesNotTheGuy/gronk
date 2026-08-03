@@ -23,7 +23,7 @@ export interface DiffLine {
 
 /**
  * Gutter mark for a diff row. Shared so the tool card and the permission modal
- * cannot drift — the approval screen and the after-the-fact view showing the
+ * cannot drift. The approval screen and the after-the-fact view showing the
  * same edit with different symbols would be its own small trust problem.
  * Uses U+2212 MINUS, not a hyphen, so it aligns with '+' in a mono column.
  */
@@ -54,7 +54,7 @@ function kindLabel(kind?: string, title?: string, hasImages?: boolean): string {
 export interface FormatOptions {
   /**
    * Cap on the characters read from each side before diffing. Left undefined by
-   * ToolCard — a completed call already ran, so its payload is whatever it was.
+   * ToolCard: a completed call already ran, so its payload is whatever it was.
    * The permission surface sets it because the request is agent-supplied and
    * unbounded: splitting a multi-megabyte string into lines and painting them
    * would stall the renderer at the exact moment the user needs to answer.
@@ -68,7 +68,7 @@ export interface FormatOptions {
  * Strips home-directory prefixes generically (`C:/Users/<any>/…`, `/Users/…`,
  * `/home/…` → `~/…`) so screenshots and chat do not broadcast a machine
  * username. Does not hardcode any real account. Full strings stay in expanded
- * payloads and permission subjects — this is a lens for the one-line summary.
+ * payloads and permission subjects. This is a lens for the one-line summary.
  */
 export function shortenForDisplay(text: string, maxLen = 96): string {
   if (!text) return ''
@@ -85,7 +85,7 @@ export function shortenForDisplay(text: string, maxLen = 96): string {
     return pre + collapseAbsPathSegments(p)
   })
 
-  // ~/OneDrive/Documents/… still long — keep ~ + last three segments
+  // ~/OneDrive/Documents/… still long, so keep ~ + last three segments
   s = s.replace(/~[\\/][^\s"']+/g, (p) => {
     const parts = p.replace(/\\/g, '/').split('/').filter(Boolean)
     // parts[0] is "~"
@@ -269,7 +269,7 @@ export function formatTool(tool: ToolCallInfo, opts: FormatOptions = {}): Format
 //
 // The approval prompt is the one screen where the user's answer is binding, and
 // its entire payload is written by the agent. Everything below turns that
-// payload into something readable — a diff, a command, the fields that matter —
+// payload into something readable (a diff, a command, the fields that matter)
 // without letting it decide how tall the modal gets or what the reader sees
 // first. The raw payload stays reachable in the modal; this is a lens on it,
 // not a replacement for it.
@@ -280,7 +280,7 @@ export const PERMISSION_LIMITS = {
   diffSourceChars: 60000,
   /** Rendered diff rows. `.diff-pre` scrolls; this bounds the DOM node count. */
   diffLines: 200,
-  /** Per rendered line — one unbroken megabyte-long line wraps into a wall of text. */
+  /** Per rendered line. One unbroken megabyte-long line wraps into a wall of text. */
   lineChars: 300,
   subjectChars: 2000,
   factValueChars: 200,
@@ -399,7 +399,7 @@ const PREFERRED_SUBJECT: Record<string, string> = {
   AGENT: 'Prompt'
 }
 
-/** Keys the diff already renders — repeating them as facts is noise, not detail. */
+/** Keys the diff already renders. Repeating them as facts is noise, not detail. */
 const DIFF_KEYS = [
   'old_string',
   'oldString',
@@ -461,8 +461,8 @@ function oneSidedDiff(text: string, type: 'add' | 'del', cap: number): DiffLine[
 /**
  * Creating a file sends `new_string` with an empty (or absent) `old_string`, and
  * `extractDiff` skips it because there is nothing to compare against. That is
- * the case where a preview matters most — the user is approving the entire
- * contents — so the permission view renders it as an all-additions diff.
+ * the case where a preview matters most (the user is approving the entire
+ * contents), so the permission view renders it as an all-additions diff.
  */
 function wholeFileDiff(input: Record<string, unknown> | null): DiffLine[] | undefined {
   const before = pickAnyString(input, OLD_TEXT_KEYS)
@@ -591,7 +591,7 @@ export function formatPermission(
     // With a diff on screen the path is already the caption above it.
     if (diff && subject?.label === 'File') subject = null
     if (!subject && !input && typeof request?.rawInput === 'string' && request.rawInput.trim()) {
-      // Payload is a bare string, not JSON — that string is the whole request.
+      // Payload is a bare string, not JSON. That string is the whole request.
       subject = {
         label: PREFERRED_SUBJECT[label] || 'Payload',
         key: '',

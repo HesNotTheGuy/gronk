@@ -7,7 +7,7 @@ import type { MarketplaceSource, McpAddInput, McpServer, Plugin,
  * Plugins, marketplaces and MCP servers.
  *
  * Self-contained on purpose: nothing here reads the agent, the session or the
- * settings, and nothing outside writes this state. It is lazy — every call in
+ * settings, and nothing outside writes this state. It is lazy: every call in
  * here hits the network or a marketplace git cache, so the panel that shows the
  * data is what asks for it, never the app's startup path.
  */
@@ -26,7 +26,7 @@ export function usePlugins() {
     setPluginsError(null)
     try {
       // Skills are read straight off disk, so they cost nothing and never fail
-      // the way a CLI call can — but they are fetched together so one refresh
+      // the way a CLI call can, but they are fetched together so one refresh
       // brings the whole panel up to date.
       const [inst, mkts, servers, skillList] = await Promise.all([
         window.gronk.listInstalledPlugins(),
@@ -67,7 +67,7 @@ export function usePlugins() {
         if (!res.ok) {
           setPluginsError(res.message)
           // Stop here. A failed command changed nothing, so there is nothing to
-          // re-read — and refreshPlugins opens with setPluginsError(null), which
+          // re-read, and refreshPlugins opens with setPluginsError(null), which
           // would erase the message set one line above and leave the user with a
           // failure they never got to read.
           return

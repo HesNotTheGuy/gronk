@@ -52,7 +52,7 @@ export function PluginCard({
 
       {/*
         Origin is the only trustworthy publisher signal. Marketplace name and
-        category are self-declared catalog strings — secondary, not a badge row.
+        category are self-declared catalog strings: secondary, not a badge row.
       */}
       <div className="plugin-meta">
         {origin ? (

@@ -10,7 +10,7 @@ import {
 /**
  * Read-only inspector for a plugin that is already installed (or installed and
  * disabled). Deliberately NOT install-shaped: there is no confirm, no source
- * string handed to the CLI and no path to `--trust` — that flag may only ever
+ * string handed to the CLI and no path to `--trust`. That flag may only ever
  * originate from PluginTrustModal's explicit confirm
  * (REVIEW-NOTES round 6, "Trust model (do NOT regress)").
  *
@@ -44,7 +44,7 @@ function InventoryGroup({ title, items }: { title: string; items?: PluginCompone
 interface Props {
   open: boolean
   plugin: Plugin | null
-  /** True while any plugin action is in flight — freezes the mutating actions. */
+  /** True while any plugin action is in flight. Freezes the mutating actions. */
   busy: boolean
   onClose: () => void
   /** Optional non-install actions. Omit them all for a purely read-only view. */
@@ -72,7 +72,7 @@ export function PluginDetailsModal({
   const sha = plainText(plugin.sha, 64)
   const source = plainText(installSource(plugin), 200)
 
-  // Counts come from components.* only — the flat skill_count / has_* fields are
+  // Counts come from components.* only. The flat skill_count / has_* fields are
   // unreliable and are never read for display (SKILLS-PLUGINS-SPEC §1).
   const counts = componentCounts(plugin)
   const total = counts.skills + counts.commands + counts.agents + counts.mcp + counts.hooks

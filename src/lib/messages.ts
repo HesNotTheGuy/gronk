@@ -29,7 +29,7 @@ export function createAssistantPlaceholder(id: string): ChatMessage {
 
 /**
  * True if this user message already has an assistant turn after it.
- * Used by send/retry and by MessageList retry affordances — keep one definition.
+ * Used by send/retry and by MessageList retry affordances. Keep one definition.
  */
 export function hasAssistantReplyAfter(
   messages: ChatMessage[],
@@ -48,7 +48,7 @@ export function hasAssistantReplyAfter(
         return true
       }
       // Empty finished placeholder still counts as a turn attempted
-      // (except explicit failed send on assistant — rare)
+      // (except explicit failed send on assistant, which is rare)
       if (!m.streaming && m.sendStatus !== 'failed') return true
     }
   }

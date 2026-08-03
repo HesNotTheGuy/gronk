@@ -2,7 +2,7 @@
  * Whether a dollar figure means money, and how to label it if it does not.
  *
  * The Grok CLI reports `costUsdTicks` on every turn regardless of how you signed
- * in, so the number is always available — but what it MEANS depends entirely on
+ * in, so the number is always available. But what it MEANS depends entirely on
  * the credential:
  *
  * - `api_key_env` (XAI_API_KEY): metered, prepaid API credit really is draining,

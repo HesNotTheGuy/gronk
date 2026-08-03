@@ -23,11 +23,11 @@ interface Props {
   onSend: (text: string, attachments: PromptAttachment[]) => void
   onCancel: () => void
   onOpenFolder?: (path: string) => void
-  /** Inline Model picker (popover) — both surfaces */
+  /** Inline Model picker (popover), both surfaces */
   models?: ModelInfo[]
   currentModel?: string
   onChangeModel?: (id: string) => void
-  /** Inline permission-Mode picker (popover) — Build surface only */
+  /** Inline permission-Mode picker (popover), Build surface only */
   permissionMode?: PermissionMode
   onChangeMode?: (mode: PermissionMode) => void
   showMode?: boolean
