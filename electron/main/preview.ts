@@ -8,6 +8,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { isAllowedExternalUrl, isLocalPreviewUrl } from './ipc-guard'
+import { installContextMenu } from './context-menu'
 import { redactSecrets } from './redact'
 
 export interface PreviewStatus {
@@ -235,6 +236,7 @@ function attachView(url: string): void {
     })
     // Keep the preview locked to localhost; external links go to the OS browser.
     installNavigationGuards(view.webContents)
+    installContextMenu(view.webContents)
     hostWindow.contentView.addChildView(view)
   }
   view.setBounds(lastBounds)
@@ -310,6 +312,7 @@ export function popOutPreview(): { ok: boolean; message: string } {
     webPreferences: { ...PREVIEW_WEB_PREFERENCES }
   })
   installNavigationGuards(popWindow.webContents)
+  installContextMenu(popWindow.webContents)
 
   popWindow.on('closed', () => {
     popWindow = null

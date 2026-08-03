@@ -65,6 +65,20 @@ export const ipcMain = {
 export const dialog = { showOpenDialog: () => unsupported('dialog.showOpenDialog') }
 export const shell = { openExternal: () => unsupported('shell.openExternal') }
 export const session = { defaultSession: null }
+/**
+ * Reached transitively, not directly: preview.ts imports the context menu, which
+ * imports both of these at module scope. Without them the whole of preview.ts
+ * fails to link and tests/preview-url.test.ts dies before its first assertion.
+ *
+ * They still throw when called. Loading is all a test needs; anything that
+ * actually invokes them is trying to open a real menu or touch the real
+ * clipboard, and should fail loudly rather than quietly do nothing.
+ */
+export const Menu = {
+  buildFromTemplate: () => unsupported('Menu.buildFromTemplate'),
+  setApplicationMenu: () => unsupported('Menu.setApplicationMenu')
+}
+export const clipboard = { writeText: () => unsupported('clipboard.writeText') }
 /** Present so main-process code can import Notification; tests never show toasts. */
 export class Notification {
   static isSupported(): boolean {
@@ -87,6 +101,8 @@ export default {
   dialog,
   shell,
   session,
+  Menu,
+  clipboard,
   Notification,
   WebContentsView
 }

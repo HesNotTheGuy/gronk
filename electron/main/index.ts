@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, session, shell } from 'electron'
 import path from 'node:path'
 import { agentManager } from './agent-manager'
+import { installContextMenu } from './context-menu'
 import { isAllowedExternalUrl, isAppUrl } from './ipc-guard'
 import { initPreview, stopPreview } from './preview'
 import { registerAgentIpc } from './ipc/agent'
@@ -103,6 +104,10 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', blockOffOriginNav)
   mainWindow.webContents.on('will-redirect', blockOffOriginNav)
   mainWindow.webContents.on('will-attach-webview', (e) => e.preventDefault())
+  // Right-click. Electron provides no menu of its own, so without this the
+  // app has no cut, copy or paste and the spelling suggestions Chromium is
+  // already computing cannot be reached.
+  installContextMenu(mainWindow.webContents)
 
   mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
     console.error('[gronk] did-fail-load', code, desc, url)
