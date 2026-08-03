@@ -1992,9 +1992,42 @@ button {
   text-align: right;
 }
 
+.tool-activity-agents-hint {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--warn);
+  flex-shrink: 0;
+}
+
 .tool-activity-chevron {
   font-size: 10px;
   color: var(--ink-4);
+}
+
+.tool-activity-body {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.tool-activity-body .agent-fleet.embedded {
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  box-shadow: none;
+}
+
+.tool-activity-body .agent-fleet.embedded .agent-fleet-list {
+  padding-bottom: 6px;
+}
+
+.tool-activity-body .tool-list {
+  border-top: none;
 }
 
 .tool-chip-row {
@@ -3113,6 +3146,20 @@ html[data-theme='light'] .code-block {
 
 .agent-fleet-head:hover {
   background: var(--hover);
+}
+
+.agent-fleet-head.embedded-head {
+  cursor: default;
+  pointer-events: none;
+}
+
+.agent-fleet-head.embedded-head:hover {
+  background: transparent;
+}
+
+.agent-fleet.embedded {
+  margin: 0;
+  max-width: none;
 }
 
 .agent-fleet-icon {

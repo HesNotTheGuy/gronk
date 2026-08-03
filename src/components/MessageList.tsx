@@ -183,7 +183,13 @@ export function MessageList({ messages, onRetry, canRetry }: Props) {
              */}
             {segments.map((seg, i) =>
               seg.kind === 'tools' ? (
-                <ToolActivity key={`seg-${i}`} tools={seg.tools} />
+                <ToolActivity
+                  key={`seg-${i}`}
+                  tools={seg.tools}
+                  // A prior turn still marked in_progress after a later message
+                  // exists should not keep pulsing "Using SHELL" forever.
+                  demoteLive={idx < messages.length - 1 && !m.streaming}
+                />
               ) : (
                 <div key={`seg-${i}`} className="bubble">
                   {m.role === 'assistant' ? (

@@ -62,6 +62,53 @@ export interface FormatOptions {
   maxDiffSourceChars?: number
 }
 
+/**
+ * Display-only shortening for tool briefs and card titles.
+ *
+ * Strips home-directory prefixes generically (`C:/Users/<any>/…`, `/Users/…`,
+ * `/home/…` → `~/…`) so screenshots and chat do not broadcast a machine
+ * username. Does not hardcode any real account. Full strings stay in expanded
+ * payloads and permission subjects — this is a lens for the one-line summary.
+ */
+export function shortenForDisplay(text: string, maxLen = 96): string {
+  if (!text) return ''
+  let s = text.replace(/\s+/g, ' ').trim()
+
+  // Windows home: C:\Users\name or C:/Users/name (any drive letter)
+  s = s.replace(/[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s"']+/gi, '~')
+  // macOS / Linux home: /Users/name or /home/name (not mid-word)
+  s = s.replace(/(^|[\s"'=(])\/(?:Users|home)\/[^/\s"']+/g, '$1~')
+
+  // Long remaining absolute paths → last three segments
+  s = s.replace(/[A-Za-z]:[\\/][^\s"']+/g, (p) => collapseAbsPathSegments(p))
+  s = s.replace(/(^|[\s"'=(])(\/(?!\/)[^\s"']+)/g, (_m, pre: string, p: string) => {
+    return pre + collapseAbsPathSegments(p)
+  })
+
+  // ~/OneDrive/Documents/… still long — keep ~ + last three segments
+  s = s.replace(/~[\\/][^\s"']+/g, (p) => {
+    const parts = p.replace(/\\/g, '/').split('/').filter(Boolean)
+    // parts[0] is "~"
+    if (parts.length <= 4) return parts.join('/')
+    return `~/${parts.slice(-3).join('/')}`
+  })
+
+  if (s.length > maxLen) {
+    const cut = s.slice(0, maxLen - 1)
+    const softer = cut.replace(/\s+\S*$/, '')
+    s = (softer.length > maxLen / 2 ? softer : cut) + '…'
+  }
+  return s
+}
+
+function collapseAbsPathSegments(p: string): string {
+  const norm = p.replace(/\\/g, '/')
+  if (norm.startsWith('~') || norm.length < 40) return norm
+  const parts = norm.split('/').filter(Boolean)
+  if (parts.length <= 3) return norm.startsWith('/') ? `/${parts.join('/')}` : parts.join('/')
+  return `…/${parts.slice(-3).join('/')}`
+}
+
 /** Simple line diff when old/new text present (no deps). */
 export function simpleDiff(
   oldText: string,
@@ -172,10 +219,11 @@ export function formatTool(tool: ToolCallInfo, opts: FormatOptions = {}): Format
     summary =
       images.map((i) => i.label).join(', ') ||
       (prompt ? prompt.slice(0, 80) : 'Generated image')
-  } else if (path) summary = path
-  else if (command) summary = command.slice(0, 120)
-  else if (pattern) summary = pattern.slice(0, 80)
-  else if (prompt) summary = prompt.slice(0, 80)
+  } else if (path) summary = shortenForDisplay(path)
+  else if (command) summary = shortenForDisplay(command.slice(0, 200))
+  else if (pattern) summary = shortenForDisplay(pattern.slice(0, 80))
+  else if (prompt) summary = shortenForDisplay(prompt.slice(0, 80))
+  else if (summary) summary = shortenForDisplay(summary)
 
   const diffLines = extractDiff(input, opts)
 

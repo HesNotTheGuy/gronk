@@ -45,51 +45,90 @@ function kindTag(k: AgentUnit['kind']): string {
 /**
  * Visualizer for Grok-spawned subagents / background tasks / workflows.
  * Data is strictly ACP tool_call telemetry — no model interpretation.
+ *
+ * `embedded` is for nesting under ToolActivity expand: no second expand chrome,
+ * list always visible. Standalone keeps its own collapse control.
  */
 export function AgentFleet({
-  tools
+  tools,
+  embedded = false,
+  demoteLive = false
 }: {
   tools: ToolCallInfo[]
+  /** Nested under ToolActivity — parent bar owns expand/collapse */
+  embedded?: boolean
+  /** Older turn: do not paint units as live */
+  demoteLive?: boolean
 }) {
-  const units = useMemo(() => extractAgentUnits(tools), [tools])
+  const units = useMemo(() => {
+    const raw = extractAgentUnits(tools)
+    if (!demoteLive) return raw
+    return raw.map((u) =>
+      u.status === 'in_progress' || u.status === 'pending'
+        ? { ...u, status: 'completed' as const }
+        : u
+    )
+  }, [tools, demoteLive])
   const summary = useMemo(() => agentActivitySummary(units), [units])
-  const [open, setOpen] = useState(summary.live > 0)
+  const [open, setOpen] = useState(!embedded && summary.live > 0)
   const prevLive = useRef(summary.live)
 
   useEffect(() => {
+    if (embedded) return
     if (summary.live > 0 && prevLive.current === 0) setOpen(true)
     if (summary.live === 0 && prevLive.current > 0) setOpen(false)
     prevLive.current = summary.live
-  }, [summary.live])
+  }, [summary.live, embedded])
 
   if (!units.length) return null
 
+  const showList = embedded || open
+
   return (
-    <div className={`agent-fleet ${summary.live ? 'live' : ''} ${open ? 'open' : ''}`}>
-      <button
-        type="button"
-        className="agent-fleet-head"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        title="Spawned agents & background tasks reported by Grok tools (not LLM-summarized)"
-      >
-        <span className="agent-fleet-icon" aria-hidden>
-          {summary.live ? '◎' : summary.failed ? '!' : '▣'}
-        </span>
-        <span className="agent-fleet-title">Agent activity</span>
-        <span className="agent-fleet-stats">
-          <span className="agent-stat">{summary.total} total</span>
-          {summary.live ? <span className="agent-stat live">{summary.live} live</span> : null}
-          {summary.done ? <span className="agent-stat">{summary.done} done</span> : null}
-          {summary.failed ? (
-            <span className="agent-stat fail">{summary.failed} fail</span>
-          ) : null}
-        </span>
-        <span className="agent-fleet-chevron" aria-hidden>
-          {open ? '▾' : '▸'}
-        </span>
-      </button>
-      {open ? (
+    <div
+      className={`agent-fleet ${summary.live ? 'live' : ''} ${showList ? 'open' : ''} ${embedded ? 'embedded' : ''}`}
+    >
+      {embedded ? (
+        <div className="agent-fleet-head embedded-head">
+          <span className="agent-fleet-icon" aria-hidden>
+            {summary.live ? '◎' : summary.failed ? '!' : '▣'}
+          </span>
+          <span className="agent-fleet-title">Agents</span>
+          <span className="agent-fleet-stats">
+            <span className="agent-stat">{summary.total} total</span>
+            {summary.live ? <span className="agent-stat live">{summary.live} live</span> : null}
+            {summary.done ? <span className="agent-stat">{summary.done} done</span> : null}
+            {summary.failed ? (
+              <span className="agent-stat fail">{summary.failed} fail</span>
+            ) : null}
+          </span>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="agent-fleet-head"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          title="Spawned agents & background tasks reported by Grok tools (not LLM-summarized)"
+        >
+          <span className="agent-fleet-icon" aria-hidden>
+            {summary.live ? '◎' : summary.failed ? '!' : '▣'}
+          </span>
+          <span className="agent-fleet-title">Agent activity</span>
+          <span className="agent-fleet-stats">
+            <span className="agent-stat">{summary.total} total</span>
+            {summary.live ? <span className="agent-stat live">{summary.live} live</span> : null}
+            {summary.done ? <span className="agent-stat">{summary.done} done</span> : null}
+            {summary.failed ? (
+              <span className="agent-stat fail">{summary.failed} fail</span>
+            ) : null}
+          </span>
+          <span className="agent-fleet-chevron" aria-hidden>
+            {open ? '▾' : '▸'}
+          </span>
+        </button>
+      )}
+      {showList ? (
         <ul className="agent-fleet-list">
           {orderUnitsForDisplay(units).map((u) => (
             <li key={u.id} className={`agent-row status-${u.status} kind-${u.kind}`}>
@@ -114,7 +153,7 @@ export function AgentFleet({
           ))}
         </ul>
       ) : null}
-      {open ? (
+      {showList && !embedded ? (
         <p className="agent-fleet-note">
           From Grok tool calls only (e.g. spawn_subagent). No extra model narration.
         </p>

@@ -6,6 +6,7 @@ import {
   formatPermission,
   formatTool,
   inertText,
+  shortenForDisplay,
   simpleDiff,
   type DiffLine
 } from '../src/lib/tool-format'
@@ -81,6 +82,40 @@ test('a non-edit tool call has no diff lines', () => {
   assert.equal(shell.kindLabel, 'SHELL')
   assert.equal(shell.diffLines, undefined)
   assert.equal(shell.summary, 'npm test')
+})
+
+// ── shortenForDisplay (chat briefs; never hardcodes a real username) ──
+
+test('shortenForDisplay replaces Windows and POSIX home prefixes with ~', () => {
+  // Deep under home collapses to ~ + last three segments
+  assert.equal(
+    shortenForDisplay('C:/Users/sam/OneDrive/Documents/VibeCoding/Grocky'),
+    '~/Documents/VibeCoding/Grocky'
+  )
+  assert.equal(shortenForDisplay('C:\\Users\\x\\proj\\file.ts'), '~/proj/file.ts')
+  assert.equal(shortenForDisplay('/Users/sam/code/app/src/main.ts'), '~/app/src/main.ts')
+  assert.equal(shortenForDisplay('/home/dev/work/repo'), '~/work/repo')
+})
+
+test('shortenForDisplay shortens home paths inside shell commands', () => {
+  const cmd =
+    'git -C "C:/Users/sam/OneDrive/Documents/VibeCoding/Grocky" tag -a v0.1.8'
+  const out = shortenForDisplay(cmd)
+  assert.ok(!/Users[/\\]sam/i.test(out), out)
+  assert.ok(out.includes('git'), out)
+  assert.ok(out.includes('~'), out)
+})
+
+test('formatTool summary shortens paths but keeps raw path for callers', () => {
+  const fmt = formatTool(
+    tool({
+      kind: 'read',
+      rawInput: { path: 'C:/Users/sam/proj/package.json' }
+    })
+  )
+  assert.equal(fmt.path, 'C:/Users/sam/proj/package.json')
+  assert.equal(fmt.summary, '~/proj/package.json')
+  assert.ok(!fmt.summary.includes('Users'), fmt.summary)
 })
 
 test('a huge edit is bounded and says so', () => {

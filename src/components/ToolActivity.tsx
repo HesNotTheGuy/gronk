@@ -3,71 +3,114 @@ import type { ToolCallInfo } from '../../shared/types'
 import { ToolCard, toolBrief } from './ToolCard'
 import { formatTool } from '../lib/tool-format'
 import { extractImageRefsFromTools } from '../lib/image-refs'
-import { extractAgentUnits } from '../lib/agent-activity'
+import {
+  agentActivitySummary,
+  extractAgentUnits,
+  isAgentActivityTool
+} from '../lib/agent-activity'
 import { ImageGallery } from './LocalImage'
 import { AgentFleet } from './AgentFleet'
 
 /**
  * Compact tool activity for a message turn.
- * - Shows a one-line live brief for the active tool
- * - Lists finished tools as small chips
- * - Always shows generated images (Imagine) without requiring expand
- * - Expand for full cards (input/output/diff)
+ *
+ * One bar by default (click to expand). Live agent units and tool cards live
+ * inside the expand so Agent fleet and "Using SHELL" do not both pulse as if
+ * they were different systems. Path/command briefs are display-shortened.
  */
-export function ToolActivity({ tools }: { tools: ToolCallInfo[] }) {
+export function ToolActivity({
+  tools,
+  /** Older turns whose tools still say in_progress after a newer message exists */
+  demoteLive = false
+}: {
+  tools: ToolCallInfo[]
+  demoteLive?: boolean
+}) {
   const [expanded, setExpanded] = useState(false)
 
-  const { active, failed, images, agents } = useMemo(() => {
-    const active = [...tools]
-      .reverse()
-      .find((t) => t.status === 'in_progress' || t.status === 'pending')
+  const { active, failed, images, agents, agentSummary } = useMemo(() => {
+    const agents = extractAgentUnits(tools)
+    const agentSummary = agentActivitySummary(agents)
+    const active = demoteLive
+      ? undefined
+      : [...tools].reverse().find((t) => t.status === 'in_progress' || t.status === 'pending')
     const failed = tools.filter((t) => t.status === 'failed')
     const images = extractImageRefsFromTools(
       tools.filter((t) => t.status === 'completed')
     )
-    const agents = extractAgentUnits(tools)
-    return { active, failed, images, agents }
-  }, [tools])
+    return { active, failed, images, agents, agentSummary }
+  }, [tools, demoteLive])
 
-  const live = !!active
-  const summaryLine = active
-    ? toolBrief(active)
-    : failed.length
-      ? `${failed.length} failed · ${toolBrief(failed[failed.length - 1])}`
-      : images.length
-        ? images.length === 1
-          ? `IMAGE  ${images[0].label}`
-          : `IMAGE  ${images.length} images`
-        : tools.length === 1
-          ? toolBrief(tools[0])
-          : `${tools.length} tools`
+  const live = !!active && !demoteLive
+  const agentLive = !demoteLive && agentSummary.live > 0
 
-  // When the only interesting output is images, expand is optional —
-  // still show the gallery collapsed so the chat feels visual.
+  const summaryLine = useMemo(() => {
+    if (active) {
+      // Prefer agent unit label when the live tool is agent telemetry
+      if (isAgentActivityTool(active)) {
+        const unit = agents.find((a) => a.id === active.toolCallId)
+        if (unit) {
+          const tail = unit.detail ? ` · ${unit.detail}` : ''
+          const line = `${unit.label}${tail}`
+          return line.length > 72 ? line.slice(0, 69) + '…' : line
+        }
+      }
+      return toolBrief(active)
+    }
+    if (failed.length) {
+      return `${failed.length} failed · ${toolBrief(failed[failed.length - 1])}`
+    }
+    if (images.length) {
+      return images.length === 1
+        ? `IMAGE  ${images[0].label}`
+        : `IMAGE  ${images.length} images`
+    }
+    if (tools.length === 1) return toolBrief(tools[0])
+    const agentHint =
+      agents.length > 0
+        ? agentLive
+          ? ` · ${agentSummary.live} agent${agentSummary.live === 1 ? '' : 's'} live`
+          : ` · ${agents.length} agent${agents.length === 1 ? '' : 's'}`
+        : ''
+    return `${tools.length} tools${agentHint}`
+  }, [active, failed, images, tools, agents, agentLive, agentSummary.live])
+
   const showCollapsedGallery = !expanded && images.length > 0
+
+  const label = live
+    ? agentLive && active && isAgentActivityTool(active)
+      ? 'Agents'
+      : 'Using'
+    : failed.length
+      ? 'Tools'
+      : images.length
+        ? 'Image'
+        : 'Used'
 
   return (
     <div className={`tool-activity ${live ? 'live' : ''} ${expanded ? 'expanded' : ''}`}>
-      {agents.length > 0 ? <AgentFleet tools={tools} /> : null}
       <button
         type="button"
         className="tool-activity-bar"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        title={expanded ? 'Hide tool details' : 'Show tool details'}
+        title={expanded ? 'Hide tool details' : summaryLine}
       >
         <span className="tool-activity-icon" aria-hidden>
           {live ? '◎' : failed.length ? '!' : images.length ? '▣' : '✓'}
         </span>
-        <span className="tool-activity-label">
-          {live ? 'Using' : failed.length ? 'Tools' : images.length ? 'Image' : 'Used'}
-        </span>
+        <span className="tool-activity-label">{label}</span>
         <span className="tool-activity-brief" title={summaryLine}>
           {summaryLine}
         </span>
         <span className="tool-activity-count">
           {tools.length > 1 ? `${tools.length}` : ''}
         </span>
+        {agentLive ? (
+          <span className="tool-activity-agents-hint" title="Spawned agent work still running">
+            {agentSummary.live} live
+          </span>
+        ) : null}
         <span className="tool-activity-chevron" aria-hidden>
           {expanded ? '▾' : '▸'}
         </span>
@@ -80,13 +123,15 @@ export function ToolActivity({ tools }: { tools: ToolCallInfo[] }) {
       ) : null}
 
       {!expanded && tools.length > 1 && !images.length ? (
-        <div className="tool-chip-row" aria-hidden={expanded}>
+        <div className="tool-chip-row">
           {tools.slice(-6).map((t) => {
             const fmt = formatTool(t)
+            const chipLive =
+              !demoteLive && (t.status === 'in_progress' || t.status === 'pending')
             return (
               <span
                 key={t.toolCallId}
-                className={`tool-chip status-${t.status} kind-${fmt.kindLabel.toLowerCase()}`}
+                className={`tool-chip status-${chipLive ? t.status : demoteLive && (t.status === 'in_progress' || t.status === 'pending') ? 'completed' : t.status} kind-${fmt.kindLabel.toLowerCase()}`}
                 title={toolBrief(t)}
               >
                 {fmt.kindLabel}
@@ -100,18 +145,29 @@ export function ToolActivity({ tools }: { tools: ToolCallInfo[] }) {
       ) : null}
 
       {expanded ? (
-        <div className="tool-list">
-          {tools.map((t) => (
-            <ToolCard
-              key={t.toolCallId}
-              tool={t}
-              defaultOpen={
-                t.status === 'failed' ||
-                t.status === 'in_progress' ||
-                !!formatTool(t).images?.length
-              }
-            />
-          ))}
+        <div className="tool-activity-body">
+          {agents.length > 0 ? <AgentFleet tools={tools} embedded demoteLive={demoteLive} /> : null}
+          <div className="tool-list">
+            {tools.map((t) => {
+              const showLive =
+                !demoteLive && (t.status === 'in_progress' || t.status === 'pending')
+              return (
+                <ToolCard
+                  key={t.toolCallId}
+                  tool={
+                    demoteLive && (t.status === 'in_progress' || t.status === 'pending')
+                      ? { ...t, status: 'completed' }
+                      : t
+                  }
+                  defaultOpen={
+                    t.status === 'failed' ||
+                    showLive ||
+                    !!formatTool(t).images?.length
+                  }
+                />
+              )
+            })}
+          </div>
         </div>
       ) : null}
     </div>
