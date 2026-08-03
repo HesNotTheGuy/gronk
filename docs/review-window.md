@@ -36,7 +36,7 @@ Always in this order.
 **1. Audit before anything touches the disk.**
 
 ```bash
-npm run pr:audit 12
+npm run pr:audit <number>
 ```
 
 It reads the diff over the API and flags changes to agent config directories,
@@ -48,7 +48,7 @@ anything in the top tier.
 **2. Read it as text.**
 
 ```bash
-gh pr diff 12
+gh pr diff <number>
 ```
 
 **3. Do not check out a stranger's branch into this window.** `gh pr checkout`
