@@ -23,6 +23,21 @@ const DATASET_URL =
   'https://raw.githubusercontent.com/DataDog/malicious-software-packages-dataset/main/samples/npm/manifest.json'
 
 /**
+ * Smallest dataset this script will believe.
+ *
+ * The list is fetched fresh on every run on purpose, because a malware list
+ * pinned to a commit stops being a malware list. The price of that is a payload
+ * nobody here controls, and the failure mode is quiet: `{}` from a broken mirror,
+ * a truncated body or a rewritten schema makes every lookup miss, records no hit,
+ * and prints OK. That is indistinguishable from a clean run, which is the worst
+ * thing a scanner can be.
+ *
+ * The dataset holds roughly 46,700 entries today, so 10,000 sits far below any
+ * plausible growth or pruning pass and far above a gutted response.
+ */
+const MIN_DATASET_ENTRIES = 10_000
+
+/**
  * Scopes hit by the Shai-Hulud worm waves. A package here is not malicious, but
  * it earns a closer look at the version you resolved.
  */
@@ -81,7 +96,25 @@ function resolvedPackages() {
 async function fetchDataset() {
   const response = await fetch(DATASET_URL, { signal: AbortSignal.timeout(60_000) })
   if (!response.ok) throw new Error(`dataset request failed: HTTP ${response.status}`)
-  return response.json()
+  const manifest = await response.json()
+
+  // Thrown rather than returned so an unusable dataset lands in the same catch as
+  // an unreachable one. Both mean the scan did not happen, and the caller already
+  // knows how to fail closed on that.
+  if (manifest === null || typeof manifest !== 'object' || Array.isArray(manifest)) {
+    const got = Array.isArray(manifest) ? 'an array' : manifest === null ? 'null' : typeof manifest
+    throw new Error(`dataset is not a name-to-versions object (got ${got})`)
+  }
+
+  const entries = Object.keys(manifest).length
+  if (entries < MIN_DATASET_ENTRIES) {
+    throw new Error(
+      `dataset holds ${entries} entries, under the floor of ${MIN_DATASET_ENTRIES}. ` +
+        'A truncated list matches nothing, so scanning against it would report a clean result it never earned.'
+    )
+  }
+
+  return manifest
 }
 
 const resolved = resolvedPackages()
