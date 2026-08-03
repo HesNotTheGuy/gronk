@@ -4,6 +4,18 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-08-03
+
+### Changed
+
+- **Tool activity is a single line you can expand, instead of several things
+  pulsing at once.** While Grok worked, the agent fleet indicator and the
+  "Using SHELL" row animated independently, which read as two separate systems
+  doing two separate things. They are now one summary bar showing whatever is
+  actually running, with the detail behind a click.
+- **Long paths and commands in that bar are shortened to fit.** A line that ran
+  past the width of the bar is trimmed rather than pushing the layout around.
+
 ## [0.1.8] - 2026-08-03
 
 ### Added
