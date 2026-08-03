@@ -4,11 +4,11 @@
  *   npm run pr:audit 12
  *
  * The point is the ordering. `gh pr checkout` puts a stranger's files on your
- * disk, and if you then open an assistant in that directory it reads THEIR
- * CLAUDE.md as instructions and THEIR .claude/settings.json, which can define
- * hooks that run shell commands. That is code execution without anyone needing
- * to fool a model. This reads the diff as text over the API so nothing lands on
- * disk and no config is ever loaded.
+ * disk, and if you then open an assistant in that directory it may load THEIR
+ * agent instruction files and THEIR agent settings (which can define hooks that
+ * run shell commands). That is code execution without anyone needing to fool a
+ * model. This reads the diff as text over the API so nothing lands on disk and
+ * no config is ever loaded.
  *
  * It is a triage tool, not a verdict. Everything it reports still needs eyes.
  * What it buys is knowing WHERE to look before you have looked anywhere.
@@ -223,8 +223,8 @@ console.log('Next:')
 console.log(`  gh pr diff ${pr}          read it as text, nothing touches your disk`)
 if (highs.length) {
   console.log('  Do NOT check this out until the items above are understood.')
-  console.log('  A change under .claude/ or CLAUDE.md is read as instructions by any')
-  console.log('  assistant you open in that directory.')
+  console.log('  Agent instruction files and agent config under the checkout are')
+  console.log('  read as instructions by any assistant you open in that directory.')
 } else if (EXTERNAL) {
   console.log(`  gh pr checkout ${pr}      only in a throwaway worktree, after reading it`)
 } else {
