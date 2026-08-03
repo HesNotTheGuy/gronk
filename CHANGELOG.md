@@ -4,6 +4,52 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-08-03
+
+### Added
+
+- **A single session tray** above the composer for Plan, Agents, and Usage.
+  One thin rail of tabs instead of three stacked panels eating the chat.
+- **Command palette** (Ctrl/Cmd+K) to jump Home, Chat, Build, settings, and more.
+- **Pin and remove recent projects** from the project menu (remove only forgets
+  the list entry; it never deletes files on disk).
+- **Opening a project resumes the latest session** for that folder. Use
+  **New session** when you want a blank conversation.
+- **Chat skeleton** while a project or session is opening, so the window has
+  structure instead of looking frozen during agent boot.
+- **Allow this kind for session** on permission prompts: batch-approve a tool
+  kind for the rest of this agent process without turning on full YOLO.
+- **OS notifications** when the window is unfocused and a permission is needed
+  or a turn finishes.
+- **First-run onboarding checklist** on Home (CLI, sign-in, first project) using
+  the existing install and login paths.
+- **Status menu** in the top bar: connection, account, and model in one control
+  instead of three separate pills.
+
+### Changed
+
+- **Light theme** reworked as paper and ink rather than an inverted night mode.
+  The Windows title-bar overlay follows light and dark.
+- **Wider message column** and a tighter top bar so conversation fills more of
+  the pane.
+- **Agents tab** only appears when something is live, not a pile of finished
+  tool calls on a restored transcript.
+- **Missing images** fail more quietly (compact rows, faster skip of fake/remote
+  paths) so a bad catalogue cannot own the viewport.
+- **Session restore** paints the local transcript in one shot, then connects the
+  agent, instead of thrashing the UI message by message.
+
+### Fixed
+
+- **Code block and message Copy** now write to the system clipboard (they failed
+  silently before under the permission lockdown).
+- **Permission dialogs** for large execute payloads keep Deny / Allow on screen;
+  the payload scrolls inside the dialog.
+- **Streaming no longer fights your scroll position** when you read earlier in
+  the thread.
+- **Activity heatmap date** no longer shifts every evening because of a UTC vs
+  local day mismatch in the shots fixture (and related calendar anchoring).
+
 ## [0.1.7] - 2026-08-02
 
 ### Fixed
@@ -228,6 +274,7 @@ private repository, so there is no earlier entry to compare against.
   warn on first launch.
 - No automatic updates. Code signing has to land first.
 
+[0.1.8]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.8
 [0.1.7]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.7
 [0.1.6]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.6
 [0.1.5]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.5
