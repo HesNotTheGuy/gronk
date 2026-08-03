@@ -21,7 +21,17 @@ import './styles.css'
 
 const HOUR = 3600_000
 const DAY = 24 * HOUR
-const NOW = Date.now()
+// Fixed instant so visual baselines do not drift with the calendar. The activity
+// heatmap window ends on "today" and each square is keyed to its weekday, so a
+// live Date.now() shifts ~1/7 of the grid every day (0 cells differ at +7 days,
+// hundreds at +1). Midday local avoids any local-midnight rounding.
+//
+// MUST stay a date-time string with no timezone offset: that form parses as
+// LOCAL. A date-only string like '2026-08-02' parses as UTC midnight, which is
+// exactly what src/lib/calendar.ts warns about and would shift the grid a
+// column for anyone west of Greenwich. Do not "simplify" this back to Date.now()
+// or to a date-only literal — both have already broken this harness once.
+const NOW = new Date('2026-08-02T12:00:00').getTime()
 
 const SCENARIO = new URLSearchParams(location.search).get('state') || 'default'
 
