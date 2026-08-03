@@ -195,9 +195,19 @@ function hardenSession(): void {
     })
   })
 
-  // FIX-11 deny web permissions
-  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false))
-  session.defaultSession.setPermissionCheckHandler(() => false)
+  // Deny web permissions by default. Clipboard write is the exception: the UI
+  // has explicit Copy buttons (code blocks, export path) that use the Clipboard
+  // API, and Chromium will not write without these checks returning true.
+  // Preview stays fully denied in preview.ts — that session must not get this.
+  const clipboardOk = (permission: string): boolean =>
+    permission === 'clipboard-sanitized-write' ||
+    permission === 'clipboard-write' ||
+    permission === 'clipboard-read'
+
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
+    cb(clipboardOk(permission))
+  })
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => clipboardOk(permission))
 }
 
 function setupApplicationMenu(): void {

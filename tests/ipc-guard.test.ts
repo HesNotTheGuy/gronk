@@ -23,7 +23,10 @@ function sender(url: string | null) {
 // ── IPC sender trust ────────────────────────────────────────────────
 
 test('packaged builds accept only file:// senders', () => {
-  assert.doesNotThrow(() => assertTrustedSender(sender('file:///C:/app/out/index.html'), undefined))
+  // Pass '' not undefined: default params treat undefined as "use
+  // ELECTRON_RENDERER_URL", and a leftover env from `npm run dev` would force
+  // the dev path and reject legitimate file:// frames.
+  assert.doesNotThrow(() => assertTrustedSender(sender('file:///C:/app/out/index.html'), ''))
   for (const bad of [
     'https://evil.example/page',
     'http://localhost:5173/',
@@ -31,7 +34,7 @@ test('packaged builds accept only file:// senders', () => {
     'about:blank',
     ''
   ]) {
-    assert.throws(() => assertTrustedSender(sender(bad), undefined), /untrusted sender/)
+    assert.throws(() => assertTrustedSender(sender(bad), ''), /untrusted sender/)
   }
 })
 

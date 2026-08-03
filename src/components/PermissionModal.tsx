@@ -44,25 +44,30 @@ export function PermissionModal({ request, onRespond }: Props) {
       ? `Run ${kind}`
       : 'Authorize tool'
 
+  // Titles can be multi-kilobyte shell lines; keep the intro readable.
+  const titlePreview =
+    request.title && request.title.length > 160
+      ? `${request.title.slice(0, 157)}…`
+      : request.title
+
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal modal-kicker" data-kicker="PERMISSION">
+      <div className="modal modal-kicker modal-permission" data-kicker="PERMISSION">
         <h3>{headline}</h3>
         <p>
           Agent requests <strong>{kind}</strong>
-          {request.title ? (
+          {titlePreview ? (
             <>
               {' '}
-              · labeled <em>{request.title}</em>
+              · labeled <em title={request.title || undefined}>{titlePreview}</em>
             </>
           ) : null}
           . Review carefully. The title text is agent-controlled.
         </p>
 
         {/*
-          Payload detail is scoped to its own scroll area. The blocks below are
-          agent-sized, and Deny / Allow must stay on screen no matter how much
-          the agent sends. Inline because styles.css belongs to another surface.
+          Payload scrolls inside the modal; the action row is flex-fixed below so
+          Deny/Allow stay reachable even for execute payloads that fill the screen.
         */}
         <div className="permission-detail">
           {fmt ? null : (

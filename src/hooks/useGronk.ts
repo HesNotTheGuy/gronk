@@ -357,23 +357,39 @@ export function useGronk() {
     return unsub
   }, [refreshMeta, refreshSessions, refreshAudit])
 
-  // Smart scroll: only stick when near bottom
+  // Stick-to-bottom only while the user is actually near the end. Streaming
+  // updates must not yank the viewport if they scrolled up to read earlier turns.
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const onScroll = () => {
+    const NEAR = 120
+    const measure = () => {
       const dist = el.scrollHeight - el.scrollTop - el.clientHeight
-      stickToBottom.current = dist < 80
+      stickToBottom.current = dist < NEAR
     }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    return () => el.removeEventListener('scroll', onScroll)
+    // Wheel / touch update stick *before* the next stream tick can re-pin the
+    // scroll, which is the race that made replies feel like they fought the user.
+    const onUserScrollIntent = () => {
+      const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+      if (dist > NEAR) stickToBottom.current = false
+    }
+    el.addEventListener('scroll', measure, { passive: true })
+    el.addEventListener('wheel', onUserScrollIntent, { passive: true })
+    el.addEventListener('touchmove', onUserScrollIntent, { passive: true })
+    return () => {
+      el.removeEventListener('scroll', measure)
+      el.removeEventListener('wheel', onUserScrollIntent)
+      el.removeEventListener('touchmove', onUserScrollIntent)
+    }
   }, [])
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el || !stickToBottom.current) return
     el.scrollTop = el.scrollHeight
-  }, [messages, permission, activePlan])
+    // Messages only: permission modals and plan panels used to force a jump
+    // even when the user was reading older content above.
+  }, [messages])
 
   // Persist transcript while chatting
   useEffect(() => {

@@ -61,7 +61,11 @@ export class ErrorBoundary extends Component<Props, State> {
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => void navigator.clipboard?.writeText(detail)}
+              onClick={() => {
+                void import('../lib/clipboard')
+                  .then(({ copyText }) => copyText(detail))
+                  .catch(() => undefined)
+              }}
             >
               Copy details
             </button>

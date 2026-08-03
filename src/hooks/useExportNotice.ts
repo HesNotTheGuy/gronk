@@ -67,7 +67,8 @@ export function useExportNotice(setError: Dispatch<SetStateAction<string | null>
   const copyExportPath = useCallback(async () => {
     if (!exportNotice) return
     try {
-      await navigator.clipboard.writeText(exportNotice.path)
+      const { copyText } = await import('../lib/clipboard')
+      await copyText(exportNotice.path)
       setExportNotice((prev) =>
         prev ? { ...prev, copied: true, copyError: undefined } : prev
       )

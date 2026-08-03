@@ -65,6 +65,7 @@ export function installFakeBridge(overrides: Record<string, unknown> = {}): Fake
     removeRecentProject: async () => track('removeRecentProject', []),
     setRecentProjectPinned: async () => track('setRecentProjectPinned', []),
     setChromeTheme: async () => track('setChromeTheme', undefined),
+    writeClipboard: async () => track('writeClipboard', undefined),
     listSessions: async () => track('listSessions', []),
     listModels: async () => track('listModels', [{ id: 'grok-4.5', name: 'Grok 4.5', isDefault: true }]),
     getPermissionAudit: async () => track('getPermissionAudit', []),

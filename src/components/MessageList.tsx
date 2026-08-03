@@ -97,9 +97,10 @@ function shouldShowRetry(
 }
 
 export function MessageList({ messages, onRetry, canRetry }: Props) {
-  const copyText = async (text: string) => {
+  const copyMessage = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text)
+      const { copyText } = await import('../lib/clipboard')
+      await copyText(text)
     } catch {
       /* ignore */
     }
@@ -140,7 +141,7 @@ export function MessageList({ messages, onRetry, canRetry }: Props) {
                   <button
                     type="button"
                     className="btn-mini"
-                    onClick={() => void copyText(m.text)}
+                    onClick={() => void copyMessage(m.text)}
                     title="Copy message"
                   >
                     Copy

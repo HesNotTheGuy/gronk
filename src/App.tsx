@@ -8,8 +8,7 @@ import { HomeView } from './components/HomeView'
 import { MessageList } from './components/MessageList'
 import { OnboardingChecklist } from './components/OnboardingChecklist'
 import { PermissionModal } from './components/PermissionModal'
-import { AgentFleetStrip } from './components/AgentFleet'
-import { PlanPanel } from './components/PlanPanel'
+import { SessionTray } from './components/SessionTray'
 import { ProjectHome } from './components/ProjectHome'
 import { PluginsPanel } from './components/PluginsPanel'
 import { SessionCard } from './components/SessionCard'
@@ -20,7 +19,7 @@ import { YoloConfirm } from './components/YoloConfirm'
 import { CliInstall } from './components/CliInstall'
 import { PaneSplitter } from './components/PaneSplitter'
 import { PreviewPane } from './components/PreviewPane'
-import { UsageMeter } from './components/UsageMeter'
+
 import { useGronk } from './hooks/useGronk'
 import { folderName, isChatSession } from '../shared/path'
 import type { LoginMethod, SessionInfo } from '../shared/types'
@@ -639,24 +638,23 @@ export function App() {
               )}
             </div>
 
-            {inProject ? (
-              <PlanPanel
+            {/*
+              Plan, agents and usage share one thin rail above the composer.
+              Stacking three full panels stole the chat; tabs expand one body.
+            */}
+            {inConversation ? (
+              <SessionTray
+                showPlan={inProject}
                 plan={
                   g.activePlan && g.sessionId && g.activePlan.sessionId === g.sessionId
                     ? g.activePlan
                     : null
                 }
-                collapsed={g.planCollapsed}
-                onToggle={() => g.setPlanCollapsed(!g.planCollapsed)}
+                messages={g.messages}
+                usage={g.usage}
+                auth={g.auth}
               />
             ) : null}
-
-            {inConversation ? <AgentFleetStrip messages={g.messages} /> : null}
-
-            {/* Directly above the composer: in view whenever the user is about to
-                spend more, and it renders nothing until a turn has completed, so
-                it never greets an empty session. */}
-            {inConversation ? <UsageMeter usage={g.usage} auth={g.auth} /> : null}
 
             <Composer
               disabled={g.connection !== 'ready'}

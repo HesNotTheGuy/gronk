@@ -23,6 +23,7 @@ const api: GronkApi = {
   setRecentProjectPinned: (cwd: string, pinned: boolean) =>
     ipcRenderer.invoke('gronk:set-recent-project-pinned', cwd, pinned),
   setChromeTheme: (theme: 'dark' | 'light') => ipcRenderer.invoke('gronk:set-chrome-theme', theme),
+  writeClipboard: (text: string) => ipcRenderer.invoke('gronk:write-clipboard', text),
   startAgent: (cwd, options) => ipcRenderer.invoke('gronk:start-agent', cwd, options),
   getChatWorkspacePath: () => ipcRenderer.invoke('gronk:get-chat-workspace'),
   stopAgent: () => ipcRenderer.invoke('gronk:stop-agent'),

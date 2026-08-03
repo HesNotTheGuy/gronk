@@ -3,7 +3,7 @@
  * (status / login / logout), overall health and the model list.
  */
 
-import { ipcMain } from 'electron'
+import { clipboard, ipcMain } from 'electron'
 import { spawn } from 'node:child_process'
 import { resolveGrokBinary } from '../acp/client'
 import { agentManager } from '../agent-manager'
@@ -171,6 +171,19 @@ export function registerSystemIpc(ctx: IpcContext): void {
   ipcMain.handle('gronk:install-cli', async (e) => {
     assertTrustedSender(e)
     return installGrokCli()
+  })
+
+  /**
+   * Write text to the OS clipboard from main. The renderer Clipboard API is
+   * gated by Chromium permission checks that we otherwise deny wholesale; this
+   * path is the reliable one for explicit Copy buttons after assertTrustedSender.
+   */
+  ipcMain.handle('gronk:write-clipboard', (e, text: unknown) => {
+    assertTrustedSender(e)
+    if (typeof text !== 'string') throw new Error('text must be a string')
+    // Cap so a runaway payload cannot pin megabytes into the system clipboard.
+    if (text.length > 2_000_000) throw new Error('text too large to copy')
+    clipboard.writeText(text)
   })
 
   /**

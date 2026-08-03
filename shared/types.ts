@@ -646,6 +646,8 @@ export interface GronkApi {
    * renderer resolves light/dark so the native chrome matches the theme.
    */
   setChromeTheme: (theme: 'dark' | 'light') => Promise<void>
+  /** Put text on the OS clipboard (main-process write; for explicit Copy actions). */
+  writeClipboard: (text: string) => Promise<void>
   startAgent: (
     cwd: string,
     options?: {

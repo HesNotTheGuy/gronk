@@ -2,21 +2,25 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { PhrasingContent, Root, RootContent } from 'mdast'
+import { codeChildrenToText, copyText } from '../lib/clipboard'
 import { looksLikeImagePath } from '../lib/image-refs'
 import { LocalImage, ThumbnailGrid } from './LocalImage'
 
 function CodeBlock({ className, children }: { className?: string; children?: ReactNode }) {
   const [copied, setCopied] = useState(false)
-  const text = String(children ?? '').replace(/\n$/, '')
+  const [copyFailed, setCopyFailed] = useState(false)
+  const text = codeChildrenToText(children)
   const lang = className?.replace(/^language-/, '') || ''
 
   const copy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(text)
+      await copyText(text)
       setCopied(true)
+      setCopyFailed(false)
       setTimeout(() => setCopied(false), 1400)
     } catch {
-      /* ignore */
+      setCopyFailed(true)
+      setTimeout(() => setCopyFailed(false), 1800)
     }
   }, [text])
 
@@ -25,7 +29,7 @@ function CodeBlock({ className, children }: { className?: string; children?: Rea
       <div className="code-block-bar">
         <span className="code-lang">{lang || 'code'}</span>
         <button type="button" className="btn-mini" onClick={() => void copy()}>
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? 'Copied' : copyFailed ? 'Copy failed' : 'Copy'}
         </button>
       </div>
       <pre>

@@ -189,3 +189,17 @@ export function agentActivitySummary(units: AgentUnit[]): {
   }
   return { live, done, failed, total: units.length }
 }
+
+/**
+ * Live and failed first so a long finished list cannot bury active work in the
+ * composer strip.
+ */
+export function orderUnitsForDisplay(units: AgentUnit[]): AgentUnit[] {
+  const rank = (u: AgentUnit): number => {
+    if (u.status === 'in_progress' || u.status === 'pending') return 0
+    if (u.status === 'failed') return 1
+    if (u.status === 'cancelled') return 2
+    return 3
+  }
+  return [...units].sort((a, b) => rank(a) - rank(b))
+}
