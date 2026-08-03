@@ -34,6 +34,44 @@ function makeRandom(seed: number): () => number {
   }
 }
 
+/**
+ * `YYYY-MM-DD` in the LOCAL zone, which is the day boundary the grid is laid out
+ * against: src/lib/calendar.ts builds its dates through the local-time Date
+ * constructor precisely so a square means the day the user thinks it means.
+ *
+ * `toISOString().slice(0, 10)` is UTC and disagrees for part of every day. West
+ * of Greenwich, a capture taken after local 19:00 stamped every day with
+ * tomorrow's key, which moved each one to the next weekday and rendered the
+ * whole heatmap a row low against a baseline captured that same afternoon.
+ */
+function localDayKey(at: Date): string {
+  const month = String(at.getMonth() + 1).padStart(2, '0')
+  const day = String(at.getDate()).padStart(2, '0')
+  return `${at.getFullYear()}-${month}-${day}`
+}
+
+/**
+ * The heatmap window as local midnights, oldest first, ending on today.
+ *
+ * Steps the local calendar date rather than subtracting a fixed 24h, for the
+ * reason dayKeyRange gives in electron/main/activity.ts: a DST transition makes
+ * a day 23 or 25 hours long, so fixed-width arithmetic across one repeats a date
+ * or skips it. Either way the grid silently lays out a square short, which is
+ * the same class of failure as the UTC keys and just rarer, needing a capture
+ * near local midnight to show up.
+ */
+function localDayWindow(count: number): Date[] {
+  const cursor = new Date(NOW)
+  cursor.setHours(0, 0, 0, 0)
+  cursor.setDate(cursor.getDate() - (count - 1))
+  const out: Date[] = []
+  for (let i = 0; i < count; i++) {
+    out.push(new Date(cursor))
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return out
+}
+
 const PROJECTS = [
   { cwd: '/home/dev/projects/orbital-api', name: 'orbital-api' },
   { cwd: '/home/dev/projects/flux-dashboard', name: 'flux-dashboard' },
@@ -101,8 +139,10 @@ function buildActivity() {
   let peak = 0
   let total = 0
 
+  // Oldest first, so i counts back from today and indexes from the far end.
+  const dayWindow = localDayWindow(365)
   for (let i = 364; i >= 0; i--) {
-    const at = new Date(NOW - i * DAY)
+    const at = dayWindow[364 - i]
     const weekday = at.getDay()
     const roll = random()
     const quiet = weekday === 0 || weekday === 6 ? 0.75 : 0.22
@@ -112,7 +152,7 @@ function buildActivity() {
     if (userTurns > peak) peak = userTurns
     total += userTurns
     days.push({
-      date: at.toISOString().slice(0, 10),
+      date: localDayKey(at),
       userTurns,
       messages: userTurns * 2 + (userTurns ? Math.floor(random() * 4) : 0),
       sessions: userTurns ? 1 + Math.floor(random() * 2) : 0
@@ -394,15 +434,12 @@ const settings = {
  * neither of which a user can actually hit.
  */
 const emptyActivity = (() => {
-  const days = []
-  for (let i = 364; i >= 0; i--) {
-    days.push({
-      date: new Date(NOW - i * DAY).toISOString().slice(0, 10),
-      userTurns: 0,
-      messages: 0,
-      sessions: 0
-    })
-  }
+  const days = localDayWindow(365).map((at) => ({
+    date: localDayKey(at),
+    userTurns: 0,
+    messages: 0,
+    sessions: 0
+  }))
   return {
     days,
     from: days[0].date,
