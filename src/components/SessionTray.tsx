@@ -111,7 +111,12 @@ export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
   const prevLive = useRef(0)
 
   const hasPlan = showPlan && !!plan && plan.entries.length > 0
-  const hasAgents = units.length > 0 && !agentsDismissed
+  // Only surface Agents when something is actually running, or the user already
+  // has the tab open. A restored transcript full of finished tool calls used to
+  // paint "Agents 6" as if work were live.
+  const hasAgents =
+    !agentsDismissed &&
+    (agentSummary.live > 0 || (tab === 'agents' && units.length > 0))
   const hasUsage = !!usage && usage.turns > 0
 
   useEffect(() => {

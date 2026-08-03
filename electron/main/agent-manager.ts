@@ -366,13 +366,17 @@ export class AgentManager {
     // nulling it) would then be reused instead of respawned.
     const stateBeforeLoad = this.state
     this.setState('loading')
-    this.emit({ type: 'history-clear', sessionId })
 
     // Prefer local transcript immediately for snappy UI (already de-duped in getTranscript)
     const local = getTranscript(sessionId)
     const plan = planHistoryReplay(local)
-    for (const message of plan.messages) {
-      this.emit({ type: 'user-message', sessionId, message })
+    this.liveMessages = plan.messages
+    // One event with the whole cache: clear + N user-message emits made restore
+    // thrash the renderer for large sessions (and looked hung).
+    if (plan.messages.length > 0) {
+      this.emit({ type: 'history-replace', sessionId, messages: plan.messages })
+    } else {
+      this.emit({ type: 'history-clear', sessionId })
     }
 
     try {
@@ -403,7 +407,7 @@ export class AgentManager {
       // If we already have a local transcript, do not rebuild messages from ACP echo
       this.suppressHistoryReplay = plan.suppressHistoryReplay
       this.historyAssistantId = null
-      this.liveMessages = plan.messages
+      // liveMessages already seeded above from the local plan
 
       // ACP requires absolute path; Windows paths with backslashes are fine.
       // Prefer native absolute form for the CLI.

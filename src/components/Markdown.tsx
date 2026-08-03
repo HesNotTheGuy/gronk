@@ -184,7 +184,7 @@ function isSuppressed(href: string, suppress?: Set<string>): boolean {
  * AT, and that case is deliberately left exactly as it was. Past that they want
  * to scan it, so the run becomes a grid of thumbnails.
  */
-const GRID_MIN_IMAGES = 5
+const GRID_MIN_IMAGES = 3
 
 /**
  * Marks a paragraph the grouping pass merged. It never reaches the DOM: the `p`

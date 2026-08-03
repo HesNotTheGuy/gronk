@@ -65,6 +65,7 @@ const EXPECTED_MEMBERS: string[] = [
   "grokPath",
   "health",
   "historySource",
+  "hydrating",
   "installCli",
   "installPlugin",
   "installedPlugins",

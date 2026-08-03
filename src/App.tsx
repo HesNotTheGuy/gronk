@@ -8,6 +8,7 @@ import { HomeView } from './components/HomeView'
 import { MessageList } from './components/MessageList'
 import { OnboardingChecklist } from './components/OnboardingChecklist'
 import { PermissionModal } from './components/PermissionModal'
+import { ChatSkeleton } from './components/ChatSkeleton'
 import { SessionTray } from './components/SessionTray'
 import { ProjectHome } from './components/ProjectHome'
 import { PluginsPanel } from './components/PluginsPanel'
@@ -592,7 +593,13 @@ export function App() {
           <div className="conv-row">
           <div className="chat-workspace">
             <div className="chat" ref={g.scrollRef}>
-              {g.messages.length === 0 ? (
+              {g.hydrating && g.messages.length === 0 ? (
+                <ChatSkeleton
+                  label={
+                    inChat ? 'Opening chat…' : 'Opening project and loading session…'
+                  }
+                />
+              ) : g.messages.length === 0 ? (
                 <div className="empty-state">
                   <div className="empty-frame">
                     <p className="empty-kicker">
@@ -630,11 +637,18 @@ export function App() {
                   </div>
                 </div>
               ) : (
-                <MessageList
-                  messages={g.messages}
-                  canRetry={g.connection === 'ready' && !g.busy}
-                  onRetry={(id) => void g.retryPrompt(id)}
-                />
+                <>
+                  {g.hydrating ? (
+                    <div className="hydrating-banner" role="status">
+                      Connecting agent…
+                    </div>
+                  ) : null}
+                  <MessageList
+                    messages={g.messages}
+                    canRetry={g.connection === 'ready' && !g.busy}
+                    onRetry={(id) => void g.retryPrompt(id)}
+                  />
+                </>
               )}
             </div>
 

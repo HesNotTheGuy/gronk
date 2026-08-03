@@ -504,6 +504,11 @@ export type MainToRendererEvent =
   | { type: 'connection'; state: ConnectionState; error?: string }
   | { type: 'session'; sessionId: string; cwd: string }
   | { type: 'history-clear'; sessionId: string }
+  /**
+   * Replace the entire transcript in one shot (local cache restore). Prefer this
+   * over history-clear + N user-message events so the UI does not thrash.
+   */
+  | { type: 'history-replace'; sessionId: string; messages: ChatMessage[] }
   | { type: 'history-done'; sessionId: string; source: 'acp' | 'local' | 'mixed' | 'empty' }
   | { type: 'user-message'; sessionId: string; message: ChatMessage }
   | { type: 'message-chunk'; sessionId: string; messageId: string; text: string }

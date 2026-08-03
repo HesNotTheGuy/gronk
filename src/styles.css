@@ -840,6 +840,104 @@ button {
   scroll-behavior: auto;
 }
 
+/* Project/session open: skeleton so the pane has structure during agent boot */
+.chat-skeleton {
+  max-width: min(860px, 100%);
+  margin: 24px auto 0;
+  padding: 0 8px;
+}
+
+.chat-skeleton-label {
+  margin: 0 0 18px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.chat-skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.chat-skeleton-row {
+  display: flex;
+}
+
+.chat-skeleton-row.user {
+  justify-content: flex-end;
+}
+
+.chat-skeleton-row.assistant {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.chat-skeleton-bubble {
+  height: 14px;
+  border-radius: var(--radius);
+  background: linear-gradient(
+    90deg,
+    var(--raised) 0%,
+    var(--hover) 45%,
+    var(--raised) 90%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+.chat-skeleton-bubble.short {
+  width: min(28%, 160px);
+}
+.chat-skeleton-bubble.med {
+  width: min(48%, 280px);
+}
+.chat-skeleton-bubble.long {
+  width: min(72%, 420px);
+}
+
+.chat-skeleton-tool {
+  width: min(56%, 320px);
+  height: 36px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--tool-pad);
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+  background-size: 200% 100%;
+  background-image: linear-gradient(
+    90deg,
+    var(--tool-pad) 0%,
+    var(--hover) 45%,
+    var(--tool-pad) 90%
+  );
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.hydrating-banner {
+  max-width: min(860px, 100%);
+  margin: 0 auto 12px;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
 .chat-inner {
   max-width: min(920px, 100%);
   margin: 0 auto;
@@ -3534,6 +3632,28 @@ html[data-theme='light'] .session-tray {
   padding: 10px 12px;
   border: 1px dashed var(--line-2);
   border-radius: var(--radius);
+}
+
+/* Standalone missing images: one short row, not a tall empty card. */
+.local-image.error.compact-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  padding: 4px 0;
+  margin: 2px 0;
+  max-width: min(100%, 860px);
+}
+
+.local-image.error.compact-error .local-image-fallback {
+  padding: 2px 0;
+  border: none;
+  font-size: 11px;
+  color: var(--ink-4);
+}
+
+.local-image.error.compact-error .local-image-caption {
+  font-size: 10px;
 }
 
 .local-image-reveal {

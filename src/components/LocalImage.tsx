@@ -145,8 +145,13 @@ export function LocalImage({
     // In a grid the group prints one line for all of them, so a tile that
     // failed simply is not there.
     if (thumb) return null
+    // Standalone missing refs used to be full cards; a compact one-liner keeps
+    // a restored catalogue of dead paths from owning the chat viewport.
     return (
-      <div className={`local-image error ${compact ? 'compact' : ''}`} title={state.message}>
+      <div
+        className={`local-image error compact-error ${compact ? 'compact' : ''}`}
+        title={state.message}
+      >
         <span className="local-image-fallback">{image.label}</span>
         <span className="local-image-caption muted">{state.message}</span>
       </div>

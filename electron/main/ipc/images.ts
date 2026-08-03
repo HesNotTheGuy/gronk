@@ -34,9 +34,30 @@ function grokSessionsRoot(): string {
   return path.join(grokHome(), 'sessions')
 }
 
+/**
+ * Paths that can never be a local image under our roots. Skip the candidate
+ * walk entirely — restore of a markdown catalogue with dozens of these was
+ * thrashing the FS for no gain.
+ */
+function isHopelessImageRef(trimmed: string): boolean {
+  const s = trimmed.trim()
+  if (!s) return true
+  // Remote / protocol-shaped junk the model often invents
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s) && !/^[a-zA-Z]:[\\/]/.test(s)) return true
+  if (/^\/\//.test(s)) return true
+  // Classic fixture / docs-only paths that never live in a user project
+  if (/example\.com|attacker\.example|evil\.example/i.test(s)) return true
+  return false
+}
+
+/** Negative cache: avoid re-probing the same missing path across a restore. */
+const missingImageCache = new Map<string, number>()
+const MISSING_TTL_MS = 60_000
+
 function resolveImageCandidates(filePath: string): string[] {
   const trimmed = filePath.trim().replace(/^["'`]+|["'`]+$/g, '')
   if (!trimmed) return []
+  if (isHopelessImageRef(trimmed)) return []
 
   const candidates: string[] = []
   const isAbs = path.isAbsolute(trimmed)
@@ -76,6 +97,9 @@ function resolveImageCandidates(filePath: string): string[] {
             .readdirSync(sessionBase, { withFileTypes: true })
             .filter((d) => d.isDirectory())
             .map((d) => d.name)
+            // Bound the walk: a restore must not readdir unbounded session trees
+            // for every missing markdown image.
+            .slice(0, 8)
           for (const d of dirs) {
             candidates.push(path.join(sessionBase, d, rel))
           }
@@ -166,7 +190,18 @@ export function readLocalImageSafe(filePath: string): {
   error?: string
 } {
   try {
+    const cacheKey = filePath.trim()
+    const missAt = missingImageCache.get(cacheKey)
+    if (missAt !== undefined && Date.now() - missAt < MISSING_TTL_MS) {
+      return { error: `Image not found: ${filePath}` }
+    }
+
     const candidates = resolveImageCandidates(filePath)
+    if (candidates.length === 0) {
+      missingImageCache.set(cacheKey, Date.now())
+      return { error: `Image not found: ${filePath}` }
+    }
+
     let found: string | null = null
     for (const c of candidates) {
       try {
@@ -179,8 +214,10 @@ export function readLocalImageSafe(filePath: string): {
       }
     }
     if (!found) {
+      missingImageCache.set(cacheKey, Date.now())
       return { error: `Image not found: ${filePath}` }
     }
+    missingImageCache.delete(cacheKey)
 
     // realpath to defeat symlink escapes outside allowed roots
     let real: string

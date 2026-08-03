@@ -48,6 +48,12 @@ export function useGronk() {
   const [permission, setPermission] = useState<PermissionRequest | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /**
+   * True while opening a project or restoring a session: UI shows a skeleton
+   * (or a light banner over existing messages) so the window does not look hung
+   * during agent boot / store reads.
+   */
+  const [hydrating, setHydrating] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [historySource, setHistorySource] = useState<string | null>(null)
   /** Token/cost totals for the live session — null until the first turn completes. */
@@ -195,9 +201,40 @@ export function useGronk() {
           setActivePlan(null)
           setUsage(null)
           break
+        case 'history-replace':
+          // Bulk restore from local cache — one paint, no clear/rebuild thrash.
+          setMessages(
+            event.messages.map((m) => ({
+              ...m,
+              streaming: false,
+              sendStatus:
+                m.role === 'user'
+                  ? m.sendStatus === 'failed'
+                    ? ('failed' as const)
+                    : ('sent' as const)
+                  : m.sendStatus
+            }))
+          )
+          setHistorySource('local')
+          setActivePlan(null)
+          setUsage(null)
+          stickToBottom.current = true
+          break
         case 'history-done':
           setHistorySource(event.source)
           setBusy(false)
+          setHydrating(false)
+          stickToBottom.current = true
+          // Second stick after images/layout settle so the viewport lands on the
+          // real end of a long restored thread, not a mid-load height.
+          requestAnimationFrame(() => {
+            const el = scrollRef.current
+            if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
+            window.setTimeout(() => {
+              const again = scrollRef.current
+              if (again && stickToBottom.current) again.scrollTop = again.scrollHeight
+            }, 120)
+          })
           void refreshSessions()
           break
         case 'user-message':
@@ -421,6 +458,16 @@ export function useGronk() {
     return () => window.removeEventListener('keydown', onKey)
   }, [cwd])
 
+  const selectSessionRef = useRef<
+    ((session: SessionInfo) => Promise<void>) | null
+  >(null)
+
+  /** Yield a frame so React can paint the skeleton before heavy main-process work. */
+  const yieldPaint = () =>
+    new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    })
+
   const openProject = useCallback(
     async (folder?: string | null, opts?: { forceNew?: boolean }) => {
       setError(null)
@@ -454,17 +501,44 @@ export function useGronk() {
         return
       }
 
-      setMessages([])
-      setSessionId(null)
-      setCwd(target)
-      setBusy(false)
-      setPermission(null)
-      setHistorySource(null)
-      setActivePlan(null)
-      setUsage(null)
+      // Switch chrome immediately so the skeleton has somewhere to live.
       setSurface('project')
       setBrowsing(false)
       setAgentSurface('project')
+      setCwd(target)
+      setPermission(null)
+      setActivePlan(null)
+      setUsage(null)
+      setHydrating(true)
+      if (opts?.forceNew) {
+        setMessages([])
+        setSessionId(null)
+        setHistorySource(null)
+      }
+      await yieldPaint()
+
+      // Opening a project with history should resume the latest session, not
+      // dump you on the empty "What should we build?" state. New session stays
+      // explicit (New session / forceNew).
+      if (!opts?.forceNew && selectSessionRef.current) {
+        try {
+          const sessions = await window.gronk.listSessions()
+          const latest = sessions
+            .filter((s) => !s.archived && pathsEqual(s.cwd, target))
+            .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+          if (latest) {
+            await selectSessionRef.current(latest)
+            return
+          }
+        } catch {
+          /* fall through to a fresh agent */
+        }
+      }
+
+      setMessages([])
+      setSessionId(null)
+      setBusy(false)
+      setHistorySource(null)
 
       try {
         const s = await window.gronk.getSettings()
@@ -476,8 +550,10 @@ export function useGronk() {
         })
         setSessionId(id)
         await refreshMeta()
+        setHydrating(false)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
+        setHydrating(false)
       }
     },
     [cwd, connection, refreshMeta, agentSurface]
@@ -601,6 +677,7 @@ export function useGronk() {
 
       setPermission(null)
       setBusy(true)
+      setHydrating(true)
       setHistorySource(null)
       setActivePlan(null)
       setUsage(null)
@@ -610,8 +687,12 @@ export function useGronk() {
       setBrowsing(false)
       setAgentSurface(isChat ? 'chat' : 'project')
       stickToBottom.current = true
+      await yieldPaint()
 
       try {
+        // Paint the local cache first so the user is reading history while the
+        // agent process boots — loadSession will history-replace the same data
+        // and then session/load in the background of the UI.
         const local = await window.gronk.getTranscript(session.id)
         if (local.length) {
           setMessages(
@@ -626,18 +707,24 @@ export function useGronk() {
                   : m.sendStatus
             }))
           )
+          setHistorySource('local')
         } else setMessages([])
 
         const result = await window.gronk.loadSession(session.id)
         setSessionId(result.sessionId)
         await refreshMeta()
+        // history-done also clears hydrating; keep this as a safety net if
+        // the event was missed (e.g. empty restore paths).
+        setHydrating(false)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
         setBusy(false)
+        setHydrating(false)
       }
     },
     [refreshMeta, chatWorkspacePath]
   )
+  selectSessionRef.current = selectSession
 
   const sendPrompt = useCallback(
     async (
@@ -828,6 +915,7 @@ export function useGronk() {
     permission,
     error,
     busy,
+    hydrating,
     ...settingsState,
     ...authState,
     showSettings,
