@@ -55,9 +55,10 @@ need to run them. Say which screens your change affects and they will be looked
 at. If a screen legitimately changed, the baseline gets updated in the same
 merge; that is expected, not a failure.
 
-Changes are also read against the invariants in [CLAUDE.md](CLAUDE.md). That file
-exists so review is a checklist rather than a mood, and it is worth a look before
-you write anything that touches the main process.
+Changes that touch the main process, IPC, path handling, plugins, CSP, or
+permissions get an extra careful pass. The public docs for that posture are
+[SECURITY.md](SECURITY.md) and [docs/supply-chain.md](docs/supply-chain.md).
+Internal review checklists stay off the public tree on purpose.
 
 Expect questions rather than silence. A change that gets a lot of them is
 usually one that needed them, not one that is unwelcome.

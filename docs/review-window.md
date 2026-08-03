@@ -57,10 +57,11 @@ execute shell commands. That is code execution and it does not require fooling
 anybody. If the change genuinely has to be run, the maintainer does it in a
 throwaway worktree, having read the diff first.
 
-**4. Check it against `CLAUDE.md`.** That file lists the invariants a change can
-break, with an honest marker of whether a test catches each one. The rules marked
-NOT CHECKED are where your attention is worth most, because nothing else is
-looking.
+**4. Check it against the maintainer's local review checklist** (kept off the
+public tree as `CLAUDE.md` in the main checkout only). It lists invariants a
+change can break and which tests catch them. Rules marked NOT CHECKED are where
+attention is worth most. If that file is missing, fall back to SECURITY.md and
+the high-risk paths listed in `scripts/pr-audit.mjs`.
 
 ## When the author is not the maintainer
 

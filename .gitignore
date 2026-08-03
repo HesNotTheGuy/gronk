@@ -20,6 +20,9 @@ HANDOFF.md
 REVIEW-NOTES.md
 SECURITY-FIXES.md
 SKILLS-PLUGINS-SPEC.md
+# Maintainer/agent review checklist (security invariants, coverage gaps). Local only.
+CLAUDE.md
+Claude.md
 
 # Author's own tooling, not part of the app.
 scripts/make-icon.mjs
