@@ -172,4 +172,21 @@ export function registerSystemIpc(ctx: IpcContext): void {
     assertTrustedSender(e)
     return installGrokCli()
   })
+
+  /**
+   * Match the Windows title-bar overlay to the resolved app theme. Light mode
+   * used to keep the dark overlay from createWindow forever.
+   */
+  ipcMain.handle('gronk:set-chrome-theme', (e, theme: unknown) => {
+    assertTrustedSender(e)
+    if (theme !== 'dark' && theme !== 'light') throw new Error('Invalid chrome theme')
+    if (process.platform !== 'win32') return
+    const win = ctx.getMainWindow()
+    if (!win || win.isDestroyed()) return
+    if (theme === 'light') {
+      win.setTitleBarOverlay({ color: '#f0efeb', symbolColor: '#141414', height: 40 })
+    } else {
+      win.setTitleBarOverlay({ color: '#0a0a0a', symbolColor: '#e5e5e5', height: 40 })
+    }
+  })
 }

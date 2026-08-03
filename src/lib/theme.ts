@@ -11,4 +11,6 @@ export function applyTheme(theme: AppSettings['theme']): void {
   const resolved = resolveTheme(theme)
   document.documentElement.dataset.theme = resolved
   document.documentElement.style.colorScheme = resolved
+  // Native Windows chrome is not CSS; keep the overlay in step with the page.
+  void window.gronk?.setChromeTheme?.(resolved).catch(() => undefined)
 }

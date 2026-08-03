@@ -1,4 +1,8 @@
 import { BrowserWindow } from 'electron'
+// Notification is a named export in real Electron; the test stub does not
+// implement it. Resolve at call time so unit tests that load this module stay
+// importable.
+import * as electron from 'electron'
 import { chatWorkspacePath } from './data-dir'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -82,6 +86,11 @@ export class AgentManager {
   private window: BrowserWindow | null = null
   /** FIX-9: one pending permission per request id (queue display FIFO) */
   private permissions = new PermissionQueue()
+  /**
+   * Tool kinds the user batch-approved for this agent process only. Cleared on
+   * stop/boot. Not persisted — that is what allow-always / CLI config is for.
+   */
+  private sessionAllowKinds = new Set<string>()
   /** When true, session/update chunks rebuild history instead of live turn */
   private replayingHistory = false
   /**
@@ -217,6 +226,7 @@ export class AgentManager {
 
     const model = options?.model ?? settings.model
     this.currentModel = model
+    this.sessionAllowKinds.clear()
 
     // All permission derivation lives in buildAgentArgs — adopt what it decided
     // rather than recomputing the downgrades here (they must never drift apart).
@@ -479,12 +489,34 @@ export class AgentManager {
     // Totals belong to one live session; a new process starts a new accounting run.
     this.usage.reset()
     this.permissions.clear()
+    this.sessionAllowKinds.clear()
     if (this.client) {
       await this.client.dispose()
       this.client = null
     }
     this.sessionId = null
     this.activeMessageId = null
+  }
+
+  private notifyIfUnfocused(title: string, body: string): void {
+    try {
+      const NotificationCtor = (electron as { Notification?: typeof import('electron').Notification })
+        .Notification
+      if (!NotificationCtor || typeof NotificationCtor.isSupported !== 'function') return
+      if (!NotificationCtor.isSupported()) return
+      const win = this.window
+      if (win && !win.isDestroyed() && win.isFocused()) return
+      const n = new NotificationCtor({ title, body, silent: false })
+      n.on('click', () => {
+        if (!win || win.isDestroyed()) return
+        if (win.isMinimized()) win.restore()
+        win.show()
+        win.focus()
+      })
+      n.show()
+    } catch {
+      /* notification is best-effort */
+    }
   }
 
   private emitFrontPermission(): void {
@@ -502,6 +534,10 @@ export class AgentManager {
       rawInput: p.rawInput
     }
     this.emit({ type: 'permission-request', request })
+    this.notifyIfUnfocused(
+      'Permission needed',
+      p.title ? `Gronk is waiting: ${p.title}` : 'Gronk is waiting for a permission decision'
+    )
   }
 
   async stop(): Promise<void> {
@@ -583,6 +619,10 @@ export class AgentManager {
         })
         this.activeMessageId = null
         this.persistLiveTranscript()
+        this.notifyIfUnfocused(
+          'Gronk',
+          stopReason === 'cancelled' ? 'Turn cancelled' : 'Agent finished a turn'
+        )
 
         if (this.sessionId && this.cwd) {
           upsertSession({
@@ -609,6 +649,7 @@ export class AgentManager {
         })
         this.activeMessageId = null
         this.persistLiveTranscript()
+        this.notifyIfUnfocused('Gronk', 'Agent turn failed')
       })
 
     return { messageId }
@@ -657,9 +698,16 @@ export class AgentManager {
 
     this.log('permission decision', decision, 'id', requestId)
 
+    // Session batch: remember the kind, answer this request as allow-once to the CLI.
+    let effective: PermissionDecision = decision
+    if (decision === 'allow-session') {
+      if (pending.kind) this.sessionAllowKinds.add(pending.kind)
+      effective = 'allow-once'
+    }
+
     // FIX-6: resolve fs/write after user consent
     if (pending.fsWrite) {
-      if (decision === 'allow-once' || decision === 'allow-always') {
+      if (effective === 'allow-once' || effective === 'allow-always') {
         try {
           const safe = resolveInsideJail(this.cwd, pending.fsWrite.path)
           if (!safe) {
@@ -681,7 +729,7 @@ export class AgentManager {
         this.recordAuditFor(pending, 'reject-once')
       }
     } else {
-      this.client.respondPermission(pending.requestId, decision, pending.options)
+      this.client.respondPermission(pending.requestId, effective, pending.options)
       this.recordAuditFor(pending, decision)
     }
 
@@ -761,6 +809,32 @@ export class AgentManager {
 
     if (this.autoApproveActive()) {
       this.log('auto-approving permission', id)
+      this.client?.respondPermission(id, 'allow-once', pending.options)
+      this.recordAuditFor(pending, 'auto-allow')
+      return
+    }
+
+    if (pending.kind && this.sessionAllowKinds.has(pending.kind)) {
+      this.log('session-batch approving permission', pending.kind, id)
+      if (pending.fsWrite) {
+        try {
+          const safe = resolveInsideJail(this.cwd, pending.fsWrite.path)
+          if (!safe) {
+            this.client?.respondError(id, -32000, 'Path outside project root is not allowed')
+            this.recordAuditFor(pending, 'reject-once')
+            return
+          }
+          fs.mkdirSync(path.dirname(safe), { recursive: true })
+          fs.writeFileSync(safe, pending.fsWrite.content, 'utf8')
+          this.client?.respondToRequest(id, null)
+          this.recordAuditFor(pending, 'auto-allow')
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          this.client?.respondError(id, -32000, message)
+          this.recordAuditFor(pending, 'reject-once')
+        }
+        return
+      }
       this.client?.respondPermission(id, 'allow-once', pending.options)
       this.recordAuditFor(pending, 'auto-allow')
       return

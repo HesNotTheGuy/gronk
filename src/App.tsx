@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AuthGate } from './components/AuthGate'
 import { ChatHome } from './components/ChatHome'
+import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { Composer } from './components/Composer'
 import { HomeView } from './components/HomeView'
 import { MessageList } from './components/MessageList'
+import { OnboardingChecklist } from './components/OnboardingChecklist'
 import { PermissionModal } from './components/PermissionModal'
 import { AgentFleetStrip } from './components/AgentFleet'
 import { PlanPanel } from './components/PlanPanel'
@@ -13,6 +15,7 @@ import { PluginsPanel } from './components/PluginsPanel'
 import { SessionCard } from './components/SessionCard'
 import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
+import { StatusMenu } from './components/StatusMenu'
 import { YoloConfirm } from './components/YoloConfirm'
 import { CliInstall } from './components/CliInstall'
 import { PaneSplitter } from './components/PaneSplitter'
@@ -21,6 +24,8 @@ import { UsageMeter } from './components/UsageMeter'
 import { useGronk } from './hooks/useGronk'
 import { folderName, isChatSession } from '../shared/path'
 import type { LoginMethod, SessionInfo } from '../shared/types'
+
+const ONBOARD_HIDE_KEY = 'gronk.onboarding.hide'
 
 const PROJECT_HINTS = [
   'Map the architecture and main entry points',
@@ -38,6 +43,14 @@ export function App() {
   const g = useGronk()
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [hideOnboarding, setHideOnboarding] = useState(() => {
+    try {
+      return localStorage.getItem(ONBOARD_HIDE_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   /**
    * Viewport coords for the portalled Export menu. The menu cannot live inside
@@ -124,16 +137,16 @@ export function App() {
 
   const statusLabel =
     g.connection === 'ready'
-      ? 'ONLINE'
+      ? 'Online'
       : g.connection === 'starting'
-        ? 'ARMING'
+        ? 'Starting'
         : g.connection === 'loading'
-          ? 'RESTORE'
+          ? 'Restoring'
           : g.connection === 'error'
-            ? 'FAULT'
+            ? 'Fault'
             : g.connection === 'stopped'
-              ? 'STOPPED'
-              : 'STANDBY'
+              ? 'Stopped'
+              : 'Standby'
 
   const requireAuth = (fn: () => void) => {
     if (!g.isAuthenticated) {
@@ -142,6 +155,54 @@ export function App() {
     }
     fn()
   }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const paletteActions = useMemo((): PaletteAction[] => {
+    return [
+      { id: 'home', label: 'Go to Home', hint: 'Surface', run: () => g.goHome() },
+      { id: 'chat', label: 'Go to Chat', hint: 'Surface', run: () => g.goChat() },
+      { id: 'build', label: 'Go to Build', hint: 'Surface', run: () => g.goProjects() },
+      {
+        id: 'new-chat',
+        label: 'New chat',
+        hint: 'Conversation',
+        run: () => requireAuth(() => void g.openChat())
+      },
+      {
+        id: 'add-project',
+        label: 'Add project',
+        hint: 'Build',
+        run: () => requireAuth(() => void g.openProject())
+      },
+      {
+        id: 'new-session',
+        label: 'New session in current project',
+        hint: 'Build',
+        run: () => {
+          if (g.cwd) void g.newChat()
+          else requireAuth(() => void g.openProject())
+        }
+      },
+      { id: 'settings', label: 'Settings', hint: 'Ctrl+,', run: () => g.setShowSettings(true) },
+      { id: 'plugins', label: 'Plugins & skills', run: () => setShowPlugins(true) },
+      {
+        id: 'sign-in',
+        label: g.isAuthenticated ? 'Account is signed in' : 'Sign in',
+        run: () => setShowAuthModal(true)
+      }
+    ]
+  }, [g, g.cwd, g.isAuthenticated])
 
   const openProject = (cwd?: string | null) => {
     requireAuth(() => void g.openProject(cwd))
@@ -185,11 +246,9 @@ export function App() {
   return (
     <div className="app">
       <Sidebar
-        alwaysApprove={g.yoloActive}
         authLabel={g.auth?.accountLabel}
         authenticated={g.isAuthenticated}
         surface={surface}
-        inConversation={inConversation}
         projects={g.recentProjects}
         projectSessions={g.projectOnlySessions}
         chatSessions={g.chatSessions}
@@ -207,16 +266,11 @@ export function App() {
         onArchiveSession={(id) => void g.archiveSession(id)}
         onExportSession={(id, f) => void g.exportSession(id, f)}
         onDeleteSession={(id) => void g.deleteSession(id)}
+        onRemoveProject={(cwd) => void g.removeRecentProject(cwd)}
+        onPinProject={(cwd, pinned) => void g.setRecentProjectPinned(cwd, pinned)}
         onOpenPlugins={() => setShowPlugins(true)}
         onNewProjectSession={() => void g.newChat()}
         onOpenArchived={() => g.setShowArchived(true)}
-        onToggleAlwaysApprove={() => {
-          if (g.yoloActive) {
-            void g.updateSettings({ alwaysApprove: false, permissionMode: 'default' })
-          } else {
-            void g.updateSettings({ alwaysApprove: true })
-          }
-        }}
         onOpenSettings={() => g.setShowSettings(true)}
         onLogout={() => void g.logout()}
         onSignIn={() => setShowAuthModal(true)}
@@ -327,33 +381,26 @@ export function App() {
                 ← Back
               </button>
             ) : null}
-            {g.isAuthenticated && g.auth?.accountLabel ? (
-              <div className="status-pill auth-pill" title="Signed-in account (CLI)">
-                {g.auth.accountLabel}
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="status-pill"
-                onClick={() => setShowAuthModal(true)}
-              >
-                Sign in
-              </button>
-            )}
-            {inConversation && g.settings?.model ? (
-              <div className="status-pill model-pill" title="Active model">
-                {g.settings.model}
-              </div>
-            ) : null}
-            {inConversation ? (
-              <div
-                className={`status-pill ${statusClass}`}
-                title={g.grokPath || 'grok binary not found'}
-              >
-                <span className="dot" />
-                {statusLabel}
-              </div>
-            ) : null}
+            <StatusMenu
+              connection={g.connection}
+              statusLabel={statusLabel}
+              statusClass={statusClass}
+              accountLabel={g.auth?.accountLabel}
+              authenticated={g.isAuthenticated}
+              model={g.settings?.model}
+              models={g.models}
+              grokPath={g.grokPath}
+              showModel={inConversation}
+              onSignIn={() => setShowAuthModal(true)}
+              onOpenSettings={() => g.setShowSettings(true)}
+              onChangeModel={
+                g.updateSettings
+                  ? (id) => {
+                      void g.updateSettings({ model: id })
+                    }
+                  : undefined
+              }
+            />
           </div>
         </header>
 
@@ -474,23 +521,43 @@ export function App() {
         ) : null}
 
         {surface === 'home' ? (
-          <HomeView
-            projects={g.recentProjects}
-            sessions={g.projectOnlySessions}
-            authenticated={g.isAuthenticated}
-            authLabel={g.auth?.accountLabel}
-            grokFound={!!g.grokPath || !!g.health?.grokFound}
-            model={g.settings?.model}
-            onOpenChat={() => g.goChat()}
-            onOpenProjects={() => g.goProjects()}
-            onOpenProject={(cwd) => openProject(cwd)}
-            onSelectSession={(s) => void g.selectSession(s)}
-            onRenameSession={(id, t) => void g.renameSession(id, t)}
-            onArchiveSession={(id) => void g.archiveSession(id)}
-            onDeleteSession={(id) => void g.deleteSession(id)}
-            onSignIn={() => setShowAuthModal(true)}
-            onSettings={() => g.setShowSettings(true)}
-          />
+          <>
+            {!hideOnboarding ? (
+              <OnboardingChecklist
+                grokFound={!!g.grokPath || !!g.health?.grokFound}
+                authenticated={g.isAuthenticated}
+                hasProject={g.recentProjects.length > 0}
+                onInstallCli={() => g.setShowCliInstall(true)}
+                onSignIn={() => setShowAuthModal(true)}
+                onOpenProject={() => openProject()}
+                onDismiss={() => {
+                  try {
+                    localStorage.setItem(ONBOARD_HIDE_KEY, '1')
+                  } catch {
+                    /* ignore */
+                  }
+                  setHideOnboarding(true)
+                }}
+              />
+            ) : null}
+            <HomeView
+              projects={g.recentProjects}
+              sessions={g.projectOnlySessions}
+              authenticated={g.isAuthenticated}
+              authLabel={g.auth?.accountLabel}
+              grokFound={!!g.grokPath || !!g.health?.grokFound}
+              model={g.settings?.model}
+              onOpenChat={() => g.goChat()}
+              onOpenProjects={() => g.goProjects()}
+              onOpenProject={(cwd) => openProject(cwd)}
+              onSelectSession={(s) => void g.selectSession(s)}
+              onRenameSession={(id, t) => void g.renameSession(id, t)}
+              onArchiveSession={(id) => void g.archiveSession(id)}
+              onDeleteSession={(id) => void g.deleteSession(id)}
+              onSignIn={() => setShowAuthModal(true)}
+              onSettings={() => g.setShowSettings(true)}
+            />
+          </>
         ) : surface === 'chat' && g.browsing ? (
           <ChatHome
             sessions={g.chatSessions}
@@ -654,6 +721,12 @@ export function App() {
           ) : null}
         </div>
       ) : null}
+
+      <CommandPalette
+        open={paletteOpen}
+        actions={paletteActions}
+        onClose={() => setPaletteOpen(false)}
+      />
 
       {g.permission ? (
         <PermissionModal

@@ -15,6 +15,8 @@ import {
   getPermissionAudit,
   getRecentProjects,
   getSettings,
+  removeRecentProject,
+  setRecentProjectPinned,
   setSettings
 } from '../store'
 import { assertString } from './validate'
@@ -43,6 +45,17 @@ export function registerSettingsIpc(): void {
   ipcMain.handle('gronk:add-recent-project', (e, cwd: string) => {
     assertTrustedSender(e)
     return addRecentProject(assertString(cwd, 'cwd'))
+  })
+
+  ipcMain.handle('gronk:remove-recent-project', (e, cwd: string) => {
+    assertTrustedSender(e)
+    return removeRecentProject(assertString(cwd, 'cwd'))
+  })
+
+  ipcMain.handle('gronk:set-recent-project-pinned', (e, cwd: string, pinned: unknown) => {
+    assertTrustedSender(e)
+    if (typeof pinned !== 'boolean') throw new Error('pinned must be a boolean')
+    return setRecentProjectPinned(assertString(cwd, 'cwd'), pinned)
   })
 
   ipcMain.handle('gronk:get-chat-workspace', (e) => {

@@ -11,12 +11,9 @@ import { SessionRow } from './SessionRow'
 import { folderName, isChatSession, pathsEqual } from '../../shared/path'
 
 interface Props {
-  alwaysApprove: boolean
   authLabel?: string
   authenticated: boolean
   surface: AppSurface
-  /** true when main pane is the conversation (not a browse home) */
-  inConversation: boolean
   /** Recent projects (coding agent) */
   projects: ProjectContext[]
   /** Project-bound agent sessions (excludes app chat) */
@@ -39,11 +36,12 @@ interface Props {
   onArchiveSession: (id: string) => void
   onExportSession: (id: string, format: 'md' | 'json') => void
   onDeleteSession: (id: string) => void
+  onRemoveProject: (cwd: string) => void
+  onPinProject: (cwd: string, pinned: boolean) => void
   /** Opens the Plugins & Skills panel without a detour through Settings. */
   onOpenPlugins: () => void
   onNewProjectSession: () => void
   onOpenArchived: () => void
-  onToggleAlwaysApprove: () => void
   onOpenSettings: () => void
   onLogout: () => void
   onSignIn: () => void
@@ -58,18 +56,24 @@ const LIST_LIMIT = 40
 const COLLAPSE_KEY = 'gronk.sidebar.collapse.v2'
 
 /**
- * One item, for now.
- *
- * "Remove from recents" belongs here too, and nothing can build it yet: the
- * bridge exposes getRecentProjects and addRecentProject and no way to forget
- * one. An item wired to nothing would be a lie, and the obvious substitute is
- * the one thing this must never do, since a menu row next to a project called
- * anything like "Remove" will be read as "delete my folder" by somebody. So it
- * waits for the IPC rather than shipping in a shape that could be misread.
+ * Project rail actions. "Remove from list" only forgets the recent entry — it
+ * never deletes the folder on disk. The wording must stay that careful.
  */
-const PROJECT_OPTIONS: MenuOption[] = [
-  { id: 'reveal', label: 'Show in folder', description: 'Open it in your file manager' }
-]
+function projectOptions(pinned: boolean): MenuOption[] {
+  return [
+    { id: 'reveal', label: 'Show in folder', description: 'Open it in your file manager' },
+    {
+      id: 'pin',
+      label: pinned ? 'Unpin' : 'Pin to top',
+      description: pinned ? 'Return to normal recent order' : 'Keep this project at the top'
+    },
+    {
+      id: 'remove',
+      label: 'Remove from list',
+      description: 'Forget this recent entry. Does not delete files.'
+    }
+  ]
+}
 
 /**
  * revealLocalPath already accepts a project directory: its containment check
@@ -111,11 +115,9 @@ function loadCollapse(): { folders: boolean; sessions: boolean; chats: boolean }
  * and says how many rows it is hiding when it cuts.
  */
 export function Sidebar({
-  alwaysApprove,
   authLabel,
   authenticated,
   surface,
-  inConversation,
   projects,
   projectSessions,
   chatSessions,
@@ -133,10 +135,11 @@ export function Sidebar({
   onArchiveSession,
   onExportSession,
   onDeleteSession,
+  onRemoveProject,
+  onPinProject,
   onOpenPlugins,
   onNewProjectSession,
   onOpenArchived,
-  onToggleAlwaysApprove,
   onOpenSettings,
   onLogout,
   onSignIn
@@ -474,7 +477,10 @@ export function Sidebar({
                             title={p.cwd}
                             onClick={() => onOpenProject(p.cwd)}
                           >
-                            <div className="name">{name}</div>
+                            <div className="name">
+                              {p.pinned ? <span className="pin-mark" title="Pinned">·</span> : null}
+                              {name}
+                            </div>
                             <div className="path">{p.cwd}</div>
                           </button>
                           <MenuButton
@@ -482,9 +488,11 @@ export function Sidebar({
                             title={`Actions for ${name}`}
                             trigger="icon"
                             placement="down"
-                            options={PROJECT_OPTIONS}
+                            options={projectOptions(!!p.pinned)}
                             onSelect={(id) => {
                               if (id === 'reveal') revealProject(p.cwd)
+                              if (id === 'pin') onPinProject(p.cwd, !p.pinned)
+                              if (id === 'remove') onRemoveProject(p.cwd)
                             }}
                             disabled={!authenticated}
                           />
@@ -605,7 +613,7 @@ export function Sidebar({
           </button>
         ) : null}
         <button type="button" className="btn btn-ghost btn-block" onClick={onOpenPlugins}>
-          Plugins &amp; Skills
+          Plugins &amp; skills
         </button>
         <button type="button" className="btn btn-ghost btn-block" onClick={onOpenSettings}>
           Settings
@@ -614,20 +622,6 @@ export function Sidebar({
           <button type="button" className="btn btn-ghost btn-block" onClick={onLogout}>
             Sign out
           </button>
-        ) : null}
-        {surface === 'project' && inConversation ? (
-          <div className="settings-row">
-            <label htmlFor="always-approve">YOLO</label>
-            <button
-              id="always-approve"
-              type="button"
-              className={`toggle ${alwaysApprove ? 'on' : ''}`}
-              aria-pressed={!!alwaysApprove}
-              onClick={onToggleAlwaysApprove}
-              disabled={!authenticated}
-              title="Bypass all permissions for coding agent"
-            />
-          </div>
         ) : null}
         <div className="version-tag">v{__APP_VERSION__}</div>
       </div>

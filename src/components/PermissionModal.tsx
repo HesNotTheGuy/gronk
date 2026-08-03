@@ -5,7 +5,7 @@ import type { DiffLine, FormattedPermission } from '../lib/tool-format'
 
 interface Props {
   request: PermissionRequest
-  onRespond: (decision: 'allow-once' | 'allow-always' | 'reject-once') => void
+  onRespond: (decision: 'allow-once' | 'allow-always' | 'allow-session' | 'reject-once') => void
 }
 
 /**
@@ -145,7 +145,16 @@ export function PermissionModal({ request, onRespond }: Props) {
           <button
             type="button"
             className="btn btn-ghost"
+            onClick={() => onRespond('allow-session')}
+            title="Auto-approve this tool kind until this agent session ends"
+          >
+            Allow this kind for session
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
             onClick={() => onRespond('allow-always')}
+            title="Persist an always-allow decision in the CLI where supported"
           >
             Always allow
           </button>

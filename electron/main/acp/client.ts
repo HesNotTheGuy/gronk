@@ -222,6 +222,9 @@ export class GrokAcpClient extends EventEmitter {
     const kindMap: Record<PermissionDecision, string[]> = {
       'allow-once': ['allow_once', 'allow-once', 'allow'],
       'allow-always': ['allow_always', 'allow-always', 'allow_always'],
+      // Session batch is resolved to allow-once before this map is used; keep a
+      // row so the type stays exhaustive if a caller forgets to fold.
+      'allow-session': ['allow_once', 'allow-once', 'allow'],
       'reject-once': ['reject_once', 'reject-once', 'reject', 'deny']
     }
 

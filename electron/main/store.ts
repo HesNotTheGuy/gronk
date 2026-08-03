@@ -456,10 +456,24 @@ function withResolvedSurface(s: SessionInfo): SessionInfo {
   return s
 }
 
+/** Pinned first, then most-recently-used order among the rest. */
+function sortRecentProjects(list: ProjectContext[]): ProjectContext[] {
+  const pinned: ProjectContext[] = []
+  const rest: ProjectContext[] = []
+  for (const p of list) {
+    if (p.pinned) pinned.push(p)
+    else rest.push(p)
+  }
+  return [...pinned, ...rest]
+}
+
 export function getRecentProjects(): ProjectContext[] {
   const data = readStore()
-  const filtered = filterOutChatProjects(data.recentProjects)
-  if (filtered.length !== data.recentProjects.length) {
+  const filtered = sortRecentProjects(filterOutChatProjects(data.recentProjects))
+  if (
+    filtered.length !== data.recentProjects.length ||
+    filtered.some((p, i) => p.cwd !== data.recentProjects[i]?.cwd || !!p.pinned !== !!data.recentProjects[i]?.pinned)
+  ) {
     data.recentProjects = filtered
     writeStore(data)
   }
@@ -471,14 +485,53 @@ export function addRecentProject(cwd: string): ProjectContext[] {
   const normalized = normalizeCwd(cwd)
   // Chat is app-local — never a Workspace folder
   if (isChatWorkspace(normalized, null)) {
-    return filterOutChatProjects(data.recentProjects)
+    return getRecentProjects()
   }
   const name = path.basename(normalized) || normalized
-  const entry: ProjectContext = { cwd: normalized, name }
-  data.recentProjects = filterOutChatProjects([
-    entry,
-    ...data.recentProjects.filter((p) => normalizeCwd(p.cwd) !== normalized)
-  ]).slice(0, 12)
+  const prev = data.recentProjects.find((p) => normalizeCwd(p.cwd) === normalized)
+  const entry: ProjectContext = {
+    cwd: normalized,
+    name,
+    pinned: prev?.pinned
+  }
+  data.recentProjects = sortRecentProjects(
+    filterOutChatProjects([
+      entry,
+      ...data.recentProjects.filter((p) => normalizeCwd(p.cwd) !== normalized)
+    ])
+  ).slice(0, 12)
+  writeStore(data)
+  return data.recentProjects
+}
+
+/**
+ * Drop a folder from the recent list only. Does not delete the directory or
+ * any sessions — those stay until the user archives or deletes them.
+ */
+export function removeRecentProject(cwd: string): ProjectContext[] {
+  const data = readStore()
+  const normalized = normalizeCwd(cwd)
+  data.recentProjects = sortRecentProjects(
+    filterOutChatProjects(data.recentProjects.filter((p) => normalizeCwd(p.cwd) !== normalized))
+  )
+  writeStore(data)
+  return data.recentProjects
+}
+
+export function setRecentProjectPinned(cwd: string, pinned: boolean): ProjectContext[] {
+  const data = readStore()
+  const normalized = normalizeCwd(cwd)
+  let found = false
+  data.recentProjects = sortRecentProjects(
+    filterOutChatProjects(
+      data.recentProjects.map((p) => {
+        if (normalizeCwd(p.cwd) !== normalized) return p
+        found = true
+        return { ...p, pinned: pinned || undefined }
+      })
+    )
+  )
+  if (!found) return getRecentProjects()
   writeStore(data)
   return data.recentProjects
 }

@@ -45,6 +45,8 @@ export interface SessionInfo {
 export interface ProjectContext {
   cwd: string
   name: string
+  /** Pinned projects stay at the top of the recent list. */
+  pinned?: boolean
 }
 
 export type ToolCallStatus =
@@ -203,6 +205,8 @@ export interface PermissionRequest {
 export type PermissionDecision =
   | 'allow-once'
   | 'allow-always'
+  /** Allow this tool kind for the rest of the agent process (not persisted). */
+  | 'allow-session'
   | 'reject-once'
 
 export interface PermissionAuditEntry {
@@ -633,6 +637,15 @@ export interface GronkApi {
   setSettings: (partial: Partial<AppSettings>) => Promise<AppSettings>
   getRecentProjects: () => Promise<ProjectContext[]>
   addRecentProject: (cwd: string) => Promise<ProjectContext[]>
+  /** Remove a folder from the recent rail only — never deletes files on disk. */
+  removeRecentProject: (cwd: string) => Promise<ProjectContext[]>
+  /** Pin or unpin a recent project (pinned sort first). */
+  setRecentProjectPinned: (cwd: string, pinned: boolean) => Promise<ProjectContext[]>
+  /**
+   * Windows title-bar overlay colors. No-op on other platforms. Called when the
+   * renderer resolves light/dark so the native chrome matches the theme.
+   */
+  setChromeTheme: (theme: 'dark' | 'light') => Promise<void>
   startAgent: (
     cwd: string,
     options?: {

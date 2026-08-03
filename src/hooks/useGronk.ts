@@ -734,7 +734,7 @@ export function useGronk() {
   }, [])
 
   const respondPermission = useCallback(
-    async (decision: 'allow-once' | 'allow-always' | 'reject-once') => {
+    async (decision: 'allow-once' | 'allow-always' | 'allow-session' | 'reject-once') => {
       if (!permission) return
       await window.gronk.respondPermission(permission.requestId, decision)
       setPermission(null)

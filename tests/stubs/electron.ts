@@ -65,10 +65,28 @@ export const ipcMain = {
 export const dialog = { showOpenDialog: () => unsupported('dialog.showOpenDialog') }
 export const shell = { openExternal: () => unsupported('shell.openExternal') }
 export const session = { defaultSession: null }
+/** Present so main-process code can import Notification; tests never show toasts. */
+export class Notification {
+  static isSupported(): boolean {
+    return false
+  }
+  constructor(_opts?: { title?: string; body?: string; silent?: boolean }) {}
+  on(_event: string, _handler: () => void): void {}
+  show(): void {}
+}
 export const WebContentsView = class {
   constructor() {
     unsupported('new WebContentsView()')
   }
 }
 
-export default { app, BrowserWindow, ipcMain, dialog, shell, session, WebContentsView }
+export default {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  session,
+  Notification,
+  WebContentsView
+}

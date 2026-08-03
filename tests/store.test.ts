@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { __freshUserData } from './stubs/electron'
 import {
   addRecentProject,
+  removeRecentProject,
+  setRecentProjectPinned,
   appendPermissionAudit,
   archiveSession,
   dedupeTranscriptMessages,
@@ -422,6 +424,23 @@ test('recent projects are normalized, de-duplicated and most-recent-first', () =
 test('recent projects are capped at 12', () => {
   for (let i = 0; i < 20; i++) addRecentProject(`C:/work/p${i}`)
   assert.equal(getRecentProjects().length, 12)
+})
+
+test('removeRecentProject forgets the rail entry only', () => {
+  addRecentProject('C:/work/alpha')
+  addRecentProject('C:/work/beta')
+  const list = removeRecentProject('C:/work/alpha')
+  assert.equal(list.length, 1)
+  assert.equal(list[0].name, 'beta')
+})
+
+test('pinned projects sort above recency', () => {
+  addRecentProject('C:/work/alpha')
+  addRecentProject('C:/work/beta')
+  const list = setRecentProjectPinned('C:/work/alpha', true)
+  assert.equal(list[0].name, 'alpha')
+  assert.equal(list[0].pinned, true)
+  assert.equal(list[1].name, 'beta')
 })
 
 // ── Sessions ────────────────────────────────────────────────────────

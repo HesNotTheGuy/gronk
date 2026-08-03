@@ -56,6 +56,15 @@ export function useSessionCatalog() {
     setSessions(sess)
   }, [])
 
+  /** Forget a folder from the rail — never deletes files. */
+  const removeRecentProject = useCallback(async (cwd: string) => {
+    setRecentProjects(await window.gronk.removeRecentProject(cwd))
+  }, [])
+
+  const setRecentProjectPinned = useCallback(async (cwd: string, pinned: boolean) => {
+    setRecentProjects(await window.gronk.setRecentProjectPinned(cwd, pinned))
+  }, [])
+
   const uniqueSessions = useMemo(() => {
     const seen = new Set<string>()
     const out: SessionInfo[] = []
@@ -113,6 +122,8 @@ export function useSessionCatalog() {
     setShowArchived,
     renameSession,
     unarchiveSession,
+    removeRecentProject,
+    setRecentProjectPinned,
     // For the composer only — not part of the app's public surface.
     hydrate,
     refreshSessions,

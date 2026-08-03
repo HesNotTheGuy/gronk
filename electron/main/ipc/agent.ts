@@ -102,7 +102,7 @@ export function registerAgentIpc(): void {
     (e, requestId: number | string, decision: PermissionDecision) => {
       assertTrustedSender(e)
       if (requestId === undefined || requestId === null) throw new Error('Invalid requestId')
-      if (!['allow-once', 'allow-always', 'reject-once'].includes(decision)) {
+      if (!['allow-once', 'allow-always', 'allow-session', 'reject-once'].includes(decision)) {
         throw new Error('Invalid permission decision')
       }
       agentManager.respondPermission(requestId, decision)

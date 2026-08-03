@@ -29,34 +29,20 @@ export function PluginCard({
   const description = plainText(plugin.description)
   const busyLabel = 'Working…'
 
+  const inventoryBits = [
+    counts.skills ? `${counts.skills} skill${counts.skills === 1 ? '' : 's'}` : null,
+    counts.commands ? `${counts.commands} cmd${counts.commands === 1 ? '' : 's'}` : null,
+    counts.agents ? `${counts.agents} agent${counts.agents === 1 ? '' : 's'}` : null,
+    counts.mcp ? `${counts.mcp} MCP` : null,
+    counts.hooks ? `${counts.hooks} hook${counts.hooks === 1 ? '' : 's'}` : null
+  ].filter(Boolean) as string[]
+
   return (
     <div className={`plugin-card ${busy ? 'busy' : ''}`}>
       <div className="plugin-card-head">
         <span className="plugin-name" title={name}>
           {name}
         </span>
-        {plugin.version ? (
-          <span className="plugin-chip">v{plainText(plugin.version, 24)}</span>
-        ) : null}
-        {/*
-          The marketplace NAME is a string from a config file — anyone can set it
-          to "xAI Official". It is shown as a plain chip with no authority
-          styling, and the origin below is what a user should actually read.
-        */}
-        {plugin.marketplace ? (
-          <span className="plugin-chip">{plainText(plugin.marketplace, 40)}</span>
-        ) : null}
-        {origin ? (
-          <span
-            className="plugin-origin"
-            title={`Published from ${origin}. The name beside it is self-declared; this is not.`}
-          >
-            {origin}
-          </span>
-        ) : null}
-        {plugin.category ? (
-          <span className="plugin-chip">{plainText(plugin.category, 32)}</span>
-        ) : null}
         {!available ? (
           <span className={`plugin-state ${isDisabled ? 'off' : 'on'}`}>
             {isDisabled ? 'Disabled' : 'Enabled'}
@@ -64,19 +50,41 @@ export function PluginCard({
         ) : null}
       </div>
 
+      {/*
+        Origin is the only trustworthy publisher signal. Marketplace name and
+        category are self-declared catalog strings — secondary, not a badge row.
+      */}
+      <div className="plugin-meta">
+        {origin ? (
+          <span
+            className="plugin-origin"
+            title={`Published from ${origin}. Marketplace labels are self-declared.`}
+          >
+            {origin}
+          </span>
+        ) : null}
+        {plugin.version ? (
+          <span className="plugin-meta-item">v{plainText(plugin.version, 24)}</span>
+        ) : null}
+        {plugin.marketplace ? (
+          <span className="plugin-meta-item" title="Marketplace name is self-declared">
+            {plainText(plugin.marketplace, 40)}
+          </span>
+        ) : null}
+        {plugin.category ? (
+          <span className="plugin-meta-item">{plainText(plugin.category, 32)}</span>
+        ) : null}
+      </div>
+
       <p className="plugin-desc" title={description}>
         {description || 'No description provided.'}
       </p>
 
-      <div className="plugin-counts" aria-label="Components declared by this plugin">
-        <span className="plugin-count">Skills {counts.skills}</span>
-        <span className="plugin-count">Cmds {counts.commands}</span>
-        <span className="plugin-count">Agents {counts.agents}</span>
-        <span className={`plugin-count ${counts.mcp > 0 ? 'hot' : ''}`}>MCP {counts.mcp}</span>
-        <span className={`plugin-count ${counts.hooks > 0 ? 'hot' : ''}`}>
-          Hooks {counts.hooks}
-        </span>
-      </div>
+      {inventoryBits.length > 0 ? (
+        <div className="plugin-inventory" aria-label="Components declared by this plugin">
+          {inventoryBits.join(' · ')}
+        </div>
+      ) : null}
 
       <div className="btn-row plugin-card-actions">
         {onDetails ? (
