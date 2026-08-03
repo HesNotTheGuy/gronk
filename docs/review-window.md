@@ -39,10 +39,11 @@ Always in this order.
 npm run pr:audit 12
 ```
 
-It reads the diff over the API and flags changes to `.claude/`, `CLAUDE.md`,
-workflows, `.npmrc`, `package.json` scripts and lifecycle hooks, new
-dependencies, invisible characters, and text addressed at a reviewer. It exits
-non-zero on anything in the top tier.
+It reads the diff over the API and flags changes to agent config directories,
+instruction files an assistant would treat as authoritative, workflows,
+`.npmrc`, `package.json` scripts and lifecycle hooks, new dependencies,
+invisible characters, and text addressed at a reviewer. It exits non-zero on
+anything in the top tier.
 
 **2. Read it as text.**
 
@@ -51,17 +52,17 @@ gh pr diff 12
 ```
 
 **3. Do not check out a stranger's branch into this window.** `gh pr checkout`
-puts their files on disk, and this session reads a project `CLAUDE.md` as
-instructions and a project `.claude/settings.json` as configuration, where hooks
-execute shell commands. That is code execution and it does not require fooling
-anybody. If the change genuinely has to be run, the maintainer does it in a
-throwaway worktree, having read the diff first.
+puts their files on disk, and this session may load project agent instruction
+files and agent configuration (including hooks that run shell commands). That is
+code execution and it does not require fooling anybody. If the change genuinely
+has to be run, the maintainer does it in a throwaway worktree, having read the
+diff first.
 
-**4. Check it against the maintainer's local review checklist** (kept off the
-public tree as `CLAUDE.md` in the main checkout only). It lists invariants a
-change can break and which tests catch them. Rules marked NOT CHECKED are where
-attention is worth most. If that file is missing, fall back to SECURITY.md and
-the high-risk paths listed in `scripts/pr-audit.mjs`.
+**4. Check it against the maintainer's local review checklist** (gitignored;
+never published). It lists invariants a change can break and which tests catch
+them. Rules marked NOT CHECKED are where attention is worth most. If that file
+is missing, fall back to SECURITY.md and the high-risk paths listed in
+`scripts/pr-audit.mjs`.
 
 ## When the author is not the maintainer
 
