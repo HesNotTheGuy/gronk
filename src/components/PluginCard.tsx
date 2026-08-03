@@ -92,7 +92,7 @@ export function PluginCard({
             title={
               available
                 ? 'Review the source, risk tags and inventory before installing'
-                : 'Inspect what this plugin contains — read only'
+                : 'Read-only inspection of what this plugin contains'
             }
           >
             Details
@@ -107,7 +107,7 @@ export function PluginCard({
             title={
               onInstall
                 ? undefined
-                : 'Already installed — see the Installed tab to disable or remove it'
+                : 'Already installed. See the Installed tab to disable or remove it'
             }
           >
             {/* The panel withholds onInstall for a catalog row the user already has.
@@ -129,7 +129,7 @@ export function PluginCard({
             className="btn btn-secondary btn-sm"
             disabled={busy || !onDisable}
             onClick={() => onDisable?.(plugin.name)}
-            title="Reversible kill-switch — neutralizes hooks and MCP servers without deleting"
+            title="Reversible kill-switch: neutralizes hooks and MCP servers without deleting"
           >
             {busy ? busyLabel : 'Disable'}
           </button>

@@ -237,6 +237,48 @@ const SCENARIOS = [
       { wait: 900 }
     ]
   },
+  /*
+   * The catalogue. Twenty-four `![name](path)` in one reply, six of them not on
+   * disk, which used to be twenty-four full width cards and six bordered error
+   * boxes: some thirteen thousand pixels of one answer.
+   *
+   * Three shots because three separate things can regress independently. The
+   * grid itself; the failure list, which is behind a click and would otherwise
+   * never be looked at; and the light theme, where the matte behind each
+   * thumbnail is a different colour and a white SVG has to stay distinguishable
+   * from the page it sits on.
+   */
+  {
+    name: 'image-catalogue',
+    state: 'catalogue',
+    steps: [{ clickText: SESSION_TITLE }, { wait: 2200 }]
+  },
+  {
+    name: 'image-catalogue-failures',
+    state: 'catalogue',
+    steps: [
+      { clickText: SESSION_TITLE },
+      { wait: 2200 },
+      { click: '.md-image-failures-toggle' },
+      { wait: 700 }
+    ]
+  },
+  {
+    name: 'light-image-catalogue',
+    state: 'light-catalogue',
+    steps: [{ clickText: SESSION_TITLE }, { wait: 2200 }]
+  },
+  {
+    // Narrow enough that auto-fill actually has to give up columns: the bubble
+    // is capped at 700px, so anything wider than about 1050 photographs the
+    // same six. A grid that only works at a comfortable window is the lightbox
+    // bug over again.
+    name: 'image-catalogue-narrow',
+    state: 'catalogue',
+    width: 760,
+    height: 820,
+    steps: [{ clickText: SESSION_TITLE }, { wait: 2200 }]
+  },
   { name: 'project-menu', state: 'project-menu', steps: [{ wait: 2500 }] },
   { name: 'folder-menu', state: 'folder-menu', steps: [{ wait: 2500 }] },
   {

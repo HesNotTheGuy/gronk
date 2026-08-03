@@ -58,11 +58,11 @@ export function plainText(value: string | null | undefined, max = 260): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
 }
 
-/** `name — description` for a catalog component, all plain text. */
+/** `name: description` for a catalog component, all plain text. */
 export function componentLine(item: PluginComponent): string {
   const name = plainText(item?.name, 80) || 'unnamed'
   const desc = plainText(item?.description, 180)
-  return desc ? `${name} — ${desc}` : name
+  return desc ? `${name}: ${desc}` : name
 }
 
 export type RiskSeverity = 'HIGH' | 'MED' | 'INFO'
@@ -114,7 +114,7 @@ export function auditPlugin(plugin: Plugin): RiskTag[] {
       tags.push({
         severity: 'HIGH',
         label: `Over-broad hook (${broad.length})`,
-        detail: 'Declares no matcher — fires unconditionally on every matching event.'
+        detail: 'Declares no matcher, so it fires unconditionally on every matching event.'
       })
     }
   }
@@ -123,7 +123,7 @@ export function auditPlugin(plugin: Plugin): RiskTag[] {
       severity: 'MED',
       label: `Skills (${skills.length})`,
       detail:
-        'Skill text is injected into the agent as instructions — a prompt-injection surface. Gronk shows it as inert text.'
+        'Skill text is injected into the agent as instructions, which is a prompt-injection surface. Gronk shows it as inert text.'
     })
   }
   return tags

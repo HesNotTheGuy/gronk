@@ -1,8 +1,9 @@
-import { useCallback, useState, type ReactNode } from 'react'
-import ReactMarkdown from 'react-markdown'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import type { PhrasingContent, Root, RootContent } from 'mdast'
 import { looksLikeImagePath } from '../lib/image-refs'
-import { LocalImage } from './LocalImage'
+import { LocalImage, ThumbnailGrid } from './LocalImage'
 
 function CodeBlock({ className, children }: { className?: string; children?: ReactNode }) {
   const [copied, setCopied] = useState(false)
@@ -170,6 +171,99 @@ function isSuppressed(href: string, suppress?: Set<string>): boolean {
 }
 
 /**
+ * How many images in ONE message stop being pictures and become a list.
+ *
+ * Asked for a catalogue of vector graphics, Grok answered with about fifty
+ * `![name](path)` lines. Each one rendered as a full width card with a filename
+ * and an Open button, roughly 265px tall, so a single reply was some thirteen
+ * thousand pixels of scrolling. Four or fewer is a set the reader wants to look
+ * AT, and that case is deliberately left exactly as it was. Past that they want
+ * to scan it, so the run becomes a grid of thumbnails.
+ */
+const GRID_MIN_IMAGES = 5
+
+/**
+ * Marks a paragraph the grouping pass merged. It never reaches the DOM: the `p`
+ * override below swaps the whole paragraph for a ThumbnailGrid on sight of it.
+ */
+const GRID_MARKER = 'md-image-run'
+
+type IsTile = (url: string) => boolean
+
+/**
+ * The url this node hands to <LocalImage>, or null if it is not one of them.
+ *
+ * Both routes count. Grok writes `![name](path)` for a generated image and also
+ * `[path](path)`, and the two overrides below turn either into the same picture,
+ * so the grouping has to agree with both or a grid would come out half empty.
+ */
+function tileUrl(node: RootContent | PhrasingContent, isTile: IsTile): string | null {
+  if ((node.type === 'image' || node.type === 'link') && isTile(node.url)) return node.url
+  return null
+}
+
+function countTiles(nodes: Array<RootContent | PhrasingContent>, isTile: IsTile): number {
+  let count = 0
+  for (const node of nodes) {
+    if (tileUrl(node, isTile)) count++
+    else if ('children' in node) count += countTiles(node.children, isTile)
+  }
+  return count
+}
+
+/** The tiles of a paragraph that holds nothing else, or null. */
+function tilesOfParagraph(node: RootContent, isTile: IsTile): PhrasingContent[] | null {
+  if (node.type !== 'paragraph') return null
+  const tiles: PhrasingContent[] = []
+  for (const child of node.children) {
+    // The newline between two `![a](x)` lines of one paragraph is a text node.
+    if (child.type === 'text' && !child.value.trim()) continue
+    if (!tileUrl(child, isTile)) return null
+    tiles.push(child)
+  }
+  return tiles.length ? tiles : null
+}
+
+/**
+ * Merge each RUN of image-only paragraphs into one, marked for the grid.
+ *
+ * In place rather than hoisted to the end of the message: a catalogue is
+ * usually a heading, its images, the next heading, its images, and moving the
+ * pictures away from the headings that name them would be a worse answer than
+ * the tall one. Runs are found at the top level only, which is where fifty
+ * consecutive `![name](path)` lines land.
+ */
+function groupImageRuns(tree: Root, isTile: IsTile): void {
+  if (countTiles(tree.children, isTile) < GRID_MIN_IMAGES) return
+
+  const grouped: RootContent[] = []
+  let run: PhrasingContent[] | null = null
+
+  for (const node of tree.children) {
+    const tiles = tilesOfParagraph(node, isTile)
+    if (!tiles) {
+      run = null
+      grouped.push(node)
+      continue
+    }
+    if (run) {
+      run.push(...tiles)
+      continue
+    }
+    run = tiles
+    grouped.push({
+      type: 'paragraph',
+      children: run,
+      // An array because that is how hast stores a class list; it is joined
+      // back into one string before the `p` override ever sees it.
+      data: { hProperties: { className: [GRID_MARKER] } }
+    })
+  }
+
+  tree.children = grouped
+}
+
+/**
  * @param suppressImagePaths — image paths already shown in tool cards for this
  *   message; markdown links to the same file become a subtle caption instead of
  *   a second full preview.
@@ -181,83 +275,113 @@ export function Markdown({
   text: string
   suppressImagePaths?: string[]
 }) {
+  // Joined, because the caller rebuilds this array on every render and a Set
+  // built from a new array is a new dependency every time.
+  const suppressKey = suppressImagePaths?.length ? suppressImagePaths.join('\n') : ''
+
+  /*
+   * Memoised because identity is what React reconciles on.
+   *
+   * These were rebuilt on every render, which made every <LocalImage> in a
+   * message a different component type each time, so React threw the whole
+   * subtree away and mounted it again, and mounting one re-reads its file over
+   * IPC. Invisible with a single image; with fifty of them it is fifty disk
+   * reads per render of a streaming reply. The grid also keeps state (which
+   * images failed), and state does not survive a remount.
+   */
+  const suppress = useMemo(
+    () => (suppressKey ? new Set(suppressKey.split('\n').map(pathKey)) : undefined),
+    [suppressKey]
+  )
+
+  const remarkPlugins = useMemo(() => {
+    const isTile: IsTile = (url) =>
+      !isHttpUrl(url) && looksLikeImagePath(url) && !isSuppressed(url, suppress)
+    return [remarkGfm, () => (tree: Root) => groupImageRuns(tree, isTile)]
+  }, [suppress])
+
+  const components = useMemo<Components>(
+    () => ({
+      pre({ children }) {
+        return <>{children}</>
+      },
+      code({ className, children, ...props }) {
+        const isBlock = Boolean(className) || String(children).includes('\n')
+        if (isBlock) {
+          return <CodeBlock className={className}>{children}</CodeBlock>
+        }
+        return (
+          <code className={className} {...props}>
+            {children}
+          </code>
+        )
+      },
+      p({ className, children }) {
+        // A merged run of images is not a paragraph of prose, and a <figure>
+        // is not legal inside a <p> either.
+        if (className === GRID_MARKER) return <ThumbnailGrid>{children}</ThumbnailGrid>
+        return <p className={className}>{children}</p>
+      },
+      img({ src, alt }) {
+        // Remote first. isSuppressed matches on basename, so a remote URL
+        // ending in a filename already shown in a tool card would collapse
+        // into that file's caption, telling the user they have seen this
+        // before about a URL they have never seen.
+        if (src && !isHttpUrl(src) && isSuppressed(src, suppress)) {
+          return (
+            <span className="md-image-ref" title={src}>
+              {alt || src.replace(/\\/g, '/').split('/').pop()}
+            </span>
+          )
+        }
+        return <LocalOrRemoteImg src={src} alt={alt} />
+      },
+      a({ href, children, ...props }) {
+        // Grok links generated images as [images/1.jpg](images/1.jpg) —
+        // render the image itself instead of a dead relative link.
+        //
+        // looksLikeImagePath only declines a lowercase http/https prefix,
+        // so [x](HTTPS://host/x.png) and [x](//host/x.png) were read as
+        // generated images and sent to the local-image reader. A remote
+        // href stays an ordinary link, which is what the lowercase form
+        // already did.
+        if (href && !isHttpUrl(href) && looksLikeImagePath(href)) {
+          if (isSuppressed(href, suppress)) {
+            const label =
+              typeof children === 'string' && children.trim()
+                ? children.trim()
+                : href.replace(/\\/g, '/').split('/').pop() || href
+            return <span className="md-image-ref">{label}</span>
+          }
+          const label =
+            typeof children === 'string' && children.trim()
+              ? children.trim()
+              : href.replace(/\\/g, '/').split('/').pop() || href
+          return (
+            <LocalImage
+              image={{
+                path: href,
+                label
+              }}
+            />
+          )
+        }
+        // External / mailto stay as normal links (Electron will open externally)
+        return (
+          <a href={href} target="_blank" rel="noreferrer" {...props}>
+            {children}
+          </a>
+        )
+      }
+    }),
+    [suppress]
+  )
+
   if (!text) return null
-  const suppress = suppressImagePaths?.length
-    ? new Set(suppressImagePaths.map(pathKey))
-    : undefined
 
   return (
     <div className="md">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          pre({ children }) {
-            return <>{children}</>
-          },
-          code({ className, children, ...props }) {
-            const isBlock = Boolean(className) || String(children).includes('\n')
-            if (isBlock) {
-              return <CodeBlock className={className}>{children}</CodeBlock>
-            }
-            return (
-              <code className={className} {...props}>
-                {children}
-              </code>
-            )
-          },
-          img({ src, alt }) {
-            // Remote first. isSuppressed matches on basename, so a remote URL
-            // ending in a filename already shown in a tool card would collapse
-            // into that file's caption, telling the user they have seen this
-            // before about a URL they have never seen.
-            if (src && !isHttpUrl(src) && isSuppressed(src, suppress)) {
-              return (
-                <span className="md-image-ref" title={src}>
-                  {alt || src.replace(/\\/g, '/').split('/').pop()}
-                </span>
-              )
-            }
-            return <LocalOrRemoteImg src={src} alt={alt} />
-          },
-          a({ href, children, ...props }) {
-            // Grok links generated images as [images/1.jpg](images/1.jpg) —
-            // render the image itself instead of a dead relative link.
-            //
-            // looksLikeImagePath only declines a lowercase http/https prefix,
-            // so [x](HTTPS://host/x.png) and [x](//host/x.png) were read as
-            // generated images and sent to the local-image reader. A remote
-            // href stays an ordinary link, which is what the lowercase form
-            // already did.
-            if (href && !isHttpUrl(href) && looksLikeImagePath(href)) {
-              if (isSuppressed(href, suppress)) {
-                const label =
-                  typeof children === 'string' && children.trim()
-                    ? children.trim()
-                    : href.replace(/\\/g, '/').split('/').pop() || href
-                return <span className="md-image-ref">{label}</span>
-              }
-              const label =
-                typeof children === 'string' && children.trim()
-                  ? children.trim()
-                  : href.replace(/\\/g, '/').split('/').pop() || href
-              return (
-                <LocalImage
-                  image={{
-                    path: href,
-                    label
-                  }}
-                />
-              )
-            }
-            // External / mailto stay as normal links (Electron will open externally)
-            return (
-              <a href={href} target="_blank" rel="noreferrer" {...props}>
-                {children}
-              </a>
-            )
-          }
-        }}
-      >
+      <ReactMarkdown remarkPlugins={remarkPlugins} components={components}>
         {text}
       </ReactMarkdown>
     </div>

@@ -43,6 +43,7 @@ import {
 import { listModels } from './models'
 import { assertAuthenticated } from './auth'
 import { isChatWorkspace } from '../../shared/path'
+import { appendTextPart, appendToolPart } from '../../shared/types'
 import { redactPreview } from './redact'
 import type {
   ChatMessage,
@@ -931,7 +932,15 @@ export class AgentManager {
 
     switch (action.type) {
       case 'text':
-        this.patchAssistant(messageId, (m) => ({ ...m, text: m.text + action.text }))
+        // `text` stays the whole turn's prose and `parts` records where this run
+        // sits between the tool calls. Both are written, because the transcript
+        // on disk is read by builds that predate parts, and by exports that only
+        // ever want the prose.
+        this.patchAssistant(messageId, (m) => ({
+          ...m,
+          text: m.text + action.text,
+          parts: appendTextPart(m.parts, action.text)
+        }))
         this.emit({ type: 'message-chunk', sessionId, messageId, text: action.text })
         return
 
@@ -948,7 +957,14 @@ export class AgentManager {
         // carry a placeholder title that must not reach the renderer.
         const current = this.liveMessages.find((m) => m.id === messageId)
         const { toolCalls, merged } = upsertToolCall(current?.toolCalls, action.toolCall)
-        this.patchAssistant(messageId, (m) => ({ ...m, toolCalls }))
+        // Placed on every update, not just the initial one: appendToolPart is
+        // idempotent per id, and a call whose first sighting is a status update
+        // still belongs where it was first seen rather than nowhere.
+        this.patchAssistant(messageId, (m) => ({
+          ...m,
+          toolCalls,
+          parts: appendToolPart(m.parts, merged.toolCallId)
+        }))
         if (action.initial) {
           this.emit({ type: 'tool-call', sessionId, messageId, toolCall: merged })
         } else {

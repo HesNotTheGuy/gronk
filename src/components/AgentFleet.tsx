@@ -143,7 +143,7 @@ export function AgentFleet({
         </ul>
       ) : null}
       <p className="agent-fleet-note">
-        From Grok tool calls only (e.g. spawn_subagent) — no extra model narration.
+        From Grok tool calls only (e.g. spawn_subagent). No extra model narration.
       </p>
     </div>
   )

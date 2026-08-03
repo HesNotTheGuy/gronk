@@ -365,7 +365,7 @@ export function App() {
         */}
         {g.yoloActive ? (
           <div className="yolo-banner">
-            BYPASS PERMISSIONS ACTIVE — agent tools auto-approve. Switch mode or turn off YOLO.
+            BYPASS PERMISSIONS ACTIVE. Agent tools auto-approve. Switch mode or turn off YOLO.
           </div>
         ) : null}
 
@@ -426,13 +426,13 @@ export function App() {
               <code className="path-code export-banner-path">{g.exportNotice.path}</code>
               {g.exportNotice.revealError ? (
                 <span className="export-banner-warn">
-                  Could not open the folder ({g.exportNotice.revealError}) — the path above
+                  Could not open the folder ({g.exportNotice.revealError}). The path above
                   is where the file went.
                 </span>
               ) : null}
               {g.exportNotice.copyError ? (
                 <span className="export-banner-warn">
-                  Could not copy ({g.exportNotice.copyError}) — select the path above instead.
+                  Could not copy ({g.exportNotice.copyError}). Select the path above instead.
                 </span>
               ) : null}
             </div>
@@ -545,7 +545,7 @@ export function App() {
                     </h2>
                     <p className="empty-copy">
                       {inChat
-                        ? 'General conversation with Grok — same account as the CLI.'
+                        ? 'General conversation with Grok, on the same account as the CLI.'
                         : 'Stream prompts to the local Grok agent. Tools and permissions stay under your control.'}
                     </p>
                     <div className="hints">
@@ -681,7 +681,7 @@ export function App() {
             </div>
             <p>
               Archived sessions are kept out of the Chat and Build lists. Restore one to put it
-              back — opening it restores it too.
+              back. Opening it restores it too.
             </p>
             {g.archivedSessions.length === 0 ? (
               <div className="browse-empty">Nothing archived.</div>

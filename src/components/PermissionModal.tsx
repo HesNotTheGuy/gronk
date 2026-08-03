@@ -56,7 +56,7 @@ export function PermissionModal({ request, onRespond }: Props) {
               · labeled <em>{request.title}</em>
             </>
           ) : null}
-          . Review carefully — the title text is agent-controlled.
+          . Review carefully. The title text is agent-controlled.
         </p>
 
         {/*

@@ -198,6 +198,84 @@ private refill(): void {
 I have applied that, plus a \`cost\` parameter so an expensive call can draw more
 than one token. Tests cover the burst case that was failing.`
 
+/**
+ * The catalogue: one reply carrying far more images than a column can hold.
+ *
+ * The reported bug was a request for a set of vector graphics answered with
+ * about fifty `![name](path)` lines, each rendering as a full width card some
+ * 265px tall, plus a bordered error box for every file that was not there.
+ * Nineteen present and six missing is enough to photograph the grid, the
+ * wrapping and the collapsed failure line without the shot itself needing to be
+ * thirteen thousand pixels tall.
+ *
+ * Names starting with `missing-` are the ones readLocalImage below refuses, so
+ * the failure count in the picture is not a coincidence of ordering. One name
+ * is far too long for a tile on purpose: a model names files by describing
+ * them, and a caption that wraps to three lines on every tile is the tall reply
+ * arriving back through the captions.
+ */
+const CATALOGUE = [
+  'antenna',
+  'orbital-transfer-vehicle-side-elevation',
+  'beacon',
+  'booster',
+  'missing-bulkhead',
+  'capsule',
+  'dish',
+  'gantry',
+  'missing-gyro',
+  'heat-shield',
+  'ion-drive',
+  'lander',
+  'missing-mast',
+  'manifold',
+  'nozzle',
+  'orbiter',
+  'missing-pennant',
+  'payload',
+  'probe',
+  'rover',
+  'missing-regulator',
+  'solar-array',
+  'strut',
+  'thruster',
+  'missing-truss'
+]
+
+const CATALOGUE_TEXT = [
+  'Here is the full set. Twenty-five line vectors, one SVG per file, all in the session folder:',
+  ...CATALOGUE.map((name) => `![${name}](images/${name}.svg)`),
+  'Tell me which of these you want in colour and I will re-run those.'
+].join('\n\n')
+
+/**
+ * Four kinds of picture, because the awkward one is invisible rather than ugly.
+ *
+ * `clear` is dark ink on NO background, which is what an exported icon usually
+ * is: on the dark theme it used to be a black square. `white` is the other
+ * common export and the one that glares. `wide` is not square, so it proves the
+ * tile letterboxes rather than crops. `dark` is the app's own house style.
+ */
+const CATALOGUE_ART = [
+  // white background, dark ink
+  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2ZmZmZmZiIvPjxjaXJjbGUgY3g9IjEwMCIgY3k9IjEwMCIgcj0iNjIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzExMTExMSIgc3Ryb2tlLXdpZHRoPSIxMCIvPjxwYXRoIGQ9Ik02MiAxMzggTDEzOCA2MiIgc3Ryb2tlPSIjMTExMTExIiBzdHJva2Utd2lkdGg9IjEwIi8+PC9zdmc+',
+  // transparent, dark ink
+  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIj48cmVjdCB4PSIyOCIgeT0iMjgiIHdpZHRoPSIxNDQiIGhlaWdodD0iMTQ0IiBmaWxsPSJub25lIiBzdHJva2U9IiMxMDEwMTAiIHN0cm9rZS13aWR0aD0iMTIiLz48Y2lyY2xlIGN4PSIxMDAiIGN5PSIxMDAiIHI9IjI4IiBmaWxsPSIjMTAxMDEwIi8+PC9zdmc+',
+  // dark background, light ink
+  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iIzEyMTUxNiIvPjxwYXRoIGQ9Ik00MCAxNjAgTDEwMCA0MCBMMTYwIDE2MCBaIiBmaWxsPSJub25lIiBzdHJva2U9IiNlYWZmZmIiIHN0cm9rZS13aWR0aD0iMTAiLz48L3N2Zz4=',
+  // wide, white
+  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMjAiIGhlaWdodD0iMTIwIj48cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjEyMCIgZmlsbD0iI2ZmZmZmZiIvPjxyZWN0IHg9IjE2IiB5PSIxNiIgd2lkdGg9IjI4OCIgaGVpZ2h0PSI4OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTExMTExIiBzdHJva2Utd2lkdGg9IjYiLz48dGV4dCB4PSIxNjAiIHk9Ijc0IiBmaWxsPSIjMTExMTExIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjM0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5XSURFPC90ZXh0Pjwvc3ZnPg=='
+]
+
+/** Same path, same picture, every run: a baseline cannot be compared otherwise. */
+function catalogueArt(path: string): string {
+  let sum = 0
+  for (let i = 0; i < path.length; i++) sum += path.charCodeAt(i)
+  return CATALOGUE_ART[sum % CATALOGUE_ART.length]
+}
+
+const isCatalogue = SCENARIO === 'catalogue' || SCENARIO === 'light-catalogue'
+
 function transcript(): unknown[] {
   const assistant: Record<string, unknown> = {
     id: 'm2',
@@ -227,6 +305,14 @@ function transcript(): unknown[] {
       'And a generated one, which the agent refers to by path:',
       '![Generated concept](images/concept-01.png)'
     ].join('\n\n')
+    assistant.toolCalls = []
+    assistant.thought = undefined
+  }
+
+  if (isCatalogue) {
+    assistant.text = CATALOGUE_TEXT
+    // No tool calls: suppressImagePaths is built from them, and a suppressed
+    // path renders as a caption instead of a picture, which would empty the grid.
     assistant.toolCalls = []
     assistant.thought = undefined
   }
@@ -584,19 +670,29 @@ const api: Record<string, unknown> = {
   removeMcpServer: async () => ({ ok: true, message: '' }),
   mcpDoctor: async () => MCP_SERVERS,
 
-  readLocalImage: async (p: string) => ({
-    // Mirrors the real handler, which reads the file and returns a data URL.
-    //
-    // The lightbox scenario gets a deliberately oversized one. With the small
-    // image the max-width cap never binds, so the overflow this exists to catch
-    // simply cannot happen and the scenario would pass while proving nothing.
-    dataUrl:
-      SCENARIO === 'lightbox'
-        ? 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNDAwIiBoZWlnaHQ9IjE1MDAiPjxyZWN0IHdpZHRoPSIyNDAwIiBoZWlnaHQ9IjE1MDAiIGZpbGw9IiMwZTExMTIiLz48Y2lyY2xlIGN4PSI4MjAiIGN5PSI3NTAiIHI9IjM4MCIgZmlsbD0iI2VhZmZmYiIgb3BhY2l0eT0iMC44NSIvPjx0ZXh0IHg9IjEzMDAiIHk9Ijc4MCIgZmlsbD0iI2VhZmZmYiIgZm9udC1mYW1pbHk9Im1vbm9zcGFjZSIgZm9udC1zaXplPSI5NiI+d2lkZSBpbWFnZTwvdGV4dD48L3N2Zz4='
-        : 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMjAiIGhlaWdodD0iMTQwIj48cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE0MCIgZmlsbD0iIzEyMTUxNiIvPjxjaXJjbGUgY3g9IjgwIiBjeT0iNzAiIHI9IjM0IiBmaWxsPSIjZWFmZmZiIiBvcGFjaXR5PSIwLjkiLz48dGV4dCB4PSIxMzYiIHk9Ijc2IiBmaWxsPSIjZWFmZmZiIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0Ij5nZW5lcmF0ZWQ8L3RleHQ+PC9zdmc+',
-    path: p,
-    mimeType: 'image/svg+xml'
-  }),
+  readLocalImage: async (p: string) => {
+    if (isCatalogue) {
+      // The real handler's own wording for a path that is not on disk, because
+      // the grid decides between "could not be found" and "could not be
+      // loaded" by reading it.
+      if (p.includes('missing-')) return { error: `Image not found: ${p}` }
+      return { dataUrl: catalogueArt(p), path: p, mimeType: 'image/svg+xml' }
+    }
+    return {
+      // Mirrors the real handler, which reads the file and returns a data URL.
+      //
+      // The lightbox scenario gets a deliberately oversized one. With the small
+      // image the max-width cap never binds, so the overflow this exists to
+      // catch simply cannot happen and the scenario would pass while proving
+      // nothing.
+      dataUrl:
+        SCENARIO === 'lightbox'
+          ? 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNDAwIiBoZWlnaHQ9IjE1MDAiPjxyZWN0IHdpZHRoPSIyNDAwIiBoZWlnaHQ9IjE1MDAiIGZpbGw9IiMwZTExMTIiLz48Y2lyY2xlIGN4PSI4MjAiIGN5PSI3NTAiIHI9IjM4MCIgZmlsbD0iI2VhZmZmYiIgb3BhY2l0eT0iMC44NSIvPjx0ZXh0IHg9IjEzMDAiIHk9Ijc4MCIgZmlsbD0iI2VhZmZmYiIgZm9udC1mYW1pbHk9Im1vbm9zcGFjZSIgZm9udC1zaXplPSI5NiI+d2lkZSBpbWFnZTwvdGV4dD48L3N2Zz4='
+          : 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMjAiIGhlaWdodD0iMTQwIj48cmVjdCB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE0MCIgZmlsbD0iIzEyMTUxNiIvPjxjaXJjbGUgY3g9IjgwIiBjeT0iNzAiIHI9IjM0IiBmaWxsPSIjZWFmZmZiIiBvcGFjaXR5PSIwLjkiLz48dGV4dCB4PSIxMzYiIHk9Ijc2IiBmaWxsPSIjZWFmZmZiIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjE0Ij5nZW5lcmF0ZWQ8L3RleHQ+PC9zdmc+',
+      path: p,
+      mimeType: 'image/svg+xml'
+    }
+  },
   revealLocalPath: async () => ({ ok: true })
 }
 

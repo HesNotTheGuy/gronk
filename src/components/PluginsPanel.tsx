@@ -161,7 +161,7 @@ export function PluginsPanel({
           <div className="plugins-body">
             <p className="settings-hint">
               A skill is a folder containing SKILL.md. Drop one into{' '}
-              <code className="path-inline">~/.grok/skills</code> and it appears here — that
+              <code className="path-inline">~/.grok/skills</code> and it appears here. That
               is the whole install. Bundled skills ship with the Grok CLI.
             </p>
             {skills.length === 0 ? (
@@ -224,7 +224,7 @@ export function PluginsPanel({
                   ? query
                     ? 'No catalog entries match that filter.'
                     : 'No catalog entries found.'
-                  : 'No plugins installed yet — check the Marketplace tab.'}
+                  : 'No plugins installed yet. Check the Marketplace tab.'}
               </div>
             ) : (
               <div className="plugin-grid">
@@ -290,7 +290,7 @@ export function PluginsPanel({
             <div className="modal modal-danger">
               <h3>Uninstall {plainText(confirmUninstall, 60)}?</h3>
               <p className="settings-hint">
-                Removes the plugin and everything it contributed — skills, commands, agents, hooks
+                Removes the plugin and everything it contributed: skills, commands, agents, hooks
                 and MCP servers. To keep it but stop it running, use Disable instead.
               </p>
               <div className="modal-actions">
