@@ -1,21 +1,43 @@
+<div align="center">
+
+<img src="build/icon.png" width="112" alt="">
+
 # Gronk
 
-A desktop app for the [Grok Build CLI](https://x.ai). Your projects, your
-sessions, your history, in a window instead of a terminal.
+**Grok on your desktop.**
+
+Your projects, your sessions, your history, in a window instead of a terminal.
+
+[![CI](https://github.com/HesNotTheGuy/gronk/actions/workflows/ci.yml/badge.svg)](https://github.com/HesNotTheGuy/gronk/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/HesNotTheGuy/gronk?include_prereleases&label=release)](https://github.com/HesNotTheGuy/gronk/releases/latest)
+[![Licence](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+
+[Download](#download) · [What it does](#what-it-does) · [Security](#security) · [Build from source](#build-from-source)
+
+</div>
 
 ![Gronk Home, showing recent projects and an activity heatmap](docs/images/home.png)
 
+> [!WARNING]
 > **Pre-release.** Built and tested on Windows. The macOS and Linux installers
 > come from CI and have not been run by the author yet. Reports welcome.
 
 ## Download
 
-[**Latest release**](https://github.com/HesNotTheGuy/gronk/releases/latest) for
-Windows, macOS and Linux.
+**[Get the latest release](https://github.com/HesNotTheGuy/gronk/releases/latest)**
+for Windows, macOS and Linux.
+
+| Platform | File |
+|---|---|
+| Windows | `-windows-x64-setup.exe`, or `-portable.exe` for no install |
+| macOS | `-macos-universal.dmg`, Apple Silicon and Intel |
+| Linux | `-linux-x86_64.AppImage`, or `-amd64.deb` |
 
 Installers are unsigned, so your OS will warn you on first launch. On macOS,
 right-click the app and choose **Open**. On Windows, click **More info** then
-**Run anyway**.
+**Run anyway**. `SHA256SUMS.txt` on the release verifies the download arrived
+intact, which is integrity rather than authorship.
 
 ## What it does
 
@@ -23,10 +45,12 @@ Gronk runs your local `grok` binary as a child process and talks to it over ACP.
 No backend, no bundled credentials, no model calls of its own. You sign in with
 your own Grok account.
 
+There are two surfaces, and the difference is whether your files are involved.
+
 | | |
 |---|---|
-| **Chat** | General conversation. No folder needed. |
-| **Build** | A coding agent pointed at a project on your computer. |
+| **Chat** | A conversation. No project folder, so nothing reads or edits your files. |
+| **Build** | Grok pointed at a folder on your computer, where it can read, edit and run. |
 
 ### Watch the agent work
 
@@ -67,13 +91,14 @@ and never as a badge. Gronk marks nothing as verified, because it cannot know.
 
 ### Also
 
-- Activity heatmap of your own work
-- Token and cost accounting per session
-- Session restore, rename, archive, export
-- MCP servers and plugins, managed in app
-- Attached preview for a dev server you are running
-- File mentions, image paste, drag and drop
-- Light and dark themes
+|  |  |
+|---|---|
+| **Activity** | A heatmap of your own work, and cost accounting per session |
+| **Sessions** | Restore, rename, archive, export |
+| **Preview** | A dev server attached beside the conversation, resizable or popped out |
+| **Extensions** | MCP servers, plugins and skills, managed in app |
+| **Input** | File mentions, image paste, drag and drop |
+| **Themes** | Light and dark |
 
 ## Requirements
 
@@ -131,7 +156,7 @@ from the Actions tab if you do not have one.
 locally before a release:
 
 ```bash
-npm run test:visual     # render 30 app states, compare against the baseline
+npm run test:visual     # render 38 app states, compare against the baseline
 npm run test:preview    # drive the dev-server preview under real Electron
 ```
 
