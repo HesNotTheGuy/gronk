@@ -98,9 +98,45 @@ function tryParseImageJson(text: string): ImageRef | null {
   }
 }
 
+/**
+ * Tools whose *purpose* is to produce images. Free-text path scanning is only
+ * safe for these: a shell/list tool that merely *mentions* an image path in its
+ * output is not producing one, and treating every hit as a preview is how a
+ * directory listing of build/icons filled the screen with BMPs.
+ *
+ * Structured JSON results (tryParseImageJson) are accepted from any tool —
+ * that is how image_gen / image_edit report their files, and a false positive
+ * on a path-shaped JSON object from another tool is far rarer than free-text
+ * absolute paths in command output.
+ */
+const IMAGE_PRODUCER =
+  /image_gen|image_edit|imagine|image_to_video|reference_to_video/
+
+export function isImageProducingTool(tool: Pick<ToolCallInfo, 'kind' | 'title'>): boolean {
+  const kind = (tool.kind || '').toLowerCase()
+  const title = (tool.title || '').toLowerCase()
+  // ACP may label the kind "IMAGE" once the client has classified it.
+  if (kind === 'image') return true
+  return IMAGE_PRODUCER.test(kind) || IMAGE_PRODUCER.test(title)
+}
+
+export interface ExtractImagePathsOptions {
+  /**
+   * When false, only structured JSON payloads are accepted — no free-text scan
+   * of absolute paths, session-relative `images/…`, or markdown links.
+   * Defaults to true for callers that pass already-trusted text (e.g. assistant
+   * markdown). Tool extraction sets this from isImageProducingTool.
+   */
+  freeText?: boolean
+}
+
 /** Pull image file paths out of free text (tool payload, assistant markdown). */
-export function extractImagePathsFromText(text: string): ImageRef[] {
+export function extractImagePathsFromText(
+  text: string,
+  opts: ExtractImagePathsOptions = {}
+): ImageRef[] {
   if (!text) return []
+  const freeText = opts.freeText !== false
   const out: ImageRef[] = []
 
   // Full JSON payloads (image_gen / image_edit tool results)
@@ -109,6 +145,8 @@ export function extractImagePathsFromText(text: string): ImageRef[] {
     pushUnique(out, jsonRef)
     return out
   }
+
+  if (!freeText) return out
 
   // Markdown images/links: ![alt](path) or [label](path)
   const mdLink = /!?\[([^\]]*)\]\(([^)\s]+)\)/g
@@ -167,9 +205,12 @@ function captionFromInput(rawInput: unknown): string | undefined {
 export function extractImageRefsFromTool(tool: ToolCallInfo): ImageRef[] {
   const out: ImageRef[] = []
   const caption = captionFromInput(tool.rawInput)
+  // Free-text path scanning only for tools that produce images. Structured
+  // JSON results stay unconditional — see isImageProducingTool.
+  const freeText = isImageProducingTool(tool)
 
   for (const chunk of flattenToolContent(tool.content)) {
-    for (const ref of extractImagePathsFromText(chunk)) {
+    for (const ref of extractImagePathsFromText(chunk, { freeText })) {
       pushUnique(out, { ...ref, caption: caption || ref.caption })
     }
   }
@@ -178,7 +219,7 @@ export function extractImageRefsFromTool(tool: ToolCallInfo): ImageRef[] {
   if (tool.rawInput !== undefined) {
     for (const chunk of flattenToolContent(tool.rawInput)) {
       // Don't treat prompt text with accidental paths; only absolute or images/
-      for (const ref of extractImagePathsFromText(chunk)) {
+      for (const ref of extractImagePathsFromText(chunk, { freeText })) {
         if (isAbsoluteLocalPath(ref.path) || /^images[\\/]/i.test(ref.path)) {
           pushUnique(out, { ...ref, caption: caption || ref.caption })
         }

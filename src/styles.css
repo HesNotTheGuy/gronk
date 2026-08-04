@@ -3568,10 +3568,22 @@ html[data-theme='light'] .session-tray {
   flex-wrap: wrap;
   gap: 12px;
   max-width: min(100%, 720px);
+  align-items: flex-end;
 }
 
 .image-gallery.compact {
   gap: 8px;
+}
+
+.image-gallery-more {
+  align-self: center;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px dashed var(--line-2);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
 .local-image {

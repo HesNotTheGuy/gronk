@@ -310,6 +310,15 @@ export function ThumbnailGrid({ children }: { children?: ReactNode }) {
   )
 }
 
+/**
+ * Hard cap on inline previews. Free-text path scans (even when gated to image
+ * tools) and multi-image generators can still hand over more refs than a chat
+ * row should mount: each LocalImage is a gronk:read-local-image round trip and
+ * a base64 data: URL up to 20 MB. The gate in extractImageRefsFromTool is not
+ * enough on its own — this bound is independent of how the list was built.
+ */
+export const MAX_GALLERY_IMAGES = 8
+
 /** Horizontal strip of generated images (tool turn or message). */
 export function ImageGallery({
   images,
@@ -319,11 +328,21 @@ export function ImageGallery({
   compact?: boolean
 }) {
   if (!images.length) return null
+  const shown = images.slice(0, MAX_GALLERY_IMAGES)
+  const extra = images.length - shown.length
   return (
     <div className={`image-gallery ${compact ? 'compact' : ''}`}>
-      {images.map((img) => (
+      {shown.map((img) => (
         <LocalImage key={img.path} image={img} compact={compact} />
       ))}
+      {extra > 0 ? (
+        <div
+          className="image-gallery-more"
+          title={`${images.length} images total; only the first ${MAX_GALLERY_IMAGES} are shown`}
+        >
+          +{extra} more
+        </div>
+      ) : null}
     </div>
   )
 }
