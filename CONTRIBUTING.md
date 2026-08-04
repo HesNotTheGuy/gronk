@@ -56,8 +56,8 @@ own pull request:
   pending: nothing ran.
 - Runs on pull requests started appearing on 2026-08-04. When CI does run, it
   runs the full matrix and passes on all four legs.
-- Nothing has ever run on a push to `main`, so no commit on `main` carries a
-  check.
+- No push to `main` produced a run before 2026-08-04, so commits from before
+  then carry no check. Pushes since do produce one.
 - If this is your first contribution here, GitHub holds your workflow run until a
   maintainer approves it. "No checks yet" can simply mean nobody has pressed that
   button.
