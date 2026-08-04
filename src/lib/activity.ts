@@ -103,7 +103,7 @@ export function buildWorkspaceFolderGroups(
   projects: ProjectContext[],
   sessions: SessionInfo[]
 ): WorkspaceFolderGroup[] {
-  // App Chat lives only under Chat — exclude sandbox from Workspace entirely
+  // App Chat lives only under Chat, so exclude sandbox from Workspace entirely
   const active = sessions.filter((s) => !s.archived && !isChatSession(s, null))
   const workspaceProjects = projects.filter((p) => !isChatWorkspace(p.cwd, null))
   const assigned = new Set<string>() // session ids claimed by a known project

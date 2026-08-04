@@ -3,7 +3,7 @@ import type { ToolCallInfo } from '../../shared/types'
 export interface ImageRef {
   /** Absolute path preferred; relative session path (e.g. images/1.jpg) also accepted */
   path: string
-  /** Display label — basename or short relative path */
+  /** Display label: basename or short relative path */
   label: string
   /** Optional caption (e.g. generation prompt snippet) */
   caption?: string

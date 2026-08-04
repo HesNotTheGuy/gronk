@@ -268,7 +268,7 @@ function groupImageRuns(tree: Root, isTile: IsTile): void {
 }
 
 /**
- * @param suppressImagePaths — image paths already shown in tool cards for this
+ * @param suppressImagePaths image paths already shown in tool cards for this
  *   message; markdown links to the same file become a subtle caption instead of
  *   a second full preview.
  */
@@ -341,8 +341,8 @@ export function Markdown({
         return <LocalOrRemoteImg src={src} alt={alt} />
       },
       a({ href, children, ...props }) {
-        // Grok links generated images as [images/1.jpg](images/1.jpg) —
-        // render the image itself instead of a dead relative link.
+        // Grok links generated images as [images/1.jpg](images/1.jpg).
+        // Render the image itself instead of a dead relative link.
         //
         // looksLikeImagePath only declines a lowercase http/https prefix,
         // so [x](HTTPS://host/x.png) and [x](//host/x.png) were read as

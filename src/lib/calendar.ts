@@ -1,11 +1,11 @@
 /**
  * Pure view helpers for the activity heatmap: grid layout, intensity steps and
- * label text. No React and no colours — the component only arranges what these
+ * label text. No React and no colours. The component only arranges what these
  * functions return, and the palette lives entirely in CSS (see the `level-N`
  * classes below), so a theme change never touches this file.
  *
  * Kept in `.ts` rather than inside the component because Node's test runner can
- * strip types but not JSX (tests/ts-loader.mjs) — the same reason src/lib/* holds
+ * strip types but not JSX (tests/ts-loader.mjs), the same reason src/lib/* holds
  * every other testable renderer helper.
  */
 
@@ -45,7 +45,7 @@ const MONTH_NAMES = [
 /**
  * Fixed English names rather than `toLocaleDateString`. The rest of the app's
  * copy is English, and Intl output shifts with the host's ICU data and default
- * locale — which would make these labels, and the tests that pin them, differ
+ * locale, which would make these labels, and the tests that pin them, differ
  * per machine.
  */
 export const WEEKDAY_LABELS: readonly string[] = WEEKDAY_NAMES
@@ -74,8 +74,8 @@ function parseDayKey(date: string): ParsedDay | null {
 /**
  * Weekday of a `YYYY-MM-DD` key, 0 = Sunday, or -1 when it is unreadable.
  *
- * Built through the local-time Date constructor, never `new Date('2025-07-14')`
- * — the string form is parsed as UTC midnight, which lands on the previous day
+ * Built through the local-time Date constructor, never `new Date('2025-07-14')`:
+ * the string form is parsed as UTC midnight, which lands on the previous day
  * for every user west of Greenwich and would shift the whole grid by a column.
  */
 export function weekdayIndex(date: string): number {

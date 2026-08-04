@@ -1,13 +1,13 @@
 import { useCallback, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 
-/** Last transcript written to disk — drives the "saved to…" banner. */
+/** Last transcript written to disk: drives the "saved to…" banner. */
 interface ExportNotice {
   path: string
   format: 'md' | 'json'
   /** Main refuses to reveal paths outside its allowed roots; show why inline */
   revealError?: string
-  /** Path is on the clipboard — the banner swaps its label to confirm */
+  /** Path is on the clipboard: the banner swaps its label to confirm */
   copied?: boolean
   /** Clipboard write refused (no permission / not focused); tell the user */
   copyError?: string
@@ -17,7 +17,7 @@ interface ExportNotice {
  * Transcript export and the banner that reports where the file went.
  *
  * `setError` is the composer's own `useState` dispatch: React guarantees a
- * stable identity for those, so it is safe in a dependency array — which is why
+ * stable identity for those, so it is safe in a dependency array, which is why
  * this takes the setter directly instead of wrapping a caller's arrow in a ref.
  * Failures land on the app-wide error line because that is where an export
  * failure was always reported.
@@ -30,8 +30,8 @@ export function useExportNotice(setError: Dispatch<SetStateAction<string | null>
       try {
         const result = await window.gronk.exportTranscript(id, format)
         if (!result.ok) {
-          // A cancel is the user's own choice — stay silent. An empty transcript is
-          // not, and would otherwise read as a dead menu item.
+          // A cancel is the user's own choice, so stay silent. An empty
+          // transcript is not, and would otherwise read as a dead menu item.
           if (result.reason === 'empty') {
             setError('Nothing to export yet. This session has no saved transcript.')
           }
@@ -48,7 +48,7 @@ export function useExportNotice(setError: Dispatch<SetStateAction<string | null>
   const revealExport = useCallback(async () => {
     if (!exportNotice) return
     const res = await window.gronk.revealLocalPath(exportNotice.path)
-    // Keep the notice up either way — the path itself is the answer to "where?"
+    // Keep the notice up either way: the path itself is the answer to "where?"
     setExportNotice((prev) =>
       prev
         ? {
@@ -61,7 +61,7 @@ export function useExportNotice(setError: Dispatch<SetStateAction<string | null>
 
   /**
    * Reveal is gated on main's allowed roots and the save dialog defaults to
-   * Documents, which is outside them — so copying the path is the action the
+   * Documents, which is outside them, so copying the path is the action the
    * banner can actually promise.
    */
   const copyExportPath = useCallback(async () => {

@@ -6,7 +6,7 @@ import type { MainToRendererEvent } from '../../shared/types'
  *
  * Owns its own `onEvent` subscription. `onEvent` supports any number of
  * independent subscribers and hands back an unsubscribe function, and
- * `preview-status` is the only event that touches this state — so routing it
+ * `preview-status` is the only event that touches this state, so routing it
  * through the composer's handler would only have coupled the two. The
  * subscription is torn down on unmount; skipping that would leave a dead handler
  * behind and fire every later preview update twice.

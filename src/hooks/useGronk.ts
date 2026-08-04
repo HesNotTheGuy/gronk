@@ -56,11 +56,11 @@ export function useGronk() {
   const [hydrating, setHydrating] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [historySource, setHistorySource] = useState<string | null>(null)
-  /** Token/cost totals for the live session — null until the first turn completes. */
+  /** Token/cost totals for the live session: null until the first turn completes. */
   const [usage, setUsage] = useState<SessionUsage | null>(null)
   const [activePlan, setActivePlan] = useState<ActivePlan | null>(null)
   const [planCollapsed, setPlanCollapsed] = useState(false)
-  /** home | chat | project — drives shell navigation */
+  /** home | chat | project. Drives shell navigation */
   const [surface, setSurface] = useState<AppSurface>('home')
   /**
    * When true, main pane shows the browse home for that surface
@@ -90,7 +90,7 @@ export function useGronk() {
    * Their identity never changes, which is the real point: a sub-hook can put
    * one straight into a dependency array and its effects will not re-fire every
    * render. That is the exact shape of the "Maximum update depth exceeded" loop
-   * this app has shipped before. Usual caveat for the pattern — call them from
+   * this app has shipped before. Usual caveat for the pattern: call them from
    * effects and event handlers, never during render.
    */
   const refreshMetaImpl = useRef<() => Promise<void>>(async () => {})
@@ -145,13 +145,13 @@ export function useGronk() {
   /**
    * Stays in the composer, and stays one `Promise.all`, deliberately.
    *
-   * It writes into three separate concerns — settings/health, the session
-   * catalog, and auth — so it belongs to none of them. Splitting it into a
+   * It writes into three separate concerns: settings/health, the session
+   * catalog, and auth. It belongs to none of them. Splitting it into a
    * refresh per hook would turn one round of IPC into three and give up the
    * property every caller relies on: after `await refreshMeta()` the whole
    * picture is consistent, in a single React commit, instead of the UI tearing
    * through three intermediate states. The price is the two `hydrate` functions
-   * and `setAuth` — write-throughs those hooks expose for this function alone.
+   * and `setAuth`, write-throughs those hooks expose for this function alone.
    */
   refreshMetaImpl.current = async () => {
     const [projects, sess, s, path, modelList, auditList, healthStatus, authStatus, chatPath] =
@@ -202,7 +202,7 @@ export function useGronk() {
           setUsage(null)
           break
         case 'history-replace':
-          // Bulk restore from local cache — one paint, no clear/rebuild thrash.
+          // Bulk restore from local cache: one paint, no clear/rebuild thrash.
           setMessages(
             event.messages.map((m) => ({
               ...m,
@@ -239,7 +239,7 @@ export function useGronk() {
           break
         case 'user-message':
           // The main process writes the session row when the prompt is SENT, but
-          // the list was only re-read on history-done and message-done — so the
+          // the list was only re-read on history-done and message-done. The
           // session you were actively typing into did not appear in the sidebar
           // until its first reply finished, under the heading "No sessions in
           // this project yet". The row already exists by now; this just looks.
@@ -342,8 +342,8 @@ export function useGronk() {
             prev.map((m) => (m.id === event.messageId ? { ...m, streaming: false } : m))
           )
           // The save deliberately sits OUTSIDE the updater. React may call an
-          // updater more than once for a single dispatch — it does so on every
-          // render in development — so an IPC write in there ran twice per turn.
+          // updater more than once for a single dispatch, and does so on every
+          // render in development, so an IPC write in there ran twice per turn.
           // Updaters have to be pure; messagesRef holds the same list, written
           // by the effect that mirrors messages.
           const doneSessionId = event.sessionId
@@ -384,8 +384,8 @@ export function useGronk() {
           break
         // 'models' is useAppSettings', 'auth' is useAuth's, and both preview
         // events are usePreview's. Each of those hooks subscribes to onEvent
-        // itself — it hands out independent subscriptions — so this handler only
-        // sees the events that belong to the live conversation.
+        // itself, and onEvent hands out independent subscriptions, so this
+        // handler only sees the events that belong to the live conversation.
         default:
           break
       }
@@ -562,7 +562,7 @@ export function useGronk() {
   const openProjectRef = useRef(openProject)
   openProjectRef.current = openProject
 
-  /** General Grok chat (website/X-style) via CLI — not a coding project */
+  /** General Grok chat (website/X-style) via CLI, not a coding project */
   const openChat = useCallback(
     async (opts?: { forceNew?: boolean }) => {
       setError(null)
@@ -624,8 +624,8 @@ export function useGronk() {
 
   /**
    * Backing implementation for the `restartAgent` handle above. Every caller
-   * wants the same thing — the agent respawned on whichever surface is live,
-   * with a new session — and each applies its own guard before asking.
+   * wants the same thing: the agent respawned on whichever surface is live,
+   * with a new session. Each caller applies its own guard before asking.
    */
   restartAgentImpl.current = async () => {
     if (agentSurface === 'chat') await openChat({ forceNew: true })
@@ -646,13 +646,13 @@ export function useGronk() {
     setBrowsing(true)
   }, [])
 
-  /** Chat browse home — previous chats (does not start a new agent) */
+  /** Chat browse home: previous chats (does not start a new agent) */
   const goChat = useCallback(() => {
     setSurface('chat')
     setBrowsing(true)
   }, [])
 
-  /** Projects browse home — tabbed projects / sessions (no Explorer) */
+  /** Projects browse home: tabbed projects / sessions (no Explorer) */
   const goProjects = useCallback(() => {
     setSurface('project')
     setBrowsing(true)
@@ -691,7 +691,7 @@ export function useGronk() {
 
       try {
         // Paint the local cache first so the user is reading history while the
-        // agent process boots — loadSession will history-replace the same data
+        // agent process boots: loadSession will history-replace the same data
         // and then session/load in the background of the UI.
         const local = await window.gronk.getTranscript(session.id)
         if (local.length) {
@@ -741,7 +741,7 @@ export function useGronk() {
 
       let userId = opts?.replaceUserId
       if (userId) {
-        // Retry: reuse the same bubble — never spam a second copy
+        // Retry: reuse the same bubble. Never spam a second copy
         setMessages((prev) =>
           prev.map((m) =>
             m.id === userId
@@ -806,7 +806,7 @@ export function useGronk() {
       if (idx < 0) return
       const msg = list[idx]
       if (hasAssistantReplyAfter(list, idx) && msg.sendStatus !== 'failed') {
-        // Already answered — do not re-send / spam
+        // Already answered. Do not re-send / spam
         return
       }
       // Drop empty/incomplete assistant placeholders after this user turn only
@@ -890,7 +890,7 @@ export function useGronk() {
 
   /**
    * The app's public surface. Each spread is one focused hook's contribution;
-   * the named entries are what this file still owns — the live conversation,
+   * the named entries are what this file still owns: the live conversation,
    * shell navigation, and the Settings panel toggle.
    *
    * `tests/use-gronk-surface.test.ts` pins every member here. Losing one is

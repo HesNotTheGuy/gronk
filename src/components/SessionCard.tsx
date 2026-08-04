@@ -12,7 +12,7 @@ interface Props {
   onArchive?: () => void
   /** Shown instead of Archive once the session is archived */
   onUnarchive?: () => void
-  /** Omit to hide Export — the backend writes .md or .json via a save dialog */
+  /** Omit to hide Export. The backend writes .md or .json via a save dialog */
   onExport?: (format: 'md' | 'json') => void
   onDelete: () => void
 }
@@ -29,7 +29,7 @@ export function SessionCard({
   onDelete
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false)
-  /** Second level of the same menu — keeps format choice out of the top list */
+  /** Second level of the same menu. Keeps format choice out of the top list */
   const [pickingFormat, setPickingFormat] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [titleDraft, setTitleDraft] = useState(session.title || '')

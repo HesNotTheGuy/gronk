@@ -18,8 +18,8 @@ import { PermissionModeBar } from './PermissionModeBar'
  *
  * `unknown` stays neutral on purpose: we have no evidence the CLI is wrong, only
  * that we could not read its version, and a red row for that is the cry-wolf the
- * whole check exists to avoid. Only a real minor/major drift — the kind that can
- * rename the JSON keys Gronk reads — earns the alarm colour.
+ * whole check exists to avoid. Only a real minor/major drift, the kind that can
+ * rename the JSON keys Gronk reads, earns the alarm colour.
  */
 function cliVersionTone(info: CliVersionInfo | null): string {
   if (!info || info.status === 'unknown') return ''
@@ -38,7 +38,7 @@ function formatBytes(bytes?: number): string {
 const ISSUES_URL = 'https://github.com/HesNotTheGuy/gronk/issues/new'
 
 /**
- * Prefilled report skeleton. Deliberately carries only the OS — no paths, no
+ * Prefilled report skeleton. Deliberately carries only the OS: no paths, no
  * account label, no transcript. Anything more would put the user's data in a
  * public issue before they had a chance to read it.
  */
@@ -117,13 +117,13 @@ export function SettingsPanel({
   onChangePermissionMode,
   onOpenPlugins
 }: Props) {
-  /** Chosen destination awaiting confirmation — a move is never one click. */
+  /** Chosen destination awaiting confirmation. A move is never one click. */
   const [pendingTarget, setPendingTarget] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
   const [cliVersion, setCliVersion] = useState<CliVersionInfo | null>(null)
 
   // Closing the panel must not leave a confirmation armed for the next open.
-  // Only setState here — never a prop — so this cannot re-fire on prop identity.
+  // Only setState here, never a prop, so this cannot re-fire on prop identity.
   useEffect(() => {
     if (!open) {
       setPendingTarget(null)
@@ -300,7 +300,7 @@ export function SettingsPanel({
           {/*
             Only shown once the CLI is actually present and its version differs
             by more than a patch. A patch bump classifies as `ok` and prints
-            nothing — the CLI self-updates through those constantly, and nagging
+            nothing. The CLI self-updates through those constantly, and nagging
             about them would train the user to skip the message that matters.
             The consequence is spelled out rather than the version diff, because
             an empty plugin list is what the user will actually see.
@@ -395,7 +395,7 @@ export function SettingsPanel({
               <strong>{formatBytes(dataLocation?.storeBytes)}</strong>
             </div>
           </div>
-          {/* A path is user data, not markup — plain text inside a code box. */}
+          {/* A path is user data, not markup: plain text inside a code box. */}
           <code className="path-code data-path">
             {dataLocation?.dataDir || 'Reading…'}
           </code>
@@ -482,8 +482,8 @@ export function SettingsPanel({
             A plain external link, not an IPC call: the window-open handler already
             routes target=_blank through openExternalSafely, which allows only
             http/https/mailto. Prefilling the body from `platform` alone keeps the
-            report useful without volunteering paths, account labels or transcripts —
-            the user can see and edit everything before submitting on GitHub.
+            report useful without volunteering paths, account labels or transcripts.
+            The user can see and edit everything before submitting on GitHub.
           */}
           <a
             className="btn btn-secondary btn-sm"

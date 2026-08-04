@@ -16,7 +16,7 @@ function installCommand(platform: string): string {
 
 /**
  * User-consented Grok CLI installer. Shows the exact official command before
- * running it — never installs silently. Runs xAI's installer from x.ai.
+ * running it. Never installs silently. Runs xAI's installer from x.ai.
  */
 export function CliInstall({ open, platform, installing, result, onInstall, onClose }: Props) {
   if (!open) return null

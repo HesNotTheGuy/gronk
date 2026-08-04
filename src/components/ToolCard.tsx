@@ -70,7 +70,7 @@ export function ToolCard({
 
   const brief = toolBrief(tool)
   const images = fmt.images || []
-  // Always surface generated images — that's the useful output, not the path dump
+  // Always surface generated images: that's the useful output, not the path dump
   const showImages = images.length > 0 && tool.status === 'completed'
 
   return (

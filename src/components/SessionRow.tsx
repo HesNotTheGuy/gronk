@@ -8,7 +8,7 @@ interface Props {
   session: SessionInfo
   active: boolean
   authenticated: boolean
-  /** Secondary line under the title — date, or project name in search results. */
+  /** Secondary line under the title: date, or project name in search results. */
   meta: string
   /** Optional third line, used for a search snippet. */
   detail?: string | null
@@ -67,8 +67,8 @@ const CHAT_OPTIONS: MenuOption[] = [...COMMON_OPTIONS, DELETE_OPTION]
  *
  * The rail became the primary navigator, which moved people away from the one
  * place Rename / Archive / Export / Delete were reachable. The row cannot simply
- * be a button any more — a menu control cannot nest inside one — so the click
- * target and the menu are siblings.
+ * be a button any more, because a menu control cannot nest inside one. The
+ * click target and the menu are siblings instead.
  *
  * Delete asks first. Archive does not: it is reversible, and a confirm on every
  * tidy-up trains people to dismiss dialogs without reading them.

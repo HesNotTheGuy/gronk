@@ -104,7 +104,7 @@ export function App() {
     }
   }, [g.auth?.authenticated, g.auth?.state])
 
-  // The Export popover belongs to one session — never reopen it on the next one
+  // The Export popover belongs to one session. Never reopen it on the next one.
   useEffect(() => {
     setExportMenuOpen(false)
   }, [g.sessionId, surface, g.browsing, blockingModalOpen])
@@ -113,7 +113,7 @@ export function App() {
   useEffect(() => {
     if (!exportMenuOpen) return
     const onKey = (e: KeyboardEvent) => {
-      // No preventDefault/stopPropagation — anything else listening for Escape
+      // No preventDefault/stopPropagation here. Anything else listening for Escape
       // (modals, the composer) must still see the same keystroke.
       if (e.key === 'Escape') setExportMenuOpen(false)
     }
@@ -440,7 +440,7 @@ export function App() {
               </span>
               {/*
                 Say which file, so the user can rescue it by hand. The store never
-                deletes an unreadable file — an empty session list with no
+                deletes an unreadable file. An empty session list with no
                 explanation is exactly what a wiped install looks like, and that
                 ambiguity is the whole reason this banner exists.
               */}
@@ -486,7 +486,7 @@ export function App() {
             <div className="export-banner-actions">
               {/* Copy is primary because it always works. Reveal only succeeds for
                   paths inside the app's allowed roots, and the save dialog defaults
-                  to Documents, which is outside them — so it stays a ghost. */}
+                  to Documents, which is outside them, so it stays a ghost. */}
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"

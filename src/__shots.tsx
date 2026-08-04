@@ -513,9 +513,9 @@ const settings = {
 /**
  * A real fresh install, not an empty array.
  *
- * The main process emits every day in the window zero-filled — dayKeyRange
- * clamps the span to at least 1 and a heatmap cannot be laid out with holes — so
- * `days: []` never reaches the renderer. Seeding it that way produced orphaned
+ * The main process emits every day in the window zero-filled: dayKeyRange clamps
+ * the span to at least 1, and a heatmap cannot be laid out with holes. That is
+ * why `days: []` never reaches the renderer. Seeding it that way produced orphaned
  * weekday captions and the nonsense summary "No prompts in the last 0 days yet",
  * neither of which a user can actually hit.
  */
@@ -660,7 +660,7 @@ const api: Record<string, unknown> = {
     {
       name: 'snap-lens-studio',
       description:
-        "Guide for building Snapchat Lenses (AR) in Snap's Lens Studio — the desktop editor, scripting API and publishing flow.",
+        "Guide for building Snapchat Lenses (AR) in Snap's Lens Studio: the desktop editor, scripting API and publishing flow.",
       source: 'user' as const,
       directory: 'snap-lens-studio'
     },

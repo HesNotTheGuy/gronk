@@ -8,9 +8,9 @@ const rootEl = document.getElementById('root')
 
 /**
  * Built as nodes rather than an HTML string. `message` is an error text, and
- * interpolating it into innerHTML parses whatever it contains as markup — on the
- * one code path that runs when the app is already too broken to have loaded its
- * defences. textContent cannot execute anything.
+ * interpolating it into innerHTML parses whatever it contains as markup. This is
+ * the one code path that runs when the app is already too broken to have loaded
+ * its defences. textContent cannot execute anything.
  */
 function bootError(message: string): void {
   if (!rootEl) return

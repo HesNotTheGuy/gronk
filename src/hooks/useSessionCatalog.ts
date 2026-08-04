@@ -56,7 +56,7 @@ export function useSessionCatalog() {
     setSessions(sess)
   }, [])
 
-  /** Forget a folder from the rail — never deletes files. */
+  /** Forget a folder from the rail. Never deletes files. */
   const removeRecentProject = useCallback(async (cwd: string) => {
     setRecentProjects(await window.gronk.removeRecentProject(cwd))
   }, [])
@@ -81,7 +81,7 @@ export function useSessionCatalog() {
     [uniqueSessions]
   )
 
-  /** Hidden from every normal list — only the Archived panel reads this. */
+  /** Hidden from every normal list: only the Archived panel reads this. */
   const archivedSessions = useMemo(
     () =>
       uniqueSessions
@@ -104,7 +104,7 @@ export function useSessionCatalog() {
     [activeSessions, chatWorkspacePath]
   )
 
-  /** Workspace folders only — strip chat sandbox if it ever landed in recent */
+  /** Workspace folders only: strip chat sandbox if it ever landed in recent */
   const workspaceProjects = useMemo(
     () => recentProjects.filter((p) => !isChatWorkspace(p.cwd, chatWorkspacePath)),
     [recentProjects, chatWorkspacePath]
@@ -124,7 +124,7 @@ export function useSessionCatalog() {
     unarchiveSession,
     removeRecentProject,
     setRecentProjectPinned,
-    // For the composer only — not part of the app's public surface.
+    // For the composer only. Not part of the app's public surface.
     hydrate,
     refreshSessions,
     setSessions,

@@ -29,7 +29,7 @@ interface SettingsDeps {
  * binary, the health probe, the permission audit and the YOLO acknowledgement
  * gate.
  *
- * Subscribes to `onEvent` itself for `models` — main pushes the list once the
+ * Subscribes to `onEvent` itself for `models`: main pushes the list once the
  * CLI reports what it actually supports, and nothing else consumes that event.
  * The subscription is returned from the effect so it is torn down on unmount;
  * leaking it would make every later model push land twice.
@@ -200,7 +200,7 @@ export function useAppSettings({ cwd, connection, restartAgent, setAuth }: Setti
     pickBinary,
     clearBinary,
     refreshHealth,
-    // For the composer only — not part of the app's public surface.
+    // For the composer only. Not part of the app's public surface.
     hydrate,
     refreshAudit
   }

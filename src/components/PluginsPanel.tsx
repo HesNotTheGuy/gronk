@@ -240,7 +240,7 @@ export function PluginsPanel({
                       // Catalog entries get the install-shaped trust modal; anything
                       // already on disk gets the read-only details modal. A catalog
                       // row whose name is already installed keeps status 'available',
-                      // so match on the installed set too — otherwise Details offers
+                      // so match on the installed set too. Otherwise Details offers
                       // "Trust & install" for something the user already has.
                       plugin.status === 'available' && !installedNames.has(plugin.name)
                         ? setTrustFor(plugin)

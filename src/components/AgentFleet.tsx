@@ -44,7 +44,7 @@ function kindTag(k: AgentUnit['kind']): string {
 
 /**
  * Visualizer for Grok-spawned subagents / background tasks / workflows.
- * Data is strictly ACP tool_call telemetry — no model interpretation.
+ * Data is strictly ACP tool_call telemetry: no model interpretation.
  *
  * `embedded` is for nesting under ToolActivity expand: no second expand chrome,
  * list always visible. Standalone keeps its own collapse control.
@@ -55,7 +55,7 @@ export function AgentFleet({
   demoteLive = false
 }: {
   tools: ToolCallInfo[]
-  /** Nested under ToolActivity — parent bar owns expand/collapse */
+  /** Nested under ToolActivity: parent bar owns expand/collapse */
   embedded?: boolean
   /** Older turn: do not paint units as live */
   demoteLive?: boolean

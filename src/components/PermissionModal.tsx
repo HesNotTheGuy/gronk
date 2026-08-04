@@ -107,7 +107,7 @@ export function PermissionModal({ request, onRespond }: Props) {
 
           {fmt && fmt.raw ? (
             <>
-              {/* A diff hides context by design — keep the exact payload one click away */}
+              {/* A diff hides context by design, so keep the exact payload one click away */}
               <p className="btn-row">
                 <button
                   type="button"

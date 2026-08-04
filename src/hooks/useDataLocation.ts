@@ -14,7 +14,7 @@ export function useDataLocation(refreshMeta: () => Promise<void>) {
   const [dataBusy, setDataBusy] = useState(false)
   const [dataError, setDataError] = useState<string | null>(null)
   const [dataNotice, setDataNotice] = useState<string | null>(null)
-  /** Only set when the store did NOT load cleanly — null means all good. */
+  /** Only set when the store did NOT load cleanly: null means all good. */
   const [storeHealth, setStoreHealth] = useState<StoreHealth | null>(null)
 
   // Kept out of refreshMeta's Promise.all on purpose: a failure to stat the
@@ -33,7 +33,7 @@ export function useDataLocation(refreshMeta: () => Promise<void>) {
 
   /**
    * Read once at startup. A store that failed to parse falls back to defaults, so
-   * without this the app would show an empty session list and no explanation —
+   * without this the app would show an empty session list and no explanation,
    * exactly what a wiped install looks like. Dismissible, but never auto-hidden:
    * losing transcripts is worth an interruption.
    */
@@ -58,7 +58,7 @@ export function useDataLocation(refreshMeta: () => Promise<void>) {
     }
   }, [])
 
-  /** Shared move/reset runner — same busy+error shape as runPluginAction. */
+  /** Shared move/reset runner: same busy+error shape as runPluginAction. */
   const runDataAction = useCallback(
     async (action: () => Promise<MoveDataResult>) => {
       setDataBusy(true)
@@ -98,9 +98,9 @@ export function useDataLocation(refreshMeta: () => Promise<void>) {
   return {
     dataLocation,
     storeHealth,
-    // Unchanged from before the split: a fresh arrow every render. Harmless —
-    // the object around it is new every render anyway — and nothing downstream
-    // memoises on it.
+    // Unchanged from before the split: a fresh arrow every render. Harmless,
+    // because the object around it is new every render anyway, and nothing
+    // downstream memoises on it.
     dismissStoreHealth: () => setStoreHealth(null),
     dataBusy,
     dataError,

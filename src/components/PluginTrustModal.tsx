@@ -3,7 +3,7 @@ import { auditPlugin, componentLine, installSource, plainText } from '../lib/plu
 
 /**
  * The sentence every user must read before a plugin's code runs on their machine
- * (SKILLS-PLUGINS-SPEC §4.4) — kept verbatim as a constant so it cannot drift.
+ * (SKILLS-PLUGINS-SPEC §4.4). Kept verbatim as a constant so it cannot drift.
  */
 const TRUST_SENTENCE =
   "Installing runs this plugin's code (hooks and servers) on your computer with your permissions. Gronk's file protections do not apply to it."
@@ -91,7 +91,7 @@ export function PluginTrustModal({ open, plugin, busy, onCancel, onConfirm }: Pr
           {!sha ? (
             // Verified against grok 0.2.111: `plugin list --available --json` emits no
             // sha/commit field at all, so this branch is what every entry hits today.
-            // Say what Gronk actually knows — claiming "not pinned" would assert the
+            // Say what Gronk actually knows. Claiming "not pinned" would assert the
             // source IS mutable, which we have not established either way.
             <p className="settings-hint warn-text">
               Gronk cannot see which commit this installs. The marketplace may still pin one, but

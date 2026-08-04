@@ -4,7 +4,7 @@ import { parseRawInput, pickString } from './tool-payload'
 
 /**
  * Agent / task activity derived only from ACP tool_call streams.
- * No LLM summarization — labels come from tool names + rawInput fields Grok sends.
+ * No LLM summarization: labels come from tool names + rawInput fields Grok sends.
  */
 
 export type AgentUnitKind =
