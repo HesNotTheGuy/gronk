@@ -78,14 +78,6 @@ Assume secrets on the machine may be burned:
 3. Search GitHub for unexpected public repos / branches named like `Shai-Hulud`
 4. Reinstall only via `npm run setup`
 
-## Agent / AI policy for this repo
-
-Any automated assistant working in this repo should:
-
-- **Not** run bare `npm install` without the safe script (or equivalent checks)
-- **Not** add dependencies without a malware-name check
-- Prefer removing deps over adding new ones when possible
-
 ## Runtime safety (Gronk app)
 
 ### Per-install authentication (no shared login)
