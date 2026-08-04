@@ -1,19 +1,75 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import type { WebContents } from 'electron'
 import { buildContextMenu, type ContextTarget } from '../electron/main/context-menu-items'
+import { installContextMenu, runContextAction } from '../electron/main/context-menu'
+import { __captureClipboard, __reset } from './stubs/electron'
 
 /**
- * What the right-click menu offers, given what was clicked.
+ * The right-click menu: what it offers, and what each item does when clicked.
  *
- * The decision lives in a pure function precisely so it can be tested: `Menu`
- * cannot be constructed under `node --test`, and a menu whose contents are
- * decided inside the Electron callback would be unreachable here. Only the
- * showing of it is untested, which is the part with no branches.
+ * The failure the first half guards against is a menu that offers an action the
+ * target cannot perform. Paste on a read-only field, or Cut with nothing
+ * selected, is how a menu teaches people to stop trusting it.
  *
- * The failure this guards against is a menu that offers an action the target
- * cannot perform. Paste on a read-only field, or Cut with nothing selected, is
- * how a menu teaches people to stop trusting it.
+ * WHAT IS AND IS NOT COVERED, because an earlier version of this comment
+ * claimed the untested half "has no branches" and that was simply false.
+ *
+ * Covered: buildContextMenu, and runContextAction, which is reached by handing
+ * it a fake WebContents. That is every switch arm, both inner `if (item.word)`
+ * guards, and the destroyed-page check. Of installContextMenu, the listener
+ * registration and the empty-menu early return.
+ *
+ * NOT covered: everything in installContextMenu past that early return. Mapping
+ * items onto a template, the separator branch in that mapping, and
+ * `Menu.popup()` all need a real `Menu`, which cannot be constructed under
+ * `node --test` at all, so a test cannot get past the line that builds one.
+ * Nor is any of the wiring covered: the menu is installed on the main window
+ * and on both preview surfaces, and none of those has been opened. Nobody has
+ * launched this app and seen this menu appear.
  */
+
+/** Records what was called instead of driving a real page. */
+function fakeWebContents(): { wc: WebContents; calls: string[] } {
+  const calls: string[] = []
+  const rec =
+    (method: string) =>
+    (...args: unknown[]) => {
+      calls.push(args.length ? `${method}:${String(args[0])}` : method)
+    }
+  const wc = {
+    isDestroyed: () => false,
+    cut: rec('cut'),
+    copy: rec('copy'),
+    paste: rec('paste'),
+    selectAll: rec('selectAll'),
+    replaceMisspelling: rec('replaceMisspelling'),
+    session: { addWordToSpellCheckerDictionary: rec('addWord') }
+  }
+  return { wc: wc as unknown as WebContents, calls }
+}
+
+/**
+ * A page that is already gone. Every member throws the way Electron's own
+ * bindings do, so a missing liveness check shows up as the throw it would be in
+ * production rather than as a quietly absent call.
+ */
+function destroyedWebContents(): WebContents {
+  const boom = (): never => {
+    throw new Error('Object has been destroyed')
+  }
+  return {
+    isDestroyed: () => true,
+    cut: boom,
+    copy: boom,
+    paste: boom,
+    selectAll: boom,
+    replaceMisspelling: boom,
+    get session(): never {
+      return boom()
+    }
+  } as unknown as WebContents
+}
 
 function target(overrides: Partial<ContextTarget> = {}): ContextTarget {
   return {
@@ -151,8 +207,19 @@ test('a link can be copied, and its label is truncated', () => {
   const link = menu.find((i) => i.id === 'copyLink')
   assert.ok(link)
   assert.equal(link.url, long, 'the full url must survive even when the label does not')
-  assert.ok(link.label.length < 80, `label was ${link.label.length} chars`)
+
+  // Bounded in both directions on purpose. `< 80` alone cannot fail in the
+  // direction that matters: measured on this suite, MAX_LINK_LABEL could sit
+  // anywhere in 1..68 with all 14 tests green, and at 1 the label reads
+  // "Copy link: …" with the destination gone entirely. On the preview pane the
+  // url is whatever an untrusted local page served, so a label that hides the
+  // host is the failure worth catching.
+  assert.equal(link.label.length, 71, `label was ${link.label.length} chars: ${link.label}`)
   assert.ok(link.label.endsWith('…'))
+  assert.ok(
+    link.label.includes('example.com'),
+    `the destination host must survive truncation, got ${link.label}`
+  )
 })
 
 test('no menu ever starts or ends with a separator, or doubles one', () => {
@@ -180,6 +247,125 @@ test('no menu ever starts or ends with a separator, or doubles one', () => {
       )
     }
   }
+})
+
+test('each item drives the matching webContents call', () => {
+  // Previously unreachable: runContextAction was module-private and nothing in
+  // the suite loaded it. Every one of these arms was shipped unexercised.
+  const cases: Array<[Parameters<typeof runContextAction>[1], string]> = [
+    [{ id: 'cut', label: 'Cut', enabled: true }, 'cut'],
+    [{ id: 'copy', label: 'Copy', enabled: true }, 'copy'],
+    [{ id: 'paste', label: 'Paste', enabled: true }, 'paste'],
+    [{ id: 'selectAll', label: 'Select all', enabled: true }, 'selectAll'],
+    [
+      { id: 'suggestion', label: 'receive', enabled: true, word: 'receive' },
+      'replaceMisspelling:receive'
+    ],
+    [
+      { id: 'addToDictionary', label: 'Add to dictionary', enabled: true, word: 'gronk' },
+      'addWord:gronk'
+    ]
+  ]
+  for (const [item, expected] of cases) {
+    const { wc, calls } = fakeWebContents()
+    runContextAction(wc, item)
+    assert.deepEqual(calls, [expected], `${item.id} drove the wrong call`)
+  }
+})
+
+test('an item with no word attached does nothing rather than replacing with undefined', () => {
+  // The `if (item.word)` guards. Without them the spelling arms would call
+  // through with undefined, which is the silent-no-op bug the builder tests
+  // already guard against from the other side.
+  for (const id of ['suggestion', 'addToDictionary'] as const) {
+    const { wc, calls } = fakeWebContents()
+    runContextAction(wc, { id, label: 'x', enabled: true })
+    assert.deepEqual(calls, [], `${id} acted on a missing word`)
+  }
+})
+
+test('copy link writes the url, and a separator does nothing at all', () => {
+  const written = __captureClipboard()
+  try {
+    const { wc, calls } = fakeWebContents()
+    runContextAction(wc, {
+      id: 'copyLink',
+      label: 'Copy link: https://example.com',
+      enabled: true,
+      url: 'https://example.com/deep/path'
+    })
+    assert.deepEqual(written, ['https://example.com/deep/path'])
+    assert.deepEqual(calls, [], 'copy link must not touch the page')
+
+    // The default arm. A separator is never clickable, but it reaches the same
+    // dispatcher and must not fall through to anything.
+    runContextAction(wc, { id: 'separator', label: '', enabled: true })
+    assert.deepEqual(written, ['https://example.com/deep/path'])
+    assert.deepEqual(calls, [])
+  } finally {
+    __reset()
+  }
+})
+
+test('a destroyed page is refused instead of thrown at', () => {
+  // The dev server can exit while a preview context menu is still open, which
+  // tears the pane's webContents down under it. Every arm below would throw
+  // "Object has been destroyed" without the check.
+  const dead = destroyedWebContents()
+  const items: Array<Parameters<typeof runContextAction>[1]> = [
+    { id: 'cut', label: 'Cut', enabled: true },
+    { id: 'copy', label: 'Copy', enabled: true },
+    { id: 'paste', label: 'Paste', enabled: true },
+    { id: 'selectAll', label: 'Select all', enabled: true },
+    { id: 'suggestion', label: 'receive', enabled: true, word: 'receive' },
+    { id: 'addToDictionary', label: 'Add to dictionary', enabled: true, word: 'gronk' }
+  ]
+  for (const item of items) {
+    assert.doesNotThrow(() => runContextAction(dead, item), `${item.id} reached a destroyed page`)
+  }
+})
+
+test('copy link still works after the page underneath is gone', () => {
+  // Deliberately exempt from the liveness check. The url rides on the item, so
+  // this action needs nothing from the page, and a blanket early return would
+  // break the one item that still does exactly what it says.
+  const written = __captureClipboard()
+  try {
+    runContextAction(destroyedWebContents(), {
+      id: 'copyLink',
+      label: 'Copy link: https://example.com',
+      enabled: true,
+      url: 'https://example.com/still/works'
+    })
+    assert.deepEqual(written, ['https://example.com/still/works'])
+  } finally {
+    __reset()
+  }
+})
+
+test('a right-click with nothing to offer shows no menu, and survives odd params', () => {
+  // Reaches installContextMenu: capture the listener it registers, then fire it.
+  // This is as far into that function as a test can get, since the next
+  // statement after the early return builds a real Menu.
+  //
+  // Two things at once. The early return, which is why no Menu is constructed
+  // and why the stub does not throw. And the params shape: editFlags is read off
+  // an event crossing from a renderer that, on the preview pane, is running
+  // whatever a dev server served. Dereferenced bare it would throw inside an
+  // Electron listener, with nothing to catch it.
+  let listener: ((e: unknown, params: unknown) => void) | null = null
+  const wc = {
+    on: (event: string, fn: (e: unknown, params: unknown) => void) => {
+      if (event === 'context-menu') listener = fn
+    }
+  } as unknown as WebContents
+
+  installContextMenu(wc)
+  assert.ok(listener, 'no context-menu listener was registered')
+
+  const fire = listener as unknown as (e: unknown, params: unknown) => void
+  assert.doesNotThrow(() => fire({}, { isEditable: false }), 'bare params threw')
+  assert.doesNotThrow(() => fire({}, {}), 'empty params threw')
 })
 
 test('every enabled item has a label a person can read', () => {

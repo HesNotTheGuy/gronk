@@ -1,11 +1,15 @@
 /**
  * What the right-click menu should contain, given what was right-clicked.
  *
- * Separate from context-menu.ts, which does the showing, because `Menu` and
- * `clipboard` cannot be imported under `node --test`: the Electron stub does
- * not export them, and a top-level import of either makes this whole module
- * unloadable in a test. The decision has branches worth pinning; the showing has
- * none. Same split as ipc-guard.ts and plugins-map.ts.
+ * Separate from context-menu.ts, which does the showing. This module imports
+ * nothing from Electron, so a test loads it directly and calls it with a plain
+ * object. Same split as ipc-guard.ts and plugins-map.ts.
+ *
+ * That split is about what each half needs in order to run, not about where the
+ * branches are. context-menu.ts has branches of its own, and its dispatcher is
+ * covered separately by handing it a fake WebContents. What stays untested is
+ * the part that needs a real `Menu`: see the note at the top of
+ * tests/context-menu.test.ts for exactly what that leaves uncovered.
  */
 
 /** The fields of Electron's ContextMenuParams this actually reads. */
@@ -49,7 +53,20 @@ export interface ContextItem {
  */
 const MAX_SUGGESTIONS = 5
 
-/** A link label long enough to read, short enough not to stretch the menu. */
+/**
+ * A link label long enough to read, short enough not to stretch the menu.
+ *
+ * Both directions are load-bearing, and the lower one is the one that is easy to
+ * lose. This menu is installed on the preview pane, where the URL comes from
+ * whatever the user's dev server served, so the label is the only place the
+ * destination host is shown before the address lands on the clipboard. Truncate
+ * hard enough and `https://example.com/...` renders as `Copy link: h…`, which
+ * tells the reader nothing about where the link goes.
+ *
+ * The test pins the exact resulting label length rather than an upper bound, so
+ * moving this number is a deliberate edit to an assertion rather than a silent
+ * change.
+ */
 const MAX_LINK_LABEL = 60
 
 function truncate(value: string, max: number): string {
