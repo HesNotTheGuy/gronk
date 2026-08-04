@@ -70,7 +70,9 @@ export function ToolCard({
 
   const brief = toolBrief(tool)
   const images = fmt.images || []
-  // Always surface generated images: that's the useful output, not the path dump
+  // Generated / structured image results only. formatTool → extractImageRefsFromTool
+  // keeps free-text path hits off non-image tools, so a shell listing of
+  // build/icons is a path dump again, not a wall of previews.
   const showImages = images.length > 0 && tool.status === 'completed'
 
   return (
