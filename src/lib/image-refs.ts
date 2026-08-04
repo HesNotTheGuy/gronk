@@ -109,8 +109,11 @@ function tryParseImageJson(text: string): ImageRef | null {
  * on a path-shaped JSON object from another tool is far rarer than free-text
  * absolute paths in command output.
  */
+// Whole-token only. An unanchored /imagine/ matches "Reimagine the layout" and
+// would re-enable free-text path scanning on an ordinary write tool.
+// \b treats underscore as a word char, so image_gen stays one token.
 const IMAGE_PRODUCER =
-  /image_gen|image_edit|imagine|image_to_video|reference_to_video/
+  /\b(?:image_gen|image_edit|imagine|image_to_video|reference_to_video)\b/
 
 export function isImageProducingTool(tool: Pick<ToolCallInfo, 'kind' | 'title'>): boolean {
   const kind = (tool.kind || '').toLowerCase()
