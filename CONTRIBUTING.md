@@ -19,9 +19,13 @@ the Electron binary. See [docs/supply-chain.md](docs/supply-chain.md) for why.
 npm run verify
 ```
 
-That runs the typecheck and the test suite. CI runs the same thing on Windows,
-macOS and Linux, plus a malware scan of the lockfile. If `verify` passes locally
-it will almost always pass in CI.
+That runs the typecheck and the test suite, and it is the check this project
+actually relies on. Run it before you push.
+
+CI is configured to run the same thing on Windows, macOS and Linux plus a malware
+scan of the lockfile, but it has been unreliable about producing a run at all.
+Do not treat a missing check as a verdict on your change: see
+[About CI](#about-ci) below before you draw any conclusion from it.
 
 ## What makes a change easy to accept
 
@@ -40,13 +44,37 @@ Fork the repo, branch, push to your fork, open a pull request against `main`.
 Nobody else has write access here, so that is the only route in, including for
 trivial changes.
 
-CI runs typecheck and the full test suite on Windows, macOS and Linux, plus a
-scan of the lockfile. That is the objective part and it has to be green.
+### About CI
 
-Two checks cannot run in CI, because they need a real display:
+`.github/workflows/ci.yml` describes typecheck and the full test suite on
+ubuntu-latest, windows-latest and macos-latest, one further ubuntu job on current
+Node, a malware scan of the lockfile and a build. That is the intent, and it is
+worth knowing what it has actually produced before you read anything into your
+own pull request:
+
+- Pull requests #1 through #8 merged with **no checks at all**. Not failed, not
+  pending: nothing ran.
+- Runs on pull requests started appearing on 2026-08-04. When CI does run, it
+  runs the full matrix and passes on all four legs.
+- Nothing has ever run on a push to `main`, so no commit on `main` carries a
+  check.
+- If this is your first contribution here, GitHub holds your workflow run until a
+  maintainer approves it. "No checks yet" can simply mean nobody has pressed that
+  button.
+
+**So a missing check is not a rejection, and it is almost certainly not about
+your change.** Do not chase it and do not push empty commits trying to trigger
+it. If a run does appear and it is red, that is real and it has to be fixed
+before merge.
+
+`npm run verify` passing on your machine is what is actually being relied on,
+which is why it is the first thing this page asks for. A maintainer can dispatch
+a run on real infrastructure by hand when a change warrants it.
+
+Two checks cannot run in CI at all, because they need a real display:
 
 ```bash
-npm run test:visual     # renders 30 app states, compares against a baseline
+npm run test:visual     # captures 38 scenarios (scripts/visual/capture.js) against a baseline
 npm run test:preview    # drives the dev-server preview under real Electron
 ```
 
