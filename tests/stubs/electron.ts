@@ -27,8 +27,28 @@ export function __freshUserData(prefix = 'gronk-test-'): string {
   return dir
 }
 
+/**
+ * Collected clipboard writes while capture is on, or null when it is off.
+ * Off is the default, so an accidental clipboard write still fails loudly.
+ */
+let clipboardWrites: string[] | null = null
+
+/**
+ * Let this test read what was written to the clipboard instead of refusing.
+ *
+ * Opt-in rather than always-on: a recording clipboard that never refuses would
+ * turn "this code path touched the real clipboard" from a loud failure into a
+ * silent pass for every other test in the suite. `__reset()` puts the refusal
+ * back.
+ */
+export function __captureClipboard(): string[] {
+  clipboardWrites = []
+  return clipboardWrites
+}
+
 export function __reset(): void {
   paths.clear()
+  clipboardWrites = null
 }
 
 export const app = {
@@ -65,6 +85,28 @@ export const ipcMain = {
 export const dialog = { showOpenDialog: () => unsupported('dialog.showOpenDialog') }
 export const shell = { openExternal: () => unsupported('shell.openExternal') }
 export const session = { defaultSession: null }
+/**
+ * Both are imported at module scope by context-menu.ts, so they have to exist
+ * for anything importing it to link at all: preview.ts reaches them
+ * transitively, and tests/preview-url.test.ts dies before its first assertion
+ * without them. tests/context-menu.test.ts now imports that module directly.
+ *
+ * `Menu` still throws unconditionally. A test that reaches it is trying to open
+ * a real menu, and there is no version of that which works under `node --test`.
+ * `clipboard.writeText` throws too unless a test has called
+ * `__captureClipboard()`, which is how the copy-link action is exercised without
+ * either touching the real clipboard or quietly doing nothing.
+ */
+export const Menu = {
+  buildFromTemplate: () => unsupported('Menu.buildFromTemplate'),
+  setApplicationMenu: () => unsupported('Menu.setApplicationMenu')
+}
+export const clipboard = {
+  writeText: (text: string): void => {
+    if (clipboardWrites === null) unsupported('clipboard.writeText')
+    clipboardWrites.push(text)
+  }
+}
 /** Present so main-process code can import Notification; tests never show toasts. */
 export class Notification {
   static isSupported(): boolean {
@@ -87,6 +129,8 @@ export default {
   dialog,
   shell,
   session,
+  Menu,
+  clipboard,
   Notification,
   WebContentsView
 }
