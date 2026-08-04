@@ -2030,41 +2030,58 @@ button {
   border-top: none;
 }
 
-.tool-chip-row {
+/* Agent glance: one dot per agent unit, under the message that spawned it.
+   Replaces a wrapping grid of bordered chips that cost up to five rows and gave
+   a failure exactly the same weight as a success. Hierarchy is luminance, so
+   done recedes, failed takes the one accent, live moves. */
+.agent-dots {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 12px 10px;
+  align-items: center;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding: 3px 0 3px 8px;
+  border-left: 2px solid var(--line-2);
 }
 
-.tool-chip {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 3px 7px;
-  border: 1px solid var(--line-2);
-  color: var(--ink-3);
-  background: var(--sunken);
+.agent-dots.live {
+  border-left-color: var(--ignite);
 }
 
-.tool-chip.status-in_progress,
-.tool-chip.status-pending {
-  color: var(--warn);
-  border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+.agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--ink-4);
+  opacity: 0.45;
+  flex: none;
 }
 
-.tool-chip.status-completed {
-  color: var(--signal);
+.agent-dot.failed {
+  background: var(--abort);
+  opacity: 1;
 }
 
-.tool-chip.status-failed {
-  color: var(--abort);
+.agent-dot.live {
+  background: var(--ignite);
+  opacity: 1;
+  animation: agent-dot-pulse 1.4s ease-in-out infinite;
 }
 
-.tool-chip.more {
-  color: var(--ink-4);
+@keyframes agent-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-dot.live {
+    animation: none;
+  }
 }
 
 .tool-activity .tool-list {

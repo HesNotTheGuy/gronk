@@ -37,7 +37,15 @@ const KNOWN_UNSTYLED = new Map([
   // as are .diff-line (6 variants) and .diff-mark. The diff renders from those.
   ['tool-diff', 'wrapper whose children carry all the styling'],
   // Sits alongside .modal-actions, which supplies the layout.
-  ['details-actions', 'spare hook on an otherwise styled modal footer']
+  ['details-actions', 'spare hook on an otherwise styled modal footer'],
+  // AgentFleet's `+N` overflow marker is `agent-chip more`, and .agent-chip
+  // supplies all of its styling. `more` has never had a rule of its own: it
+  // passed this check only because the deleted `.tool-chip.more` mentioned the
+  // token, and that compound selector never matched an .agent-chip. So this
+  // entry records a modifier that was already inert rather than one that just
+  // became so. Giving it a rule, or dropping it from AgentFleet, is a decision
+  // for whoever owns that component.
+  ['more', 'inert modifier on an otherwise styled .agent-chip']
 ])
 
 /**

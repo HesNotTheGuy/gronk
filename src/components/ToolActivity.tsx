@@ -122,28 +122,13 @@ export function ToolActivity({
         </div>
       ) : null}
 
-      {!expanded && tools.length > 1 && !images.length ? (
-        <div className="tool-chip-row">
-          {tools.slice(-6).map((t) => {
-            const fmt = formatTool(t)
-            const chipLive =
-              !demoteLive && (t.status === 'in_progress' || t.status === 'pending')
-            return (
-              <span
-                key={t.toolCallId}
-                className={`tool-chip status-${chipLive ? t.status : demoteLive && (t.status === 'in_progress' || t.status === 'pending') ? 'completed' : t.status} kind-${fmt.kindLabel.toLowerCase()}`}
-                title={toolBrief(t)}
-              >
-                {fmt.kindLabel}
-              </span>
-            )
-          })}
-          {tools.length > 6 ? (
-            <span className="tool-chip more">+{tools.length - 6}</span>
-          ) : null}
-        </div>
-      ) : null}
-
+      {/*
+       * The chip row that used to sit here is gone. It listed up to six tools as
+       * bordered labels, wrapping to as many as five rows on a busy turn, and it
+       * spent a border and a word on each one whether or not anything had gone
+       * wrong. The glance is now AgentDots, rendered by MessageList under the
+       * message itself; this bar and the expand below it are the detail.
+       */}
       {expanded ? (
         <div className="tool-activity-body">
           {agents.length > 0 ? <AgentFleet tools={tools} embedded demoteLive={demoteLive} /> : null}
