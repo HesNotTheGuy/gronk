@@ -4,6 +4,57 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-08-04
+
+### Added
+
+- **A right-click menu.** Electron ships none, so right-clicking anywhere in
+  Gronk used to do nothing at all: no cut, copy or paste, and the spelling
+  suggestions Chromium was already computing sat under the red underline with no
+  way to reach them. Editable fields get Cut, Copy, Paste and Select All, enabled
+  from Chromium's own flags rather than from guessing. A misspelling puts its
+  corrections above the editing verbs, since that is what you right-clicked the
+  underline for. A link offers Copy link, and only Copy link: nothing here opens
+  anything.
+
+### Changed
+
+- **Agent activity is a row of dots under the turn that started it**, instead of
+  a grid of bordered chips. One dot per agent: dim when it finished, red when it
+  failed, pulsing while it runs. A failure is now visible without reading
+  anything, where before every chip carried the same border and the same weight
+  so a failed one looked like the five beside it. The full list is still one
+  click away in the tray.
+- **The agent panel no longer opens itself.** It used to appear the moment work
+  started, pushing the transcript while you were mid-sentence. The tab already
+  says how many agents are live, and the dots say the same thing in place.
+
+### Fixed
+
+- **Scrolling no longer fights you while a reply streams.** Scrolling up a line
+  or two to re-read something was undone by the next token: leaving the bottom
+  and returning to it shared one threshold, so a small deliberate scroll read as
+  "still near the end, re-pin". Leaving is now honoured instantly at any
+  distance, and only actually arriving at the bottom re-attaches. Keyboard and
+  scrollbar scrolling count as leaving too, which they never did.
+- **Tool output no longer fills the screen with image previews.** Any image path
+  that merely appeared in a tool's output was rendered as a full-size preview
+  with no limit, so listing a folder of icons buried the reply. Previews are now
+  for tools that actually produce images, and the row is capped.
+- **macOS builds ship the Electron and Chromium licences again.** The packaged
+  app pointed at a directory that release builds never populate, and the missing
+  files were skipped silently.
+
+### Internal
+
+- CI can be run on demand, and its four-platform matrix has now run for the first
+  time; macOS had never executed the suite before.
+- The dependency scanner refuses a malware dataset below a floor instead of
+  printing OK when it receives an empty one.
+- Screenshot fixtures use a frozen clock, so visual baselines stop drifting daily.
+- `CONTRIBUTING.md` describes what CI actually does rather than what it was
+  configured to do.
+
 ## [0.1.9] - 2026-08-03
 
 ### Changed
