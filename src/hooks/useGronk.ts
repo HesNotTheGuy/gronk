@@ -20,6 +20,14 @@ import {
   hasAssistantReplyAfter
 } from '../lib/messages'
 import { parsePlan } from '../lib/plan'
+import {
+  isScrollbarClick,
+  keyIntent,
+  nextStick,
+  touchIntent,
+  wheelIntent,
+  type StickCause
+} from '../lib/scroll-stick'
 import { useAppSettings } from './useAppSettings'
 import { useAuth } from './useAuth'
 import { useCliInstall } from './useCliInstall'
@@ -70,7 +78,29 @@ export function useGronk() {
   const [agentSurface, setAgentSurface] = useState<AgentSurface | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const stickToBottom = useRef(true)
+  /**
+   * Set while the app is moving the viewport itself, so the scroll listener can
+   * tell its own scroll from the user's. Every programmatic scroll lands at
+   * distance zero, which is indistinguishable from the user arriving at the
+   * bottom unless it is marked.
+   */
+  const programmaticScroll = useRef(false)
   const messagesRef = useRef<ChatMessage[]>([])
+
+  /**
+   * The one way this hook moves the viewport. The flag is cleared on the next
+   * frame rather than by the scroll handler, because assigning `scrollTop` when
+   * it is already at the bottom fires no scroll event at all, and a flag waiting
+   * to be consumed by an event that never comes would swallow the user's next
+   * real scroll instead.
+   */
+  const pinToBottom = useCallback((el: HTMLElement) => {
+    programmaticScroll.current = true
+    el.scrollTop = el.scrollHeight
+    requestAnimationFrame(() => {
+      programmaticScroll.current = false
+    })
+  }, [])
 
   // ── Hooks that need nothing from the conversation ──────────────────
   // Plugins, marketplaces and MCP servers own themselves entirely; the preview
@@ -229,10 +259,10 @@ export function useGronk() {
           // real end of a long restored thread, not a mid-load height.
           requestAnimationFrame(() => {
             const el = scrollRef.current
-            if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
+            if (el && stickToBottom.current) pinToBottom(el)
             window.setTimeout(() => {
               const again = scrollRef.current
-              if (again && stickToBottom.current) again.scrollTop = again.scrollHeight
+              if (again && stickToBottom.current) pinToBottom(again)
             }, 120)
           })
           void refreshSessions()
@@ -392,41 +422,84 @@ export function useGronk() {
     })
 
     return unsub
-  }, [refreshMeta, refreshSessions, refreshAudit])
+  }, [refreshMeta, refreshSessions, refreshAudit, pinToBottom])
 
-  // Stick-to-bottom only while the user is actually near the end. Streaming
+  // Stick-to-bottom only while the user is actually at the end. Streaming
   // updates must not yank the viewport if they scrolled up to read earlier turns.
+  //
+  // The decision itself is in src/lib/scroll-stick.ts so it can be tested; this
+  // effect only reads the DOM and names what kind of event happened. 0.1.8 tried
+  // to fix the same complaint with one 120px threshold used in both directions,
+  // which left the case the user hits most: scroll up a line or two mid-reply and
+  // the next token drags you back, because 40px still read as "near the bottom".
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const NEAR = 120
-    const measure = () => {
-      const dist = el.scrollHeight - el.scrollTop - el.clientHeight
-      stickToBottom.current = dist < NEAR
+
+    const distance = () => el.scrollHeight - el.scrollTop - el.clientHeight
+    const apply = (cause: StickCause) => {
+      stickToBottom.current = nextStick({
+        cause,
+        distanceFromBottom: distance(),
+        sticking: stickToBottom.current
+      })
     }
-    // Wheel / touch update stick *before* the next stream tick can re-pin the
-    // scroll, which is the race that made replies feel like they fought the user.
-    const onUserScrollIntent = () => {
-      const dist = el.scrollHeight - el.scrollTop - el.clientHeight
-      if (dist > NEAR) stickToBottom.current = false
+
+    // A scroll the app caused says nothing about what the user wants, and it
+    // always lands at distance zero, so answering from it would re-pin a
+    // transcript the user had just scrolled away from on every stream tick.
+    const onScroll = () => apply(programmaticScroll.current ? 'programmatic' : 'scroll')
+
+    // Intent handlers exist to beat a real race, not for tidiness. A scroll event
+    // is dispatched in the rendering steps of a later frame, so between the wheel
+    // and the scroll there is a window in which a stream tick can render and
+    // re-pin. These run in the input task, before the viewport has even moved.
+    const onWheel = (e: WheelEvent) => apply(wheelIntent(e.deltaY))
+    const onKeyDown = (e: KeyboardEvent) => {
+      const cause = keyIntent(e.key, e.shiftKey)
+      if (cause) apply(cause)
     }
-    el.addEventListener('scroll', measure, { passive: true })
-    el.addEventListener('wheel', onUserScrollIntent, { passive: true })
-    el.addEventListener('touchmove', onUserScrollIntent, { passive: true })
+
+    let touchStartY = 0
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0]?.clientY ?? 0
+    }
+    const onTouchMove = (e: TouchEvent) => {
+      const y = e.touches[0]?.clientY
+      if (typeof y === 'number') apply(touchIntent(touchStartY, y))
+    }
+
+    // Dragging the scrollbar fires neither wheel nor keydown, so before this the
+    // only handler that saw it was the one that re-pinned. Content clicks must
+    // not count, which is what the gutter test is for.
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.target !== el) return
+      if (isScrollbarClick(e.offsetX, el.clientWidth)) apply('gesture-up')
+    }
+
+    el.addEventListener('scroll', onScroll, { passive: true })
+    el.addEventListener('wheel', onWheel, { passive: true })
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchmove', onTouchMove, { passive: true })
+    el.addEventListener('keydown', onKeyDown)
+    el.addEventListener('mousedown', onMouseDown)
     return () => {
-      el.removeEventListener('scroll', measure)
-      el.removeEventListener('wheel', onUserScrollIntent)
-      el.removeEventListener('touchmove', onUserScrollIntent)
+      el.removeEventListener('scroll', onScroll)
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('keydown', onKeyDown)
+      el.removeEventListener('mousedown', onMouseDown)
     }
   }, [])
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el || !stickToBottom.current) return
-    el.scrollTop = el.scrollHeight
+    pinToBottom(el)
     // Messages only: permission modals and plan panels used to force a jump
     // even when the user was reading older content above.
-  }, [messages])
+  }, [messages, pinToBottom])
 
   // Persist transcript while chatting
   useEffect(() => {
