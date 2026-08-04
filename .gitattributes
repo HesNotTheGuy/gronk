@@ -12,3 +12,9 @@
 *.icns binary
 *.woff binary
 *.woff2 binary
+# Upstream Electron/Chromium licence files must stay byte-identical to the
+# release dist zip. * text=auto treats LICENSES.chromium.html as text (no NUL
+# bytes) and strips its CR bytes on commit, so macOS would ship a different
+# stream than the Linux/Windows packages electron-builder builds from its own
+# download. -text alone is enough; do not "normalize" these.
+build/licenses/** -text
