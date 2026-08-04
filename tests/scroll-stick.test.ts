@@ -25,10 +25,39 @@ import {
  * flag reaches the effect that moves the viewport. Only the decision is.
  */
 
-/** Reads as the sentence being asserted, since every case is the same shape. */
-function decide(cause: StickCause, distanceFromBottom: number, sticking: boolean): boolean {
-  return nextStick({ cause, distanceFromBottom, sticking })
+/**
+ * Reads as the sentence being asserted, since every case is the same shape.
+ *
+ * `reflow` defaults to a document that did not change height and a reader who
+ * did nothing, which is the ordinary case and leaves every assertion written
+ * before it meaning exactly what it meant then.
+ */
+function decide(
+  cause: StickCause,
+  distanceFromBottom: number,
+  sticking: boolean,
+  reflow?: {
+    scrollHeight: number
+    previousScrollHeight: number
+    gestureSinceMeasure?: boolean
+  }
+): boolean {
+  return nextStick({
+    cause,
+    distanceFromBottom,
+    sticking,
+    scrollHeight: reflow?.scrollHeight ?? 4000,
+    previousScrollHeight: reflow?.previousScrollHeight ?? 4000,
+    gestureSinceMeasure: reflow?.gestureSinceMeasure ?? false
+  })
 }
+
+/** The document got shorter, which is what the end of a turn does. */
+const shrank = (gestureSinceMeasure = false) => ({
+  scrollHeight: 3800,
+  previousScrollHeight: 4000,
+  gestureSinceMeasure
+})
 
 test('a small scroll up near the bottom detaches, which is the reported bug', () => {
   // The exact case: pinned, streaming, user scrolls up roughly 40px. Under the
@@ -169,6 +198,116 @@ test('a scrollbar drag counts, a click on a message does not', () => {
 test('an unknown cause changes nothing', () => {
   // Fail closed on a cause nobody has thought about: leave the user's last
   // decision alone rather than guessing at it.
-  assert.equal(nextStick({ cause: 'nonsense' as StickCause, distanceFromBottom: 0, sticking: false }), false)
-  assert.equal(nextStick({ cause: 'nonsense' as StickCause, distanceFromBottom: 999, sticking: true }), true)
+  assert.equal(decide('nonsense' as StickCause, 0, false), false)
+  assert.equal(decide('nonsense' as StickCause, 999, true), true)
+})
+
+/*
+ * The turn-end snap-back, found using 0.2.0.
+ *
+ * Scrolling up mid-reply holds, which is what the first fix was for. But when the
+ * reply FINISHES the transcript jumps back to the bottom. The turn ending stops
+ * the live summary line and the streaming caret rendering, so the document gets
+ * shorter; a reader who had scrolled up now has a scrollTop past the new maximum,
+ * the browser clamps it, and that clamp is dispatched as an ordinary scroll at
+ * distance zero.
+ *
+ * Nothing above could have caught it. Every case above hands the function one
+ * measurement and asks what it means, and from one measurement the reader really
+ * is at the bottom. The tell is only visible across two: the content moved, not
+ * the reader.
+ */
+
+test('content shrinking under a reader who scrolled away does NOT re-stick', () => {
+  // The bug, as reported. Reader is detached and has not touched anything; the
+  // reply finishes, the document shortens, the browser clamps to the new bottom.
+  assert.equal(decide('scroll', 0, false, shrank()), false)
+})
+
+test('the clamp is refused however close to the bottom it lands', () => {
+  // The clamp reports whatever the new maximum happens to be. None of these are
+  // the reader arriving, so none of them may re-attach.
+  for (const distance of [0, 1, 2, 40, 300]) {
+    assert.equal(
+      decide('scroll', distance, false, shrank()),
+      false,
+      `a reflow landing at ${distance}px re-stuck the transcript`
+    )
+  }
+})
+
+test('content shrinking under a reader already at the bottom leaves them stuck', () => {
+  // The mirror, and the reason this holds the previous value rather than
+  // returning false. Most turns end with the reader at the bottom watching, and
+  // detaching them there would break the ordinary case to fix the rare one.
+  assert.equal(decide('scroll', 0, true, shrank()), true)
+})
+
+test('a real arrival during a shrink still re-attaches', () => {
+  // The inverse the fix must not trade away. The reader scrolled down to the end
+  // while a turn happened to be finishing, so they DID move and the distance is
+  // the honest answer. Without the gesture check this returns false and the
+  // transcript never follows again.
+  assert.equal(decide('scroll', 0, false, shrank(true)), true)
+})
+
+test('a gesture during a shrink that does not reach the end still does not stick', () => {
+  // The other half of that: the gesture only says "read the distance", it does
+  // not say "attach". A reader who scrolls down a little and stops is still away.
+  assert.equal(decide('scroll', 300, false, shrank(true)), false)
+})
+
+test('content growing is read normally, which is every streaming tick', () => {
+  // Growth is the common case and must not touch the new branch. A token arrives,
+  // the document gets taller, and whether to stick is still purely the distance.
+  const grew = { scrollHeight: 4200, previousScrollHeight: 4000 }
+  assert.equal(decide('scroll', 0, false, grew), true, 'arriving during growth attaches')
+  assert.equal(decide('scroll', 300, true, grew), false, 'leaving during growth detaches')
+})
+
+test('an unchanged height is read normally', () => {
+  // Equal heights are not a shrink. Strictly-less is what distinguishes them, and
+  // an off-by-one here would swallow every ordinary scroll in a still document.
+  const same = { scrollHeight: 4000, previousScrollHeight: 4000 }
+  assert.equal(decide('scroll', 0, false, same), true)
+  assert.equal(decide('scroll', 300, true, same), false)
+})
+
+test('the shrink rule is scoped to scroll, not to gestures', () => {
+  // A shrink happening to coincide with a gesture must not change what the
+  // gesture means. Leaving is still unconditional, and toward-the-end still
+  // cannot attach on its own.
+  assert.equal(decide('gesture-up', 0, true, shrank()), false, 'a shrink cannot rescue a detach')
+  assert.equal(decide('gesture-down', 0, false, shrank()), false)
+  assert.equal(decide('programmatic', 0, false, shrank()), false)
+})
+
+test('a whole turn ending under a reader who scrolled up, end to end', () => {
+  // The sequence from the report, run as one story: scroll up mid-reply, keep
+  // streaming, then let the turn end. The reader must still be where they put
+  // themselves.
+  let sticking = true
+  let height = 4000
+
+  sticking = decide('gesture-up', 0, sticking)
+  assert.equal(sticking, false, 'the scroll up detaches')
+
+  // Tokens keep arriving: the document grows, and none of it re-attaches.
+  for (let tick = 0; tick < 5; tick++) {
+    const next = height + 120
+    sticking = decide('scroll', 400, sticking, {
+      scrollHeight: next,
+      previousScrollHeight: height
+    })
+    height = next
+    assert.equal(sticking, false, `re-pinned on tick ${tick}`)
+  }
+
+  // The turn ends. The live line and the caret stop rendering, the document
+  // shortens under them, and the browser clamps to the new bottom.
+  sticking = decide('scroll', 0, sticking, {
+    scrollHeight: height - 200,
+    previousScrollHeight: height
+  })
+  assert.equal(sticking, false, 'the turn ending snapped the reader back')
 })

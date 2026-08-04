@@ -436,13 +436,33 @@ export function useGronk() {
     const el = scrollRef.current
     if (!el) return
 
+    // Carried between measurements so a scroll can be told from a reflow. A turn
+    // ending makes the document shorter, and if the reader had scrolled up the
+    // browser clamps scrollTop and reports a scroll they did not make.
+    let previousScrollHeight = el.scrollHeight
+    // Set by every intent handler, cleared by every measurement, so it always
+    // means "since the last measurement". It is the only thing separating the
+    // clamp above from a reader genuinely scrolling to the end while a turn
+    // finishes.
+    let gestureSinceMeasure = false
+
     const distance = () => el.scrollHeight - el.scrollTop - el.clientHeight
     const apply = (cause: StickCause) => {
+      const scrollHeight = el.scrollHeight
       stickToBottom.current = nextStick({
         cause,
         distanceFromBottom: distance(),
-        sticking: stickToBottom.current
+        sticking: stickToBottom.current,
+        scrollHeight,
+        previousScrollHeight,
+        gestureSinceMeasure
       })
+      previousScrollHeight = scrollHeight
+      // A gesture arms the flag; any measurement consumes it. Written as an
+      // assignment rather than a pair of branches so there is no path that
+      // leaves a stale gesture armed, which would make the next reflow look
+      // like the reader had moved.
+      gestureSinceMeasure = cause === 'gesture-up' || cause === 'gesture-down'
     }
 
     // A scroll the app caused says nothing about what the user wants, and it
