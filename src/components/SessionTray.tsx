@@ -120,10 +120,25 @@ export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
   const hasUsage = !!usage && usage.turns > 0
 
   useEffect(() => {
+    // Deliberately does NOT open the panel when work starts.
+    //
+    // It used to: a 0 to 1 transition in live agents called setTab('agents'),
+    // so a panel appeared under the reader mid-sentence and pushed the
+    // transcript. That is the same defect as the streaming scroll fixed in
+    // 8042d18, arriving from the other direction, and it is worse here because
+    // the user did not ask for the panel at all. The tab already reads
+    // "AGENTS n live", and the dots under the spawning message now show the
+    // same thing in place, so nothing is lost by waiting to be asked.
+    //
+    // Failures do not open it either. A failed dot takes the one hard accent
+    // and is visible where the work was started, which is the point of having
+    // a glance layer: it means the detail never has to interrupt.
     if (agentSummary.live > 0) {
       setAgentsDismissed(false)
-      if (prevLive.current === 0) setTab('agents')
     } else if (prevLive.current > 0 && tab === 'agents') {
+      // Closing when the last agent finishes is kept: the user is then looking
+      // at a panel about work that has stopped, and it collapses itself rather
+      // than needing a dismiss.
       setTab(null)
     }
     prevLive.current = agentSummary.live

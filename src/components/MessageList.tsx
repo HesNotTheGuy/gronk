@@ -4,6 +4,7 @@ import { extractImageRefsFromTools } from '../lib/image-refs'
 import { hasAssistantReplyAfter } from '../lib/messages'
 import { Markdown } from './Markdown'
 import { ToolActivity } from './ToolActivity'
+import { AgentDots } from './AgentDots'
 
 interface Props {
   messages: ChatMessage[]
@@ -209,6 +210,19 @@ export function MessageList({ messages, onRetry, canRetry }: Props) {
              */}
             {m.streaming && (!last || last.kind !== 'text') ? (
               <div className="bubble streaming-caret" />
+            ) : null}
+
+            {/*
+             * The glance layer, attached to the turn that spawned the work
+             * rather than to a global strip: scrolling back to a turn brings its
+             * agents with it, and there is nothing to dismiss. Renders nothing
+             * when a message spawned no agents, which is most of them.
+             */}
+            {m.toolCalls?.length ? (
+              <AgentDots
+                tools={m.toolCalls}
+                demoteLive={idx < messages.length - 1 && !m.streaming}
+              />
             ) : null}
 
             {failed && m.error ? (
