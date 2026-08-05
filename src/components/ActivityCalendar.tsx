@@ -1,13 +1,16 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { ActivityCalendarState } from '../hooks/useActivityCalendar'
 import {
+  ACTIVITY_SCOPES,
   calendarSummary,
   dayClassName,
   dayTooltip,
   INTENSITY_LEVELS,
   monthLabels,
+  scopedDay,
   toWeekColumns,
-  WEEKDAY_LABELS
+  WEEKDAY_LABELS,
+  type ActivityScope
 } from '../lib/calendar'
 
 /** Weekday rows that carry a caption; the rest stay blank so the column reads cleanly. */
@@ -34,25 +37,52 @@ interface Props {
  * Data comes from a parent-owned `useActivityCalendar` so the grid survives
  * Home unmount. Days are buttons when `onSelectDay` is provided; selection is
  * paint only — filtering lives in the host.
+ *
+ * The scope filter is one chart over one dataset. Chat and Build are counted
+ * per day by the main process, so switching scope re-reads nothing and, more to
+ * the point, does not move the scale: `calendar.peak` stays the divisor for
+ * every scope, so a square of a given shade means the same amount of work
+ * whichever filter is on.
  */
 export function ActivityCalendar({ state, selectedDay = null, onSelectDay }: Props) {
   const { calendar, loading, error, refresh } = state
+  const [scope, setScope] = useState<ActivityScope>('all')
 
-  const weeks = useMemo(() => (calendar ? toWeekColumns(calendar.days) : []), [calendar])
+  const weeks = useMemo(
+    () => (calendar ? toWeekColumns(calendar.days.map((d) => scopedDay(d, scope))) : []),
+    [calendar, scope]
+  )
   const months = useMemo(() => {
     const byColumn = new Map<number, string>()
     for (const label of monthLabels(weeks)) byColumn.set(label.column, label.label)
     return byColumn
   }, [weeks])
 
-  const summary = calendar ? calendarSummary(calendar) : ''
+  const summary = calendar ? calendarSummary(calendar, scope) : ''
   const selectable = typeof onSelectDay === 'function'
 
   return (
     <section className="calendar-panel">
       <div className="browse-panel-head">
         <div className="section-label">Activity</div>
-        {calendar ? <div className="calendar-summary">{summary}</div> : null}
+        {calendar ? (
+          <div className="calendar-head-right">
+            <div className="calendar-summary">{summary}</div>
+            <div className="calendar-scope" role="group" aria-label="Show activity for">
+              {ACTIVITY_SCOPES.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`calendar-scope-btn ${scope === option.id ? 'active' : ''}`}
+                  aria-pressed={scope === option.id}
+                  onClick={() => setScope(option.id)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {error ? (

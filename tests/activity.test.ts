@@ -13,6 +13,7 @@ import {
   type SessionActivity
 } from '../electron/main/activity'
 import {
+  ACTIVITY_SCOPES,
   calendarSummary,
   dayClassName,
   dayTooltip,
@@ -20,6 +21,8 @@ import {
   intensityLevel,
   INTENSITY_LEVELS,
   monthLabels,
+  scopedDay,
+  scopedUserTurns,
   toWeekColumns,
   weekdayIndex
 } from '../src/lib/calendar'
@@ -54,6 +57,24 @@ function sessionOn(id: string, days: number[][]): SessionActivity {
   return {
     id,
     messages: days.map(([y, m, d]) => userMsg(at(y, m, d, 10)))
+  }
+}
+
+/**
+ * A day literal for the view helpers below, which read only the totals.
+ *
+ * The split still adds up: the whole day is put on Build rather than left at
+ * zero, so no fixture here contradicts what DayActivity says about chat + build
+ * being the whole day.
+ */
+function viewDay(date: string, userTurns: number, messages: number, sessions: number): DayActivity {
+  return {
+    date,
+    userTurns,
+    messages,
+    sessions,
+    chat: { userTurns: 0, messages: 0, sessions: 0 },
+    build: { userTurns, messages, sessions }
   }
 }
 
@@ -288,12 +309,9 @@ test('the current streak counts back from today and stops at a gap', () => {
 
 test('a today with no work yet does not break the streak, but a finished empty day does', () => {
   const days = (dates: number[]): DayActivity[] =>
-    ['2025-07-17', '2025-07-18', '2025-07-19', '2025-07-20'].map((date, i) => ({
-      date,
-      userTurns: dates[i],
-      messages: dates[i],
-      sessions: dates[i] > 0 ? 1 : 0
-    }))
+    ['2025-07-17', '2025-07-18', '2025-07-19', '2025-07-20'].map((date, i) =>
+      viewDay(date, dates[i], dates[i], dates[i] > 0 ? 1 : 0)
+    )
 
   // Nothing done today: yesterday's run is still alive — today is not over.
   assert.equal(computeStreaks(days([1, 1, 1, 0]), '2025-07-20').currentStreak, 3)
@@ -348,7 +366,7 @@ test('intensity is a level class, clamped and never NaN', () => {
   assert.equal(intensityLevel(4, Number.NaN), INTENSITY_LEVELS)
 
   assert.equal(
-    dayClassName({ date: '2025-07-14', userTurns: 5, messages: 9, sessions: 1 }, 10),
+    dayClassName(viewDay('2025-07-14', 5, 9, 1), 10),
     'calendar-day level-2'
   )
   assert.equal(dayClassName(null, 10), 'calendar-day calendar-day-pad')
@@ -367,21 +385,167 @@ test('month captions mark the first column of each new month', () => {
   )
 })
 
+// ── Chat / Build split ──────────────────────────────────────────────
+
+/** A session with a transcript, on one surface or the other. */
+function surfaced(
+  id: string,
+  surface: 'chat' | 'project' | undefined,
+  stamps: number[]
+): SessionActivity {
+  return {
+    id,
+    surface,
+    messages: stamps.map((createdAt) => ({ role: 'user', createdAt }))
+  }
+}
+
+test('CHAT AND BUILD PARTITION THE DAY: the two halves add back up to the whole', () => {
+  // The property the scope filter rests on. If these ever stopped summing, the
+  // filtered views would quietly disagree with the unfiltered one.
+  const calendar = buildActivityCalendar(
+    [
+      surfaced('c1', 'chat', [at(2025, 7, 14, 9), at(2025, 7, 14, 11)]),
+      surfaced('p1', 'project', [at(2025, 7, 14, 15)]),
+      surfaced('p2', 'project', [at(2025, 7, 15, 10)])
+    ],
+    { now: at(2025, 7, 20, 9), days: 30 }
+  )
+  for (const d of calendar.days) {
+    assert.equal(d.chat.userTurns + d.build.userTurns, d.userTurns, `${d.date} prompts`)
+    assert.equal(d.chat.messages + d.build.messages, d.messages, `${d.date} messages`)
+    assert.equal(d.chat.sessions + d.build.sessions, d.sessions, `${d.date} sessions`)
+  }
+
+  const jul14 = day(calendar, '2025-07-14')
+  assert.equal(jul14.chat.userTurns, 2)
+  assert.equal(jul14.build.userTurns, 1)
+})
+
+test('a session row with no surface counts as Build, never as Chat', () => {
+  // Older rows predate the field, and the store resolves a missing surface to
+  // project on read. Guessing Chat would file work that had a folder behind it
+  // under the label that means there was none.
+  const calendar = buildActivityCalendar([surfaced('old', undefined, [at(2025, 7, 14, 9)])], {
+    now: at(2025, 7, 20, 9),
+    days: 30
+  })
+  const jul14 = day(calendar, '2025-07-14')
+  assert.equal(jul14.build.userTurns, 1)
+  assert.equal(jul14.chat.userTurns, 0)
+})
+
+test('the transcript-less fallback is split too, not left on the total only', () => {
+  const calendar = buildActivityCalendar(
+    [{ id: 'c1', surface: 'chat', updatedAt: at(2025, 7, 14, 9), userTurns: 3, messageCount: 8 }],
+    { now: at(2025, 7, 20, 9), days: 30 }
+  )
+  const jul14 = day(calendar, '2025-07-14')
+  assert.equal(jul14.userTurns, 3)
+  assert.equal(jul14.chat.userTurns, 3)
+  assert.equal(jul14.chat.messages, 8)
+  assert.equal(jul14.chat.sessions, 1)
+  assert.equal(jul14.build.userTurns, 0)
+})
+
+test('scopedDay reads the chosen half, and leaves `all` alone by identity', () => {
+  const d = viewDay('2025-07-14', 9, 20, 2)
+  const mixed: DayActivity = {
+    ...d,
+    chat: { userTurns: 4, messages: 9, sessions: 1 },
+    build: { userTurns: 5, messages: 11, sessions: 1 }
+  }
+  assert.equal(scopedDay(mixed, 'all'), mixed, 'the unfiltered grid must not allocate')
+  assert.equal(scopedDay(mixed, 'chat').userTurns, 4)
+  assert.equal(scopedDay(mixed, 'chat').messages, 9)
+  assert.equal(scopedDay(mixed, 'build').userTurns, 5)
+  // The date has to survive: it is the key the day filter and the grid layout use.
+  assert.equal(scopedDay(mixed, 'chat').date, '2025-07-14')
+})
+
+test('ONE PEAK: filtering changes what is counted, never the scale', () => {
+  // The reason this is a filter and not a second chart. peak is a divisor, so a
+  // per-scope peak would make the same shade mean a different amount on each
+  // view with nothing on screen saying so.
+  const calendar = buildActivityCalendar(
+    [
+      surfaced('p1', 'project', Array.from({ length: 8 }, () => at(2025, 7, 14, 9))),
+      surfaced('c1', 'chat', [at(2025, 7, 15, 9)])
+    ],
+    { now: at(2025, 7, 20, 9), days: 30 }
+  )
+  const jul15 = day(calendar, '2025-07-15')
+  const chatOnly = scopedDay(jul15, 'chat')
+  // One prompt against a peak of eight is the bottom filled step, whether or not
+  // the Chat view is the one being looked at.
+  assert.equal(dayClassName(chatOnly, calendar.peak), dayClassName(jul15, calendar.peak))
+  assert.equal(dayClassName(chatOnly, calendar.peak), 'calendar-day level-1')
+})
+
+test('the scoped totals count only that half', () => {
+  const calendar = buildActivityCalendar(
+    [
+      surfaced('c1', 'chat', [at(2025, 7, 14, 9), at(2025, 7, 15, 9)]),
+      surfaced('p1', 'project', [at(2025, 7, 14, 10)])
+    ],
+    { now: at(2025, 7, 20, 9), days: 30 }
+  )
+  assert.equal(scopedUserTurns(calendar, 'all'), 3)
+  assert.equal(scopedUserTurns(calendar, 'chat'), 2)
+  assert.equal(scopedUserTurns(calendar, 'build'), 1)
+  assert.equal(scopedUserTurns(calendar, 'all'), calendar.totalUserTurns)
+})
+
+test('a filtered summary counts its own half and drops the streak', () => {
+  // The streak is a fact about opening the app at all. A Chat-only streak would
+  // be a different number wearing the same word.
+  const calendar = buildActivityCalendar(
+    [
+      surfaced('c1', 'chat', [at(2025, 7, 19, 9), at(2025, 7, 20, 9)]),
+      surfaced('p1', 'project', [at(2025, 7, 20, 10)])
+    ],
+    { now: at(2025, 7, 20, 12), days: 30 }
+  )
+  assert.match(calendarSummary(calendar, 'all'), /streak/)
+  assert.equal(calendarSummary(calendar, 'chat'), '2 prompts in the last 30 days')
+  assert.equal(calendarSummary(calendar, 'build'), '1 prompt in the last 30 days')
+  assert.equal(calendarSummary(calendar), calendarSummary(calendar, 'all'), 'default is all')
+})
+
+test('a scope with nothing in it says so rather than showing a bare zero', () => {
+  const calendar = buildActivityCalendar([surfaced('p1', 'project', [at(2025, 7, 14, 9)])], {
+    now: at(2025, 7, 20, 9),
+    days: 30
+  })
+  assert.equal(calendarSummary(calendar, 'chat'), 'No prompts in the last 30 days yet')
+})
+
+test('the filter offers exactly all, chat and build', () => {
+  assert.deepEqual(
+    ACTIVITY_SCOPES.map((s) => s.id),
+    ['all', 'chat', 'build']
+  )
+  assert.deepEqual(
+    ACTIVITY_SCOPES.map((s) => s.label),
+    ['All', 'Chat', 'Build']
+  )
+})
+
 // ── Labels ──────────────────────────────────────────────────────────
 
 test('day labels and tooltips read as sentences and pluralise correctly', () => {
   assert.equal(formatDayLabel('2025-07-14'), 'Mon 14 Jul 2025')
   assert.equal(formatDayLabel('nonsense'), 'nonsense')
   assert.equal(
-    dayTooltip({ date: '2025-07-14', userTurns: 1, messages: 1, sessions: 1 }),
+    dayTooltip(viewDay('2025-07-14', 1, 1, 1)),
     '1 prompt on Mon 14 Jul 2025 · 1 message · 1 session'
   )
   assert.equal(
-    dayTooltip({ date: '2025-07-14', userTurns: 3, messages: 12, sessions: 2 }),
+    dayTooltip(viewDay('2025-07-14', 3, 12, 2)),
     '3 prompts on Mon 14 Jul 2025 · 12 messages · 2 sessions'
   )
   assert.equal(
-    dayTooltip({ date: '2025-07-14', userTurns: 0, messages: 0, sessions: 0 }),
+    dayTooltip(viewDay('2025-07-14', 0, 0, 0)),
     'No activity on Mon 14 Jul 2025'
   )
 })

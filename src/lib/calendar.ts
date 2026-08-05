@@ -12,6 +12,45 @@
 import type { ActivityCalendar, DayActivity } from '../../shared/types'
 
 /**
+ * Which half of the app the heatmap is showing.
+ *
+ * A filter over one dataset, never a second chart. Intensity is normalised
+ * against `calendar.peak`, the busiest single day across everything, and peak is
+ * a divisor: give each scope its own and the same green means one amount on one
+ * view and a different amount on the next, with nothing on screen saying so.
+ * Filtering keeps the scale still and changes only what is counted.
+ */
+export type ActivityScope = 'all' | 'chat' | 'build'
+
+export const ACTIVITY_SCOPES: ReadonlyArray<{ id: ActivityScope; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'chat', label: 'Chat' },
+  { id: 'build', label: 'Build' }
+]
+
+/**
+ * One day as the chosen scope sees it.
+ *
+ * Returns the same shape rather than a narrowed one so every helper below reads
+ * it unchanged; the untouched `chat` and `build` members ride along and nothing
+ * downstream looks at them. `all` returns the day itself, by identity, so the
+ * unfiltered grid allocates nothing.
+ */
+export function scopedDay(day: DayActivity, scope: ActivityScope): DayActivity {
+  if (scope === 'all') return day
+  const counts = scope === 'chat' ? day.chat : day.build
+  return { ...day, ...counts }
+}
+
+/** Prompts in the window for one scope, which is what the summary counts. */
+export function scopedUserTurns(calendar: ActivityCalendar, scope: ActivityScope): number {
+  if (scope === 'all') return calendar.totalUserTurns
+  let total = 0
+  for (const day of calendar.days) total += scope === 'chat' ? day.chat.userTurns : day.build.userTurns
+  return total
+}
+
+/**
  * Filled intensity steps, on top of `level-0` for a day with no prompts.
  *
  * Four, because that is how many a single-hue ramp can actually separate at the
@@ -158,14 +197,26 @@ export function dayTooltip(day: DayActivity): string {
   )
 }
 
-/** One-line summary above the grid. */
-export function calendarSummary(calendar: ActivityCalendar): string {
+/**
+ * One-line summary above the grid.
+ *
+ * The streaks are dropped under a filter, deliberately. They are a fact about
+ * the user's habit of opening the app at all, counted across everything; a
+ * "streak" of Chat-only days would be a different number that looks like the
+ * same one, and re-deriving it per scope would put a second definition of the
+ * word on the same screen.
+ */
+export function calendarSummary(calendar: ActivityCalendar, scope: ActivityScope = 'all'): string {
   const window = `the last ${plural(calendar.days.length, 'day')}`
-  if (calendar.totalUserTurns <= 0) {
+  const total = scopedUserTurns(calendar, scope)
+  if (total <= 0) {
     return `No prompts in ${window} yet`
   }
+  if (scope !== 'all') {
+    return `${plural(total, 'prompt')} in ${window}`
+  }
   return (
-    `${plural(calendar.totalUserTurns, 'prompt')} in ${window} · ` +
+    `${plural(total, 'prompt')} in ${window} · ` +
     `${calendar.currentStreak}-day streak · best ${plural(calendar.longestStreak, 'day')}`
   )
 }
