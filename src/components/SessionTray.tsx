@@ -8,6 +8,7 @@ import {
 } from '../lib/agent-activity'
 import { statusToDot } from '../lib/agent-dots'
 import { costNote, detailCostLabel, summaryCostLabel } from '../lib/cost'
+import { toolActivitySignature } from '../lib/tool-activity-sig'
 import { shortenForDisplay } from '../lib/tool-format'
 
 type TrayTab = 'plan' | 'agents' | 'usage'
@@ -76,9 +77,18 @@ export function SessionTray({ showPlan, sessionId, plan, messages, usage, auth }
   // Display history is the sticky `retained` list below — a 16-message window
   // made the AGENTS tab vanish as soon as chat moved on, which felt like
   // "only while something is running".
+  //
+  // Signature, not `messages`: every streaming token is a new messages array,
+  // and re-extracting + setRetained on each one was a full second React pass
+  // for zero agent change.
+  const toolsSig = useMemo(() => toolActivitySignature(messages, 200), [messages])
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
   const fromMessages = useMemo(
-    () => collectAgentUnitsFromMessages(messages, { maxMessages: 200 }),
-    [messages]
+    () => collectAgentUnitsFromMessages(messagesRef.current, { maxMessages: 200 }),
+    // toolsSig is the gate; read messages via ref so a text-only token does not
+    // re-extract, and a real tool change still sees the latest array.
+    [toolsSig]
   )
   const [retained, setRetained] = useState<typeof fromMessages>([])
   /**
@@ -96,13 +106,26 @@ export function SessionTray({ showPlan, sessionId, plan, messages, usage, auth }
   // Merge newly seen units into session memory. The first scan of a session is
   // a restore snapshot and keeps only what is still running; everything after it
   // is this session own work and is kept when it finishes.
+  //
+  // When toolsSig is unchanged, `fromMessages` keeps its previous reference, so
+  // this effect does not run on pure text tokens — no setRetained, no second pass.
   useEffect(() => {
     const isRestoreSnapshot = restoreKey.current !== sessionId
     if (isRestoreSnapshot) restoreKey.current = sessionId
     // An empty scan mid-session drops nothing: the unit is still this session own
     // work even once its tool call has scrolled out of the window.
     if (!isRestoreSnapshot && fromMessages.length === 0) return
-    setRetained((prev) => nextRetained({ prev, incoming: fromMessages, isRestoreSnapshot }))
+    setRetained((prev) => {
+      const next = nextRetained({ prev, incoming: fromMessages, isRestoreSnapshot })
+      // Same contents → keep the previous array so consumers do not re-render.
+      if (
+        next.length === prev.length &&
+        next.every((u, i) => u === prev[i] || (u.id === prev[i]?.id && u.status === prev[i]?.status))
+      ) {
+        return prev
+      }
+      return next
+    })
   }, [fromMessages, sessionId])
 
   const units = retained
