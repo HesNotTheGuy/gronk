@@ -681,6 +681,7 @@ export function App() {
             {inConversation ? (
               <SessionTray
                 showPlan={inProject}
+                sessionId={g.sessionId}
                 plan={
                   g.activePlan && g.sessionId && g.activePlan.sessionId === g.sessionId
                     ? g.activePlan
@@ -693,7 +694,8 @@ export function App() {
             ) : null}
 
             <Composer
-              disabled={g.connection !== 'ready'}
+              connection={g.connection}
+              hydrating={g.hydrating}
               busy={g.busy || g.connection === 'loading'}
               cwd={inChat ? null : g.cwd}
               models={g.models}
