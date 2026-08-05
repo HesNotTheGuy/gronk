@@ -4,7 +4,6 @@ import {
   DEFAULT_SETTINGS,
   type AppSettings,
   type ChatMessage,
-  type PermissionAuditEntry,
   type PermissionMode,
   type ProjectContext,
   type ProjectNotes,
@@ -19,7 +18,12 @@ import {
   storePath,
   writeFileAtomicSync
 } from './data-dir'
-import { redactPreview, redactValue } from './redact'
+import { redactValue } from './redact'
+
+// Permission audit lives in its own file (permission-audit.ts). Re-exported so
+// callers that import from store keep working without a whole-store rewrite
+// per decision.
+export { appendPermissionAudit, getPermissionAudit } from './permission-audit'
 
 /**
  * What actually lands in gronk-store.json. `alwaysApprove` is absent on purpose:
@@ -45,7 +49,6 @@ interface StoreData {
   sessions: SessionInfo[]
   /** sessionId -> chat messages (local transcript cache) */
   transcripts: Record<string, ChatMessage[]>
-  permissionAudit: PermissionAuditEntry[]
   /**
    * normalized project cwd -> scratchpad text.
    *
@@ -56,10 +59,16 @@ interface StoreData {
   projectNotes: ProjectNotes
 }
 
-/** Store as read off disk: older files also carried the now-derived field. */
+/**
+ * Store as read off disk. `permissionAudit` may still appear on older files; it
+ * is migrated into gronk-permission-audit.json on first audit access and is
+ * never written back (not part of StoreData).
+ */
 interface RawStore extends Partial<Omit<StoreData, 'settings' | 'version'>> {
   version?: number
   settings?: Partial<AppSettings>
+  /** Legacy key — handled by permission-audit.ts, not kept on StoreData. */
+  permissionAudit?: unknown
 }
 
 /** Where the data actually came from — see getStoreHealth. */
@@ -160,7 +169,6 @@ function emptyStore(): StoreData {
     recentProjects: [],
     sessions: [],
     transcripts: {},
-    permissionAudit: [],
     projectNotes: {}
   }
 }
@@ -226,9 +234,10 @@ function fromRaw(raw: RawStore): StoreData {
     recentProjects: data.recentProjects ?? [],
     sessions: data.sessions ?? [],
     transcripts: data.transcripts ?? {},
-    permissionAudit: data.permissionAudit ?? [],
     // Guarded rather than defaulted: the file is user-writable, and every reader
     // of this one iterates its keys.
+    // permissionAudit is deliberately omitted: legacy keys are migrated out by
+    // permission-audit.ts and dropped from disk on this next writeStore.
     projectNotes: isPlainRecord(data.projectNotes) ? data.projectNotes : {}
   }
 }
@@ -777,24 +786,6 @@ export function saveTranscript(sessionId: string, messages: ChatMessage[]): void
   }
 
   writeStore(data)
-}
-
-export function appendPermissionAudit(entry: PermissionAuditEntry): PermissionAuditEntry[] {
-  const data = readStore()
-  const safe: PermissionAuditEntry = {
-    ...entry,
-    rawInputPreview: entry.rawInputPreview
-      ? redactPreview(entry.rawInputPreview, 500)
-      : undefined,
-    title: entry.title ? String(redactValue(entry.title)).slice(0, 200) : entry.title
-  }
-  data.permissionAudit = [safe, ...data.permissionAudit].slice(0, 200)
-  writeStore(data)
-  return data.permissionAudit
-}
-
-export function getPermissionAudit(): PermissionAuditEntry[] {
-  return readStore().permissionAudit
 }
 
 /**
