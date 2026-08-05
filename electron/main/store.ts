@@ -121,7 +121,7 @@ const DEFAULT_STORED_SETTINGS: StoredSettings = toStored(DEFAULT_SETTINGS)
  * - `alwaysApprove: true` beside a gated mode -> the gated mode survives; a
  *   stray legacy flag never promotes a session to bypass
  * - `bypassPermissions` with no acknowledgement on disk -> `default`, so a
- *   hand-edited or pre-FIX-14 file cannot launch straight into YOLO
+ *   hand-edited file without acknowledgement cannot launch straight into YOLO
  *
  * A file written by this build has no `alwaysApprove` key at all, so only the
  * ack gate applies to it.
@@ -397,7 +397,7 @@ export function requestedPermissionMode(
 
 export function setSettings(partial: Partial<AppSettings>): AppSettings {
   const data = readStore()
-  // FIX-14: require ack already on disk before enabling YOLO (not same-partial ack+enable)
+  // Require ack already on disk before enabling YOLO (not same-partial ack+enable).
   const priorAck = !!data.settings.alwaysApproveAck
   const merged: StoredSettings = {
     ...DEFAULT_STORED_SETTINGS,
@@ -410,8 +410,8 @@ export function setSettings(partial: Partial<AppSettings>): AppSettings {
   //
   // Only `priorAck` (the ack ALREADY on disk) may unlock YOLO. Reading
   // `merged.alwaysApproveAck` alone would accept an ack supplied in this same
-  // call, which is exactly the one-shot self-authorization FIX-14 exists to
-  // stop. The UI acknowledges and enables in two separate calls (`confirmYolo`).
+  // call, which is the one-shot self-authorization path we block. The UI
+  // acknowledges and enables in two separate calls (`confirmYolo`).
   // The merged ack is required on top of it so that revoking the ack in this
   // call also drops bypass, instead of leaving a state the next read undoes.
   const ackAllowsBypass = priorAck && !!merged.alwaysApproveAck
@@ -634,7 +634,7 @@ export function archiveSession(
 }
 
 /**
- * FIX-R7: drop echoed user turns saved as [user X, assistant, user X].
+ * Drop echoed user turns saved as [user X, assistant, user X].
  * A user message is dropped when its text matches the previous user message and
  * only assistant/system turns sit between them.
  */
@@ -692,9 +692,9 @@ export function getTranscript(sessionId: string): ChatMessage[] {
 export function saveTranscript(sessionId: string, messages: ChatMessage[]): void {
   const data = readStore()
   // Cap session length. Message text/thought are the user's own conversation on
-  // their machine — do NOT redact or truncate them (FIX-R1). Secrets still stay
-  // out of tool payloads (FIX-7) and the permission audit log.
-  // FIX-R7: de-dupe echoed user turns before persist.
+  // their machine — do NOT redact or truncate them. Secrets still stay out of
+  // tool payloads and the permission audit log. De-dupe echoed user turns
+  // before persist.
   const trimmed = dedupeTranscriptMessages(messages).slice(-200).map((m) => ({
     ...m,
     streaming: false,

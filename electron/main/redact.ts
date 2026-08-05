@@ -3,7 +3,7 @@
  * Never reverse this — drop secrets rather than store them.
  *
  * Do NOT run over user-visible message text/thought before persisting transcripts
- * (FIX-R1) — that corrupts session restore. Transcripts are local user data.
+ * — that corrupts session restore. Transcripts are local user data.
  */
 
 /**

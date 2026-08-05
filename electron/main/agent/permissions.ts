@@ -93,7 +93,7 @@ export function parsePermissionRequest(
 }
 
 /**
- * FIX-9: one pending permission per request id, displayed FIFO.
+ * One pending permission per request id, displayed FIFO.
  *
  * Insertion order is display order; answering an entry that is not at the front
  * (the renderer can hold a stale id) removes it without disturbing the rest.

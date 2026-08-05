@@ -31,7 +31,7 @@ function realpathOrSelf(target: string): string {
 }
 
 /**
- * FIX-13: may the renderer list files under `root`? `activeCwd` is the open
+ * May the renderer list files under `root`? `activeCwd` is the open
  * agent project, or null when no session is running.
  *
  * isPathInside rather than a hand-rolled `startsWith(activeCwd + '/')`, because

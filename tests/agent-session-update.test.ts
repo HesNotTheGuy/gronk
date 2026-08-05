@@ -74,9 +74,9 @@ test('turn_completed goes straight to accounting and opens no message', () => {
   )
 })
 
-// FIX-R7: the agent echoes the prompt back, and the live turn already has the
-// user bubble from the renderer and from sendPrompt. This is the duplicated-
-// message bug.
+// The agent echoes the prompt back, and the live turn already has the user
+// bubble from the renderer and from sendPrompt. This is the duplicated-message
+// bug.
 test('a user chunk on a live turn is dropped, not appended', () => {
   const routed = route({ sessionUpdate: 'user_message_chunk', content: { text: 'hello' } })
   assert.deepEqual(routed.action, { type: 'ignore' })

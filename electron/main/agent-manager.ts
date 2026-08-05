@@ -84,7 +84,7 @@ export class AgentManager {
   private state: ConnectionState = 'idle'
   private activeMessageId: string | null = null
   private window: BrowserWindow | null = null
-  /** FIX-9: one pending permission per request id (queue display FIFO) */
+  /** One pending permission per request id (queue display FIFO). */
   private permissions = new PermissionQueue()
   /**
    * Tool kinds the user batch-approved for this agent process only. Cleared on
@@ -96,7 +96,7 @@ export class AgentManager {
   /**
    * When true, ignore ACP history replay chunks (user/assistant/thought).
    * Used when a full local transcript already exists so session/load does not
-   * re-append messages that the agent echoes (FIX-R7 follow-on).
+   * re-append messages that the agent echoes.
    */
   private suppressHistoryReplay = false
   private historyAssistantId: string | null = null
@@ -208,7 +208,7 @@ export class AgentManager {
       throw new Error('grok binary not found')
     }
 
-    // FIX-3: user-supplied override must pass basename + version probe
+    // User-supplied override must pass basename + version probe.
     if (settings.grokBinary) {
       if (!isAllowedGrokBasename(binary)) {
         const msg = 'Grok binary override rejected: basename must be grok (not an arbitrary executable).'
@@ -709,7 +709,7 @@ export class AgentManager {
       effective = 'allow-once'
     }
 
-    // FIX-6: resolve fs/write after user consent
+    // Resolve fs/write after user consent.
     if (pending.fsWrite) {
       if (effective === 'allow-once' || effective === 'allow-always') {
         try {
@@ -861,7 +861,7 @@ export class AgentManager {
         return
       }
 
-      // FIX-8: bound size before full read
+      // Bound size before full read.
       const stat = fs.statSync(safe)
       if (stat.size > MAX_FS_READ_BYTES) {
         this.client?.respondError(
@@ -906,7 +906,7 @@ export class AgentManager {
         fsWrite: { path: safe, content }
       }
 
-      // FIX-6: YOLO still audits; non-YOLO requires user consent
+      // YOLO still audits; non-YOLO requires user consent.
       if (this.autoApproveActive()) {
         fs.mkdirSync(path.dirname(safe), { recursive: true })
         fs.writeFileSync(safe, content, 'utf8')

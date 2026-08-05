@@ -59,7 +59,7 @@
      half of what the model generates. */
   --image-matte: #c2c8cb;
 
-  /* Intentional system stacks only (FIX-R5): no remote CDN, no bundled woff2.
+  /* Intentional system stacks only: no remote CDN, no bundled woff2.
      Identical in dev and packaged builds; no network font requests. */
   /* Intentional system stacks only: no CDN fonts. Display tracks a bit tighter
      so kickers read as HUD labels rather than body text at the same size. */
@@ -4871,6 +4871,8 @@ html[data-theme='light'] .auth-card {
 }
 
 .account-chip {
+  display: block;
+  width: 100%;
   margin-top: 10px;
   padding: 6px 10px;
   font-family: var(--font-mono);
@@ -4878,8 +4880,10 @@ html[data-theme='light'] .auth-card {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   border: 1px solid var(--line);
+  background: transparent;
   color: var(--ink-3);
   text-align: center;
+  cursor: pointer;
   -webkit-app-region: no-drag;
 }
 

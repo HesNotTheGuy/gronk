@@ -73,7 +73,7 @@ function msg(partial: Partial<ChatMessage> & { id: string; role: ChatMessage['ro
   return { text: '', createdAt: 1, ...partial }
 }
 
-// ── Settings + the YOLO acknowledgement guard (FIX-14) ──────────────
+// ── Settings + the YOLO acknowledgement guard ───────────────────────
 
 test('defaults are returned when no store file exists', () => {
   assert.equal(fs.existsSync(storeFile()), false)
@@ -89,7 +89,7 @@ test('YOLO cannot be enabled without an acknowledgement already on disk', () => 
 })
 
 test('ack and enable in the SAME call must not enable YOLO', () => {
-  // The whole point of FIX-14: a single malicious/buggy call cannot self-authorize.
+  // A single malicious/buggy call cannot self-authorize YOLO.
   const after = setSettings({ alwaysApproveAck: true, alwaysApprove: true })
   assert.equal(after.alwaysApprove, false)
   assert.equal(after.permissionMode, 'default')
@@ -534,9 +534,9 @@ test('deleting a session also drops its transcript', () => {
   assert.equal(listSessions().find((s) => s.id === 's1'), undefined)
 })
 
-// ── Transcripts: FIX-R7 duplication and FIX-R1 redaction corruption ──
+// ── Transcripts: duplication and redaction corruption ───────────────
 
-test('an echoed user turn is dropped (FIX-R7)', () => {
+test('an echoed user turn is dropped', () => {
   const cleaned = dedupeTranscriptMessages([
     msg({ id: 'a', role: 'user', text: 'do the thing' }),
     msg({ id: 'b', role: 'assistant', text: 'ok' }),
@@ -573,8 +573,8 @@ test('empty user turns are never de-duplicated against each other', () => {
   assert.equal(cleaned.length, 3)
 })
 
-// FIX-R1: redacting message text corrupted transcripts on reload. Only tool
-// payloads may be redacted — the conversation is the user's own local data.
+// Redacting message text corrupted transcripts on reload. Only tool payloads
+// may be redacted — the conversation is the user's own local data.
 test('message text and thought are persisted verbatim', () => {
   const text = 'my email is user@example.com and the password=hunter2'
   const thought = 'x'.repeat(6000)

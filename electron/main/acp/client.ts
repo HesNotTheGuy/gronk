@@ -93,7 +93,7 @@ export class GrokAcpClient extends EventEmitter {
 
     this.rl = createInterface({ input: this.proc.stdout })
     this.rl.on('line', (line) => {
-      // FIX-8: drop oversized ACP lines to avoid unbounded memory use
+      // Drop oversized ACP lines to avoid unbounded memory use.
       if (line.length > MAX_ACP_LINE_BYTES) {
         console.error(
           '[gronk] dropping oversized ACP line',
@@ -242,7 +242,7 @@ export class GrokAcpClient extends EventEmitter {
     }
 
     if (!optionId) {
-      // FIX-9: never fabricate allow ids or fall back to options[0]
+      // Never fabricate allow ids or fall back to options[0].
       if (decision === 'allow-once') {
         optionId = options.find(
           (o) => /allow/i.test(o.optionId) && !/always/i.test(o.optionId)
@@ -390,7 +390,7 @@ export class GrokAcpClient extends EventEmitter {
 
 // Real CLI is grok / grok.exe. Do not include .cmd/.bat — Node 20+ / Electron 36
 // rejects spawn of batch files without shell:true (EINVAL, post-CVE-2024-27980),
-// and shell:true is unsafe here (FIX-R4).
+// and shell:true is unsafe here.
 const ALLOWED_GROK_BASENAMES = new Set(['grok', 'grok.exe'])
 
 /** Basename must look like the grok CLI (blocks cmd.exe / powershell overrides). */
@@ -447,7 +447,7 @@ export function probeGrokBinary(binary: string, timeoutMs = 4000): Promise<boole
 
 /** Resolve the grok binary in a cross-platform way. */
 export function resolveGrokBinary(override?: string): string | null {
-  // FIX-3: never return a non-grok basename override
+  // Never return a non-grok basename override.
   if (override && fs.existsSync(override) && isAllowedGrokBasename(override)) {
     return override
   }

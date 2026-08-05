@@ -228,6 +228,26 @@ export function SettingsPanel({
             installs stay signed out until they authenticate themselves.
           </p>
           <div className="btn-row">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={authBusy || !health?.grokFound}
+              onClick={() => onLogin('oauth')}
+            >
+              {authBusy
+                ? 'Waiting…'
+                : auth?.authenticated
+                  ? 'Sign in again'
+                  : 'Browser sign-in'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={authBusy || !health?.grokFound}
+              onClick={() => onLogin('device')}
+            >
+              Device code
+            </button>
             {auth?.authenticated ? (
               <button
                 type="button"
@@ -237,26 +257,7 @@ export function SettingsPanel({
               >
                 {authBusy ? 'Working…' : 'Sign out'}
               </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  disabled={authBusy || !health?.grokFound}
-                  onClick={() => onLogin('oauth')}
-                >
-                  {authBusy ? 'Waiting…' : 'Browser sign-in'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  disabled={authBusy || !health?.grokFound}
-                  onClick={() => onLogin('device')}
-                >
-                  Device code
-                </button>
-              </>
-            )}
+            ) : null}
           </div>
         </div>
 
