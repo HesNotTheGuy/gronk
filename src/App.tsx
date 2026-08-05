@@ -52,6 +52,20 @@ export function App() {
     }
   })
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  /** Chat + composer only. Toggle with [ when not typing in a field. */
+  const [focusMode, setFocusMode] = useState(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '[' || e.metaKey || e.ctrlKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t?.closest('input, textarea, select, [contenteditable="true"]')) return
+      e.preventDefault()
+      setFocusMode((v) => !v)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   /**
    * Viewport coords for the portalled Export menu. The menu cannot live inside
    * .topbar: that header sets backdrop-filter, which makes it the containing
@@ -244,7 +258,7 @@ export function App() {
   const hints = inChat ? CHAT_HINTS : PROJECT_HINTS
 
   return (
-    <div className="app">
+    <div className={['app', focusMode ? 'focus-mode' : ''].filter(Boolean).join(' ')}>
       <Sidebar
         authLabel={g.auth?.accountLabel}
         authenticated={g.isAuthenticated}
@@ -312,6 +326,15 @@ export function App() {
             </div>
           </div>
           <div className="topbar-actions">
+            <button
+              type="button"
+              className={`btn btn-sm btn-ghost ${focusMode ? 'active' : ''}`}
+              title="Focus mode: chat + composer only. Toggle with ["
+              aria-pressed={focusMode}
+              onClick={() => setFocusMode((v) => !v)}
+            >
+              {focusMode ? 'Exit focus' : 'Focus'}
+            </button>
             {inProject ? (
               <button
                 type="button"

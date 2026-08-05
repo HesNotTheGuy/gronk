@@ -9,6 +9,7 @@ import { MenuButton } from './MenuButton'
 import type { MenuOption } from './MenuButton'
 import { SessionRow } from './SessionRow'
 import { folderName, isChatSession, pathsEqual } from '../../shared/path'
+import { BrandMark } from './BrandMark'
 
 interface Props {
   authLabel?: string
@@ -245,9 +246,7 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="brand">
-          <div className="brand-mark" aria-hidden>
-            G
-          </div>
+          <BrandMark />
           <div className="brand-text">
             <h1>Gronk</h1>
             <p>Grok desktop</p>
@@ -259,6 +258,7 @@ export function Sidebar({
             type="button"
             className={`nav-item ${surface === 'home' ? 'active' : ''}`}
             onClick={onGoHome}
+            title="Home"
           >
             Home
           </button>
@@ -481,7 +481,7 @@ export function Sidebar({
                               {p.pinned ? <span className="pin-mark" title="Pinned">·</span> : null}
                               {name}
                             </div>
-                            <div className="path">{p.cwd}</div>
+                            {/* Path only on title — the rail is a hop list, not a tree. */}
                           </button>
                           <MenuButton
                             label="Project actions"
@@ -600,7 +600,6 @@ export function Sidebar({
             Sign in
           </button>
         ) : null}
-        {/* Stays hidden until there is something archived: archiving is meant to be quiet */}
         {archivedCount > 0 ? (
           <button
             type="button"
