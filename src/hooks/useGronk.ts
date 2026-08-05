@@ -125,11 +125,20 @@ export function useGronk() {
   /**
    * Set while a restore has painted its end but not yet its beginning.
    *
-   * `messages` is genuinely partial in that window, and two things read it
-   * expecting the whole conversation: the save-to-store effect, which would
-   * truncate the stored transcript to whatever is on screen, and the cache,
-   * which would hand the truncation back on the next visit. Both go through
-   * `settledTranscript` instead.
+   * `messages` is genuinely partial in that window, and THREE things read it
+   * expecting the whole conversation:
+   *
+   * - the debounced save-to-store effect, which would truncate the stored
+   *   transcript to whatever is on screen;
+   * - the `message-done` save, which is the dangerous one because it is
+   *   immediate rather than debounced, and a turn really can complete during a
+   *   restore: the composer stays live throughout one on purpose;
+   * - the transcript cache, which would hand the truncation back on the next
+   *   visit.
+   *
+   * All three go through `settledTranscript`. Anything added here that reads the
+   * transcript to persist or to keep it has to as well, and this count is the
+   * thing to re-derive rather than trust.
    */
   const partialMount = useRef<{ anchorId: string; head: ChatMessage[] } | null>(null)
 
@@ -462,12 +471,18 @@ export function useGronk() {
           // The save deliberately sits OUTSIDE the updater. React may call an
           // updater more than once for a single dispatch, and does so on every
           // render in development, so an IPC write in there ran twice per turn.
-          // Updaters have to be pure; messagesRef holds the same list, written
-          // by the effect that mirrors messages.
+          // Updaters have to be pure.
+          //
+          // settledTranscript, not messagesRef: this write is immediate rather
+          // than debounced, so a turn that completes while a restore has painted
+          // its end and not yet its beginning would put those messages over the
+          // whole stored conversation. That is reachable on purpose, because the
+          // composer stays live during a restore: prompt into a long transcript,
+          // and the turn can finish before the head lands.
           const doneSessionId = event.sessionId
           if (doneSessionId) {
             queueMicrotask(() => {
-              const settled = messagesRef.current.map((m) =>
+              const settled = settledTranscript().map((m) =>
                 m.id === event.messageId ? { ...m, streaming: false } : m
               )
               void window.gronk.saveTranscript(doneSessionId, settled)
@@ -510,7 +525,9 @@ export function useGronk() {
     })
 
     return unsub
-  }, [refreshMeta, refreshSessions, refreshAudit, pinToBottom])
+    // paintTranscript and settledTranscript are both stable, so naming them here
+    // costs no re-subscription and keeps the handler's reads honest.
+  }, [refreshMeta, refreshSessions, refreshAudit, pinToBottom, paintTranscript, settledTranscript])
 
   // Stick-to-bottom only while the user is actually at the end. Streaming
   // updates must not yank the viewport if they scrolled up to read earlier turns.
