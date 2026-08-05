@@ -8,11 +8,14 @@
  * Security rules (do not weaken):
  * - Args are discrete argv (no shell), but a value starting with '-' would be
  *   parsed by grok as a flag → every caller-supplied value goes through
- *   `assertCliToken` (option injection, SKILLS-PLUGINS-SPEC Gotcha #8).
+ *   `assertCliToken`. This is option injection: a plugin or server name is
+ *   attacker-chosen text, and `--trust` in that position is a real escalation.
  * - `mcp list`/`mcp doctor` can echo `-e KEY=value` env and `-H Authorization:`
- *   headers → everything returned across IPC is redacted first (Gotcha #3).
+ *   headers → everything returned across IPC is redacted first. The user's
+ *   third-party API keys live in that config.
  * - Component counts/flags are derived from `components.*` arrays; the flat
- *   `skill_count`/`has_*` fields are unreliable for available entries (Gotcha #5).
+ *   `skill_count`/`has_*` fields are unreliable for entries the user has not
+ *   installed, and reading them shows counts that are simply wrong.
  */
 
 import { redactSecrets, redactValue } from './redact'
@@ -77,7 +80,7 @@ export function assertScope(value: unknown): McpScope {
   throw new Error('Invalid scope: expected user or project')
 }
 
-/** Inline array validation — no array validator exists in the codebase (Gotcha #8). */
+/** Inline because the shared validators cover strings, not arrays of them. */
 export function assertServerArgs(value: unknown): string[] {
   if (value === undefined || value === null) return []
   if (!Array.isArray(value)) throw new Error('Invalid args: expected an array of strings')
@@ -317,8 +320,9 @@ export function mapPlugins(raw: unknown, fallbackStatus: PluginStatus): Plugin[]
 
 // ── Marketplace cache: pinned commits ──────────────────────────────
 //
-// The CLI catalog has no sha, so the pinned commit the trust modal must show
-// (SKILLS-PLUGINS-SPEC §4.2) comes from the clones the CLI already wrote under
+// The CLI catalog has no sha, so the pinned commit the trust modal must show,
+// which is the one fact that says WHICH code is about to be trusted, comes from
+// the clones the CLI already wrote under
 // `~/.grok/marketplace-cache/<hash>/`. Two catalog layouts were read off a real
 // cache; both are handled, and neither is assumed to be present:
 //
@@ -757,7 +761,7 @@ function mapMcpServer(raw: RawMcpServer): McpServer | null {
 
 /**
  * Map + redact. MCP config carries `-e` env values and `-H` auth headers, so
- * nothing leaves this module before passing through redactValue (Gotcha #3).
+ * nothing leaves this module before passing through redactValue.
  * Server env/headers are dropped entirely — the UI never needs them back.
  */
 export function mapMcpServers(raw: unknown): McpServer[] {

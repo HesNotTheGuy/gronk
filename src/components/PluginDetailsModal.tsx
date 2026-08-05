@@ -11,8 +11,10 @@ import {
  * Read-only inspector for a plugin that is already installed (or installed and
  * disabled). Deliberately NOT install-shaped: there is no confirm, no source
  * string handed to the CLI and no path to `--trust`. That flag may only ever
- * originate from PluginTrustModal's explicit confirm
- * (REVIEW-NOTES round 6, "Trust model (do NOT regress)").
+ * originate from PluginTrustModal's explicit confirm. That is the trust model
+ * and it is deliberate: do not add an install affordance here, however small,
+ * because it would let a plugin's code run without the user reading the one
+ * sentence that says it will.
  *
  * Every string below comes from a third-party catalog or plugin manifest and is
  * UNTRUSTED: it is rendered through plainText() as inert text, never as
@@ -73,7 +75,7 @@ export function PluginDetailsModal({
   const source = plainText(installSource(plugin), 200)
 
   // Counts come from components.* only. The flat skill_count / has_* fields are
-  // unreliable and are never read for display (SKILLS-PLUGINS-SPEC §1).
+  // unreliable for catalog entries and are never read for display.
   const counts = componentCounts(plugin)
   const total = counts.skills + counts.commands + counts.agents + counts.mcp + counts.hooks
   const tags = auditPlugin(plugin)

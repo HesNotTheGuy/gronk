@@ -602,7 +602,7 @@ test('live: mcp list --json maps cleanly and leaks nothing', live, async (t) => 
   }
 
   // Redaction is idempotent, so anything the mapper returns that redactSecrets
-  // would still change is a secret that survived (Gotcha #3).
+  // would still change is a secret that survived redaction.
   const leaves = stringLeaves(servers)
   for (const [i, leaf] of leaves.entries()) {
     assert.equal(

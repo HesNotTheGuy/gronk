@@ -77,7 +77,7 @@ test('componentCounts reads only components.*', () => {
   })
 })
 
-// ── Risk audit (SKILLS-PLUGINS-SPEC §4.3) ───────────────────────────
+// ── Risk audit: what the trust modal shows before a plugin runs ─────
 
 test('a plugin with no components declares no risk tags', () => {
   assert.deepEqual(auditPlugin(plugin({})), [])

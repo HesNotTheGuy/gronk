@@ -20,7 +20,7 @@ import {
   parseSkillFrontmatter
 } from '../electron/main/plugins-map'
 
-// ── Option injection (SKILLS-PLUGINS-SPEC Gotcha #8) ────────────────
+// ── Option injection: a name starting with - is parsed as a flag ────
 
 test('assertCliToken rejects values that grok would read as flags', () => {
   for (const bad of ['--trust', '-t', '--permission-mode']) {
@@ -79,7 +79,7 @@ test('env and header pairs are emitted as discrete argv and validated', () => {
   assert.throws(() => assertEnvPairs(['A=1']), /expected an object/)
 })
 
-// ── Plugin mapping (Gotcha #5) ──────────────────────────────────────
+// ── Plugin mapping: counts come from components.*, not the flat fields
 
 test('counts come from components.*, not the lying flat fields', () => {
   const plugin = mapPlugin(
@@ -484,7 +484,7 @@ test('parseGitRemoteUrl reads remote.origin.url and nothing else', () => {
   assert.equal(parseGitRemoteUrl(`[remote "origin"]\n\turl = a${String.fromCharCode(0)}b`), undefined)
 })
 
-// ── MCP mapping + redaction (Gotcha #3) ─────────────────────────────
+// ── MCP mapping + redaction: -e env and -H headers carry API keys ───
 
 test('MCP servers are redacted before crossing IPC', () => {
   const [server] = mapMcpServers([

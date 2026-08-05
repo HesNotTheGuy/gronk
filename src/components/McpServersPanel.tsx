@@ -67,7 +67,7 @@ export function McpServersPanel({ servers, busyName, onAdd, onRemove }: Props) {
     }
     setFormError(null)
     // MVP: user scope only. The CLI helper has no cwd, so -s project would write into
-    // Gronk's own directory instead of the project (SKILLS-PLUGINS-SPEC §5).
+    // Gronk's own directory instead of the project, silently.
     onAdd({ name: n, commandOrUrl: target, transport, scope: 'user' })
     reset()
     setShowForm(false)
