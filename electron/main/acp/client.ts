@@ -445,6 +445,72 @@ export function probeGrokBinary(binary: string, timeoutMs = 4000): Promise<boole
   })
 }
 
+/**
+ * Every absolute path worth trying, in order, before touching the disk.
+ *
+ * Pure so the mac and linux orderings can be tested from any machine, which
+ * matters because nobody working on this has a mac and the paths that need to be
+ * right are exactly the ones we cannot exercise.
+ *
+ * The absolute entries are not a convenience, they are the fix for a real report:
+ * a macOS GUI app inherits launchd's PATH, not the shell's, so a CLI the user
+ * just installed into /opt/homebrew/bin is invisible to a PATH scan even though
+ * it is plainly on the disk. Anything a mac installer commonly writes to has to
+ * be named here or it does not exist as far as Gronk is concerned.
+ */
+export function grokBinaryCandidates(opts: {
+  platform: NodeJS.Platform
+  home: string
+  grokHomeDir: string
+  pathEnv: string
+  /** path.join / path.delimiter differ per platform; injected so tests can pin either. */
+  join?: (...parts: string[]) => string
+  delimiter?: string
+}): string[] {
+  const join = opts.join ?? path.join
+  const delimiter = opts.delimiter ?? path.delimiter
+  const exe = opts.platform === 'win32' ? 'grok.exe' : 'grok'
+  const candidates: string[] = []
+
+  // Same override as everywhere else: a relocated CLI install must be found
+  // by the launcher too, not only by the readers of its state.
+  candidates.push(join(opts.grokHomeDir, 'bin', exe))
+
+  if (opts.platform === 'darwin') {
+    candidates.push(
+      // Homebrew on Apple Silicon, then Intel. Also where most installers and
+      // `npm i -g` land when node itself came from Homebrew.
+      '/opt/homebrew/bin/grok',
+      '/usr/local/bin/grok',
+      // MacPorts.
+      '/opt/local/bin/grok',
+      // Installer scripts and pipx-style layouts that avoid sudo.
+      join(opts.home, '.local', 'bin', 'grok'),
+      join(opts.home, 'bin', 'grok'),
+      // Bun and pnpm keep their own global bins outside PATH for GUI apps.
+      join(opts.home, '.bun', 'bin', 'grok'),
+      join(opts.home, 'Library', 'pnpm', 'grok')
+    )
+  } else if (opts.platform === 'linux') {
+    candidates.push(
+      '/usr/local/bin/grok',
+      join(opts.home, '.local', 'bin', 'grok'),
+      join(opts.home, 'bin', 'grok'),
+      join(opts.home, '.bun', 'bin', 'grok')
+    )
+  }
+
+  for (const dir of opts.pathEnv.split(delimiter)) {
+    if (!dir) continue
+    candidates.push(join(dir, exe))
+  }
+
+  // Order is the contract: first match wins, and the absolute entries are ahead
+  // of PATH on purpose so a GUI-launched app finds the same binary a terminal
+  // would. Duplicates are dropped rather than probed twice.
+  return [...new Set(candidates)]
+}
+
 /** Resolve the grok binary in a cross-platform way. */
 export function resolveGrokBinary(override?: string): string | null {
   // FIX-3: never return a non-grok basename override
@@ -452,26 +518,12 @@ export function resolveGrokBinary(override?: string): string | null {
     return override
   }
 
-  const home = os.homedir()
-  const isWin = process.platform === 'win32'
-  const exe = isWin ? 'grok.exe' : 'grok'
-  const candidates: string[] = []
-
-  // Same override as everywhere else: a relocated CLI install must be found
-  // by the launcher too, not only by the readers of its state.
-  candidates.push(path.join(grokHome(), 'bin', exe))
-
-  if (process.platform === 'darwin') {
-    candidates.push('/usr/local/bin/grok', '/opt/homebrew/bin/grok')
-  } else if (process.platform === 'linux') {
-    candidates.push('/usr/local/bin/grok', path.join(home, '.local', 'bin', 'grok'))
-  }
-
-  const pathEnv = process.env.PATH || process.env.Path || ''
-  for (const dir of pathEnv.split(path.delimiter)) {
-    if (!dir) continue
-    candidates.push(path.join(dir, exe))
-  }
+  const candidates = grokBinaryCandidates({
+    platform: process.platform,
+    home: os.homedir(),
+    grokHomeDir: grokHome(),
+    pathEnv: process.env.PATH || process.env.Path || ''
+  })
 
   for (const c of candidates) {
     try {
