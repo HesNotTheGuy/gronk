@@ -11,7 +11,7 @@
  * seeing sessions.
  */
 
-import type { SessionInfo } from '../../shared/types'
+import type { ConnectionState, SessionInfo } from '../../shared/types'
 import { folderName, isChatSession, pathsEqual } from '../../shared/path'
 
 export type SessionNavMode = 'recent' | 'by-project'
@@ -189,4 +189,42 @@ export function buildSessionNav(input: SessionNavInput): SessionNavResult {
 export function sessionNavMeta(entry: SessionNavEntry, now = Date.now()): string {
   const date = new Date(entry.session.updatedAt || now).toLocaleDateString()
   return `${entry.projectLabel} · ${date}`
+}
+
+/**
+ * Does clicking this session need a full reload, or is the user already in it?
+ *
+ * `selectSession` had no guard, so clicking the session already on screen tore
+ * it down and rebuilt it: clear the transcript, set hydrating, round trip
+ * through loadSession, re-render every message. That compounds with everything
+ * else about reopening, because a needless reselect pays the whole restore cost
+ * and switches the composer off while it happens.
+ *
+ * The id alone is the wrong test, and this is the case the guard is written
+ * around: a session that FAILED to load has the same id as the one the user
+ * wants to retry. Guarding on the id would make the retry click do nothing,
+ * which is a worse bug than the one being fixed and a much more confusing one.
+ * So the session has to be both current AND healthy to be skipped.
+ *
+ * Healthy means the agent is actually up (`ready`) and no error is showing.
+ * There is no per-session error state to consult; `connection` and the single
+ * `error` string are what the renderer has.
+ */
+export function needsSessionReload(input: {
+  /** The session the user just clicked. */
+  requestedId: string
+  /** The session currently on screen, if any. */
+  activeId: string | null
+  connection: ConnectionState
+  /** The renderer's current error, if any. */
+  error: string | null
+  /** A restore is already in flight. */
+  hydrating: boolean
+}): boolean {
+  if (input.activeId === null) return true
+  if (input.requestedId !== input.activeId) return true
+  // Same session. Reload only if it is not currently in a good state.
+  if (input.error !== null) return true
+  if (input.hydrating) return true
+  return input.connection !== 'ready'
 }
