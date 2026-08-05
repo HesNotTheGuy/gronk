@@ -116,7 +116,14 @@ export function MenuButton({
         title={title}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={toggle}
+        onClick={(e) => {
+          // Defensive only. SessionRow keeps this control as a sibling of the
+          // select <button>, and the open menu is portalled (outside-click already
+          // ignores popRef). No menu click can reach onSelect in today's layout.
+          // Kept so a future wrap under a clickable parent does not start bubbling.
+          e.stopPropagation()
+          toggle()
+        }}
       >
         {trigger === 'icon' ? (
           <span className="menu-btn-glyph" aria-hidden>
