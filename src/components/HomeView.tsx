@@ -6,6 +6,7 @@ import {
   sessionFrequencyLabel,
   sessionHeat
 } from '../lib/activity'
+import type { ActivityCalendarState } from '../hooks/useActivityCalendar'
 import { ActivityCalendar } from './ActivityCalendar'
 import { SessionCard } from './SessionCard'
 
@@ -17,6 +18,11 @@ interface Props {
   authLabel?: string
   grokFound: boolean
   model?: string
+  /** Parent-owned calendar so Home unmount does not drop the grid. */
+  activityCalendar: ActivityCalendarState
+  /** Local day currently filtering the sidebar, if any. */
+  selectedActivityDay?: string | null
+  onSelectActivityDay?: (dayKey: string) => void
   onOpenChat: () => void
   onOpenProjects: () => void
   onOpenProject: (cwd: string) => void
@@ -35,6 +41,9 @@ export function HomeView({
   authLabel,
   grokFound,
   model,
+  activityCalendar,
+  selectedActivityDay = null,
+  onSelectActivityDay,
   onOpenChat,
   onOpenProjects,
   onOpenProject,
@@ -107,10 +116,12 @@ export function HomeView({
 
       {/* Single scrollable feed: one panel so sections never overlay each other */}
       <section className="home-feed">
-        {/* Fetches its own data. No props, so Home does not have to thread the
-            calendar through every parent that renders it. */}
         <div className="home-feed-block">
-          <ActivityCalendar />
+          <ActivityCalendar
+            state={activityCalendar}
+            selectedDay={selectedActivityDay}
+            onSelectDay={onSelectActivityDay}
+          />
         </div>
 
         <div className="home-feed-block">

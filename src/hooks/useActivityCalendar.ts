@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { ActivityCalendar } from '../../shared/types'
 
 /** A year of squares: the window the main process defaults to. */
@@ -15,19 +15,29 @@ export interface ActivityCalendarState {
 /**
  * Per-day activity for the Home heatmap.
  *
- * A hook of its own rather than another field on useGronk(): building the
- * calendar re-reads every stored transcript, and folding it into refreshMeta
- * would pay that cost on every settings change, session rename and login, all
- * for a panel that is only on screen on Home. Mounting the panel is the event
- * that needs the data, so mounting the panel is what fetches it.
+ * Kept out of useGronk / refreshMeta on purpose: building the calendar re-reads
+ * every stored transcript (up to 50 sessions — see activity.ts getActivityCalendar),
+ * and that cost is justified as paid on a Home visit, not per frame and not on
+ * every completed turn.
+ *
+ * The hook lives above the Home surface switch so navigating away does not
+ * unmount it and wipe the painted grid. It does **not** auto-fetch on session
+ * catalog changes. The host calls `refresh()` when Home becomes visible; soft
+ * refresh keeps the last calendar painted while the next one loads.
  */
-export function useActivityCalendar(days: number = ACTIVITY_CALENDAR_DAYS): ActivityCalendarState {
+export function useActivityCalendar(
+  days: number = ACTIVITY_CALENDAR_DAYS
+): ActivityCalendarState {
   const [calendar, setCalendar] = useState<ActivityCalendar | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const calendarRef = useRef<ActivityCalendar | null>(null)
+  calendarRef.current = calendar
 
   const refresh = useCallback(async () => {
-    setLoading(true)
+    // Soft refetch: only the empty first paint shows "Reading…". Returning to
+    // Home must not blank the grid while the next calendar arrives.
+    if (!calendarRef.current) setLoading(true)
     try {
       setCalendar(await window.gronk.getActivityCalendar(days))
       setError(null)
@@ -37,10 +47,6 @@ export function useActivityCalendar(days: number = ACTIVITY_CALENDAR_DAYS): Acti
       setLoading(false)
     }
   }, [days])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
 
   return { calendar, loading, error, refresh }
 }

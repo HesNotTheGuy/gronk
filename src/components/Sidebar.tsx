@@ -14,6 +14,7 @@ import {
   SESSION_NAV_LIMIT,
   type SessionNavMode
 } from '../lib/session-nav'
+import { filterSessionsByLocalDay } from '../lib/session-day'
 
 interface Props {
   authLabel?: string
@@ -31,6 +32,14 @@ interface Props {
   activeSessionId: string | null
   /** Archived sessions across both surfaces. The entry point is hidden at 0 */
   archivedCount: number
+  /**
+   * Transient heatmap day filter (`YYYY-MM-DD` local). Orthogonal to Recent /
+   * By project — applied before buildSessionNav. Not a SessionNavMode.
+   */
+  activityDayFilter?: string | null
+  /** Human label for the chip, e.g. "Mon 14 Jul 2025". */
+  activityDayFilterLabel?: string | null
+  onClearActivityDayFilter?: () => void
   onGoHome: () => void
   onGoChat: () => void
   onGoProjects: () => void
@@ -109,6 +118,9 @@ export function Sidebar({
   activeCwd,
   activeSessionId,
   archivedCount,
+  activityDayFilter = null,
+  activityDayFilterLabel = null,
+  onClearActivityDayFilter,
   onGoHome,
   onGoChat,
   onGoProjects,
@@ -190,19 +202,24 @@ export function Sidebar({
   }, [chatSessions, projectSessions])
 
   /**
-   * Build rail: every project session, not only the open folder. Ordering and
-   * grouping live in session-nav.ts so the suite can mutation-check them.
+   * Day filter first (local updatedAt day), then session-nav order/group.
+   * Transient filter is orthogonal to Recent / By project.
    */
+  const filteredProjectSessions = useMemo(
+    () => filterSessionsByLocalDay(projectSessions, activityDayFilter),
+    [projectSessions, activityDayFilter]
+  )
+
   const projectSessionNav = useMemo(
     () =>
       buildSessionNav({
-        sessions: projectSessions,
+        sessions: filteredProjectSessions,
         projects,
         mode: sessionMode,
         chatWorkspacePath,
         limit: SESSION_NAV_LIMIT
       }),
-    [projectSessions, projects, sessionMode, chatWorkspacePath]
+    [filteredProjectSessions, projects, sessionMode, chatWorkspacePath]
   )
 
   const projectSessionCount = useMemo(() => {
@@ -211,8 +228,11 @@ export function Sidebar({
   }, [projectSessionNav])
 
   const chatListAll = useMemo(
-    () => [...chatSessions].sort((a, b) => b.updatedAt - a.updatedAt),
-    [chatSessions]
+    () =>
+      filterSessionsByLocalDay(chatSessions, activityDayFilter).sort(
+        (a, b) => b.updatedAt - a.updatedAt
+      ),
+    [chatSessions, activityDayFilter]
   )
 
   const chatList = useMemo(() => chatListAll.slice(0, LIST_LIMIT), [chatListAll])
@@ -382,8 +402,25 @@ export function Sidebar({
                     New chat
                   </button>
                 </div>
+                {activityDayFilter ? (
+                  <div className="session-day-filter" role="status">
+                    <span className="session-day-filter-label" title={activityDayFilter}>
+                      {activityDayFilterLabel || activityDayFilter}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-mini"
+                      onClick={() => onClearActivityDayFilter?.()}
+                      title="Show chats from every day again"
+                    >
+                      Clear day
+                    </button>
+                  </div>
+                ) : null}
                 {chatList.length === 0 ? (
-                  <div className="muted-note">No chats yet</div>
+                  <div className="muted-note">
+                    {activityDayFilter ? 'No chats last updated this day' : 'No chats yet'}
+                  </div>
                 ) : (
                   chatList.map((s) => (
                     <SessionRow
@@ -464,8 +501,25 @@ export function Sidebar({
                 </button>
               </div>
             </div>
+            {activityDayFilter ? (
+              <div className="session-day-filter" role="status">
+                <span className="session-day-filter-label" title={activityDayFilter}>
+                  {activityDayFilterLabel || activityDayFilter}
+                </span>
+                <button
+                  type="button"
+                  className="btn-mini"
+                  onClick={() => onClearActivityDayFilter?.()}
+                  title="Show sessions from every day again"
+                >
+                  Clear day
+                </button>
+              </div>
+            ) : null}
             {projectSessionCount === 0 ? (
-              <div className="muted-note">No sessions yet</div>
+              <div className="muted-note">
+                {activityDayFilter ? 'No sessions last updated this day' : 'No sessions yet'}
+              </div>
             ) : projectSessionNav.mode === 'recent' ? (
               projectSessionNav.entries.map((entry) => {
                 const s = entry.session

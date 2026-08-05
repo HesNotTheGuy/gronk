@@ -22,7 +22,9 @@ import { PaneSplitter } from './components/PaneSplitter'
 import { PreviewPane } from './components/PreviewPane'
 
 import { useGronk } from './hooks/useGronk'
+import { useActivityCalendar } from './hooks/useActivityCalendar'
 import { folderName, isChatSession } from '../shared/path'
+import { formatDayLabel } from './lib/calendar'
 import type { LoginMethod, SessionInfo } from '../shared/types'
 
 const ONBOARD_HIDE_KEY = 'gronk.onboarding.hide'
@@ -41,6 +43,19 @@ const CHAT_HINTS = [
 
 export function App() {
   const g = useGronk()
+  /**
+   * Lifted above Home so leaving the surface does not wipe the painted grid.
+   * Refreshed only when Home becomes visible — getActivityCalendar re-reads up
+   * to 50 transcripts, which activity.ts pays on a Home visit, not per turn.
+   */
+  const activityCalendar = useActivityCalendar()
+  /**
+   * Transient day filter from the heatmap. Not a SessionNavMode: Recent / By
+   * project still apply on top. Cleared explicitly (chip) or by re-clicking the
+   * same day. Not persisted — leaving and coming back should not trap you in a
+   * day you forgot you picked.
+   */
+  const [selectedActivityDay, setSelectedActivityDay] = useState<string | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -97,6 +112,21 @@ export function App() {
   const inConversation = !g.browsing && (surface === 'chat' || surface === 'project') && !!g.cwd
   const inChat = inConversation && surface === 'chat'
   const inProject = inConversation && surface === 'project'
+
+  // Soft-refresh the calendar when Home is shown. Not on session catalog churn:
+  // every completed turn would otherwise re-read every transcript.
+  useEffect(() => {
+    if (surface !== 'home') return
+    void activityCalendar.refresh()
+  }, [surface, activityCalendar.refresh])
+
+  /** Day click on the heatmap: toggle if same day, else set, then show Build rail. */
+  const selectActivityDay = (dayKey: string): void => {
+    setSelectedActivityDay((prev) => (prev === dayKey ? null : dayKey))
+    // Home's sidebar has no session list; Build does. Land there so the filter
+    // is something the user can see without an extra hop.
+    g.goProjects()
+  }
 
   /**
    * The Export menu portals out of .app, so it would otherwise float above a
@@ -270,6 +300,11 @@ export function App() {
         activeCwd={g.cwd}
         activeSessionId={g.sessionId}
         archivedCount={g.archivedSessions.length}
+        activityDayFilter={selectedActivityDay}
+        activityDayFilterLabel={
+          selectedActivityDay ? formatDayLabel(selectedActivityDay) : null
+        }
+        onClearActivityDayFilter={() => setSelectedActivityDay(null)}
         onGoHome={() => g.goHome()}
         onGoChat={() => g.goChat()}
         onGoProjects={() => g.goProjects()}
@@ -569,6 +604,9 @@ export function App() {
               authLabel={g.auth?.accountLabel}
               grokFound={!!g.grokPath || !!g.health?.grokFound}
               model={g.settings?.model}
+              activityCalendar={activityCalendar}
+              selectedActivityDay={selectedActivityDay}
+              onSelectActivityDay={selectActivityDay}
               onOpenChat={() => g.goChat()}
               onOpenProjects={() => g.goProjects()}
               onOpenProject={(cwd) => openProject(cwd)}
