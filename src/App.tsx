@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AuthGate } from './components/AuthGate'
 import { ChatHome } from './components/ChatHome'
@@ -97,6 +97,17 @@ export function App() {
   const inConversation = !g.browsing && (surface === 'chat' || surface === 'project') && !!g.cwd
   const inChat = inConversation && surface === 'chat'
   const inProject = inConversation && surface === 'project'
+
+  /**
+   * Stable across App re-renders. An inline `(id) => void g.retryPrompt(id)`
+   * is a new function every token and busts MessageRow memo for every row.
+   */
+  const onRetryPrompt = useCallback(
+    (id: string) => {
+      void g.retryPrompt(id)
+    },
+    [g.retryPrompt]
+  )
 
   /**
    * The Export menu portals out of .app, so it would otherwise float above a
@@ -668,7 +679,7 @@ export function App() {
                   <MessageList
                     messages={g.messages}
                     canRetry={g.connection === 'ready' && !g.busy}
-                    onRetry={(id) => void g.retryPrompt(id)}
+                    onRetry={onRetryPrompt}
                   />
                 </>
               )}
