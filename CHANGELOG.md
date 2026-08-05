@@ -4,6 +4,76 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-05
+
+Almost all of this is the same complaint from several directions: Gronk got
+slower the longer a conversation ran, and the causes turned out to be unrelated
+to each other.
+
+### Changed
+
+- **Streaming no longer re-reads the whole conversation on every word.** Each
+  token rebuilt the message list, so every message on screen re-ran its markdown
+  parse — about 40 ms of parsing per token in a 150-message thread, which is what
+  made the chat feel like it was seizing. Only the part that actually grew is
+  re-parsed now, measured at about 0.24 ms for the same token. The agent panel
+  also stopped re-scanning the transcript on tokens that contained no tool
+  activity, which was a second full pass on top of the first.
+
+- **Reopening a session shows you the end of it immediately.** The whole
+  transcript used to render before anything appeared. The last stretch now paints
+  first — which is where you were reading anyway — and the rest fills in behind
+  without holding the keyboard. Sessions you have already opened are kept in
+  memory, so flipping between two of them does not re-read either from disk.
+
+- **Answering a permission prompt no longer rewrites your whole store.** The
+  permission audit lived inside `gronk-store.json`, so every decision re-read,
+  re-serialized and re-wrote every stored transcript before the app could
+  continue — and in auto-approve mode that happened on every tool call, not just
+  the ones you clicked. The audit has its own file now.
+
+- **The Build panel is the session list.** Flat and newest-first by default, with
+  a control to group by project instead. Reaching a conversation no longer means
+  walking a hierarchy first.
+
+- **The activity chart loads when you visit Home** and stays painted when you
+  navigate away, instead of rebuilding from every stored transcript each time a
+  turn finished.
+
+### Added
+
+- **A scratchpad per project**, in the tray above the composer. It belongs to the
+  folder rather than to a session, so it outlives a project dropping off the
+  recent list. The tray shows a word count rather than a preview, because that
+  rail is on screen for the whole session and a scratchpad is where you park the
+  thing you did not want on display.
+
+- **Click a day on the activity chart** to filter the session list to that day.
+  Transient: it clears with the chip and is not remembered between launches.
+
+- **The sidebar footer says which build you are running** — version, channel and
+  commit — so a bug report can name the build it came from.
+
+### Fixed
+
+- **The selected session row actually highlights.** The rule that styled it never
+  matched the class the row emitted, so the open conversation looked identical to
+  every other one in the list.
+
+- **A wrong "signed in" state can be corrected.** If the app believed you were
+  signed in when you were not, Settings hid both login buttons behind that belief
+  and there was nothing left to press. Sign-in stays reachable either way, and
+  the sidebar account chip is now a button. Changing the grok binary also drops
+  the cached auth and model answers, which were still describing the previous
+  one. Thanks to [@0xPBIT](https://github.com/0xPBIT) for finding and fixing this.
+
+- **A successful `grok models` is no longer treated as evidence of an account.**
+  It only proves the CLI runs.
+
+- **Clicking the session you are already in no longer rebuilds it**, and the
+  agent tab no longer presents a restored session's entire history as current
+  work.
+
 ## [0.2.0] - 2026-08-04
 
 ### Added
@@ -353,6 +423,8 @@ private repository, so there is no earlier entry to compare against.
   warn on first launch.
 - No automatic updates. Code signing has to land first.
 
+[0.3.0]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.3.0
+[0.2.0]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.2.0
 [0.1.8]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.8
 [0.1.7]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.7
 [0.1.6]: https://github.com/HesNotTheGuy/gronk/releases/tag/v0.1.6
