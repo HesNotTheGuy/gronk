@@ -87,9 +87,9 @@ they matched and which surface they came from.
 
 Every skill on your machine, yours and the ones bundled with the CLI. A skill is
 a folder containing `SKILL.md`. Dropping it into `~/.grok/skills` is the whole
-install. Skills appear next to Installed plugins in the Plugins & Skills panel.
+install.
 
-![The Plugins and Skills panel with the Skills area available next to Installed plugins](docs/images/skills.png)
+![The Plugins and Skills panel, reached from Settings](docs/images/skills.png)
 
 ### Know where a plugin came from
 
