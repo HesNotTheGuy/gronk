@@ -87,7 +87,7 @@ export function useAppSettings({ cwd, connection, restartAgent, setAuth }: Setti
   }, [])
 
   const updateSettings = useCallback(async (partial: Partial<AppSettings>) => {
-    // FIX-14: re-confirm YOLO every enable (not only first install)
+    // Re-confirm YOLO every enable (not only first install).
     if (
       partial.alwaysApprove === true ||
       partial.permissionMode === 'bypassPermissions'
@@ -108,7 +108,7 @@ export function useAppSettings({ cwd, connection, restartAgent, setAuth }: Setti
   }, [])
 
   const confirmYolo = useCallback(async () => {
-    // Two-step so store guard sees priorAck (FIX-14)
+    // Two-step so the store guard sees priorAck before enable.
     await window.gronk.setSettings({ alwaysApproveAck: true })
     const next = await window.gronk.setSettings({
       alwaysApprove: true,

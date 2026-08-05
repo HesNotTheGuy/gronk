@@ -581,9 +581,14 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-footer">
-        <div className={`account-chip ${authenticated ? 'ok' : 'bad'}`}>
+        <button
+          type="button"
+          className={`account-chip ${authenticated ? 'ok' : 'bad'}`}
+          onClick={onSignIn}
+          title={authenticated ? 'Account / sign in again' : 'Sign in'}
+        >
           {authenticated ? authLabel || 'Signed in' : 'Not signed in'}
-        </div>
+        </button>
         {!authenticated ? (
           <button type="button" className="btn btn-primary btn-block" onClick={onSignIn}>
             Sign in

@@ -191,7 +191,7 @@ function registerIpc(): void {
 }
 
 function hardenSession(): void {
-  // CSP on both dev and prod (FIX-R2). Dev relaxes only what Vite HMR needs,
+  // CSP on both dev and prod. Dev relaxes only what Vite HMR needs,
   // and is otherwise identical so a policy problem cannot hide until packaging.
   //
   // img-src deliberately EXCLUDES https:. The renderer displays model output as

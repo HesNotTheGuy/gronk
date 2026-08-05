@@ -42,7 +42,7 @@ test('redacts email addresses', () => {
   assert.equal(redactSecrets('mail me at user@example.com please'), 'mail me at [redacted-email] please')
 })
 
-// FIX-R1 guard: over-eager redaction corrupted transcripts on reload.
+// Over-eager redaction corrupted transcripts on reload.
 test('ordinary prose and paths survive untouched', () => {
   const prose = 'The quick brown fox. Version 1.2.3 at C:/Users/x/file.ts task-runner'
   assert.equal(redactSecrets(prose), prose)

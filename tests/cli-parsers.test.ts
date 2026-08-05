@@ -52,7 +52,7 @@ test('the built-in fallback list is non-empty and has exactly one default', () =
   assert.equal(fallback.filter((m) => m.isDefault).length, 1)
 })
 
-// ── Auth label: FIX-18, never surface an email ──────────────────────
+// ── Auth label: never surface an email ──────────────────────────────
 
 test('a provider label is surfaced as-is', () => {
   assert.equal(parseLoginLabel('You are logged in with grok.com.'), 'grok.com')

@@ -7,9 +7,11 @@ import { ipcMain } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { clampCalendarDays, getActivityCalendar } from '../activity'
+import { invalidateAuthCache } from '../auth'
 import { invalidateCliVersionCache } from '../cli-version'
 import { chatWorkspacePath } from '../data-dir'
 import { assertTrustedSender } from '../ipc-guard'
+import { invalidateModelsCache } from '../models'
 import {
   addRecentProject,
   getPermissionAudit,
@@ -33,9 +35,13 @@ export function registerSettingsIpc(): void {
   ipcMain.handle('gronk:set-settings', (e, partial: Partial<AppSettings>) => {
     assertTrustedSender(e)
     if (!partial || typeof partial !== 'object') throw new Error('Invalid settings')
-    // A different binary is a different CLI, so its cached version is now a
-    // claim about a file the app no longer runs.
-    if ('grokBinary' in partial) invalidateCliVersionCache()
+    // A different binary is a different CLI: version, models, and auth probes
+    // all become claims about a file the app no longer runs.
+    if ('grokBinary' in partial) {
+      invalidateCliVersionCache()
+      invalidateModelsCache()
+      invalidateAuthCache()
+    }
     return setSettings(partial)
   })
 

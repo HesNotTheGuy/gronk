@@ -131,7 +131,7 @@ export function PermissionModal({ request, onRespond }: Props) {
         </div>
 
         <div className="modal-actions">
-          {/* FIX-15: Deny is primary / leftmost safe default */}
+          {/* Deny is primary / leftmost safe default. */}
           <button
             type="button"
             className="btn btn-primary"

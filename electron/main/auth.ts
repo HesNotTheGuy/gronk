@@ -101,7 +101,7 @@ export function sanitizeCliText(text: string): string {
   return redactSecrets(text).trim()
 }
 
-/** FIX-18: never surface emails in accountLabel */
+/** Never surface emails in accountLabel. */
 export function parseLoginLabel(modelsOut: string): string | undefined {
   // e.g. "You are logged in with grok.com."
   // The trailing period is anchored to end-of-line. A lazy `(.+?)(?:\.|$)` stopped

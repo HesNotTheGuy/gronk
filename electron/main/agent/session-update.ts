@@ -83,7 +83,7 @@ export function routeSessionUpdate(
     return { sessionId, assistantScoped: false, action: { type: 'usage', update } }
   }
 
-  // FIX-R7: a live turn already has its user bubble (renderer optimistic write +
+  // A live turn already has its user bubble (renderer optimistic write +
   // sendPrompt), and the agent echoes the prompt back as user_message_chunk.
   // Only rebuild user turns while replaying, and only when the local transcript
   // did not already supply them.

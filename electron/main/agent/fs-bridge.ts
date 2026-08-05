@@ -10,11 +10,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-/** FIX-8: read the size before the bytes, so a huge file cannot be slurped into memory. */
+/** Read the size before the bytes, so a huge file cannot be slurped into memory. */
 export const MAX_FS_READ_BYTES = 4 * 1024 * 1024 // 4 MB
 
 /**
- * FIX-5: resolve `filePath` inside the project root, or refuse.
+ * Resolve `filePath` inside the project root, or refuse.
  *
  * Realpath-aware in both directions: the root is resolved first so a symlinked
  * project folder still matches, and the deepest existing ancestor of the target
