@@ -446,15 +446,23 @@ test('pinned projects sort above recency', () => {
 })
 
 // ── Project notes ───────────────────────────────────────────────────
+//
+// Keys are compared through normalizeCwd rather than written out. A literal
+// 'C:/work/alpha' is the key on Windows and a relative path resolved against the
+// test runner's cwd on the other three CI legs, so hard-coding it passes on one
+// platform and fails on three.
+
+const ALPHA = normalizeCwd('C:/work/alpha')
+const BETA = normalizeCwd('C:/work/beta')
 
 test('a note is stored under the normalized cwd and read straight back', () => {
-  // Backslashes and a trailing separator all resolve to the one key, so the same
+  // Backslashes and a trailing separator resolve to the one key, so the same
   // folder cannot end up holding two different notes.
-  setProjectNote('C:\\work\\alpha', 'check the retry path')
+  setProjectNote(['C:', 'work', 'alpha'].join('\\'), 'check the retry path')
   setProjectNote('C:/work/beta/', 'and this one')
   assert.deepEqual(getProjectNotes(), {
-    'C:/work/alpha': 'check the retry path',
-    'C:/work/beta': 'and this one'
+    [ALPHA]: 'check the retry path',
+    [BETA]: 'and this one'
   })
 })
 
@@ -463,7 +471,7 @@ test('an empty note forgets the entry rather than storing an empty string', () =
   const after = setProjectNote('C:/work/alpha', '')
   assert.deepEqual(after, {})
   // Otherwise every folder ever opened accumulates a key that means nothing.
-  assert.equal('C:/work/alpha' in (readStoreFile().projectNotes as object), false)
+  assert.equal(ALPHA in (readStoreFile().projectNotes as object), false)
 })
 
 test('a note is NOT redacted on the way to disk', () => {
@@ -472,7 +480,7 @@ test('a note is NOT redacted on the way to disk', () => {
   // rewriting it would be worse than not having one.
   const note = 'staging key is sk-live-abcd1234, rotate it on Friday'
   setProjectNote('C:/work/alpha', note)
-  assert.equal((readStoreFile().projectNotes as Record<string, string>)['C:/work/alpha'], note)
+  assert.equal((readStoreFile().projectNotes as Record<string, string>)[ALPHA], note)
 })
 
 test('a note survives its project falling off the recent rail', () => {
@@ -483,14 +491,14 @@ test('a note survives its project falling off the recent rail', () => {
   setProjectNote('C:/work/alpha', 'keep me')
   removeRecentProject('C:/work/alpha')
   for (let i = 0; i < 20; i++) addRecentProject(`C:/work/p${i}`)
-  assert.equal(getProjectNotes()['C:/work/alpha'], 'keep me')
+  assert.equal(getProjectNotes()[ALPHA], 'keep me')
 })
 
 test('notes for other projects are untouched by a save', () => {
   setProjectNote('C:/work/alpha', 'a')
   setProjectNote('C:/work/beta', 'b')
   setProjectNote('C:/work/alpha', '')
-  assert.deepEqual(getProjectNotes(), { 'C:/work/beta': 'b' })
+  assert.deepEqual(getProjectNotes(), { [BETA]: 'b' })
 })
 
 test('a projectNotes key that is not a string map is discarded on read', () => {
