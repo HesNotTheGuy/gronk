@@ -2,8 +2,9 @@ import type { Plugin, PluginComponent } from '../../shared/types'
 import { auditPlugin, componentLine, installSource, plainText } from '../lib/plugin-view'
 
 /**
- * The sentence every user must read before a plugin's code runs on their machine
- * (SKILLS-PLUGINS-SPEC §4.4). Kept verbatim as a constant so it cannot drift.
+ * The sentence every user must read before a plugin's code runs on their
+ * machine. Kept verbatim as a constant so it cannot drift into something
+ * softer: this wording is the whole informed half of informed consent.
  */
 const TRUST_SENTENCE =
   "Installing runs this plugin's code (hooks and servers) on your computer with your permissions. Gronk's file protections do not apply to it."

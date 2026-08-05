@@ -5,10 +5,16 @@ import type {
   SessionInfo,
   SessionSearchHit
 } from '../../shared/types'
-import { MenuButton } from './MenuButton'
-import type { MenuOption } from './MenuButton'
 import { SessionRow } from './SessionRow'
-import { folderName, isChatSession, pathsEqual } from '../../shared/path'
+import { folderName, isChatSession } from '../../shared/path'
+import { BrandMark } from './BrandMark'
+import {
+  buildSessionNav,
+  sessionNavMeta,
+  SESSION_NAV_LIMIT,
+  type SessionNavMode
+} from '../lib/session-nav'
+import { filterSessionsByLocalDay } from '../lib/session-day'
 
 interface Props {
   authLabel?: string
@@ -26,6 +32,14 @@ interface Props {
   activeSessionId: string | null
   /** Archived sessions across both surfaces. The entry point is hidden at 0 */
   archivedCount: number
+  /**
+   * Transient heatmap day filter (`YYYY-MM-DD` local). Orthogonal to Recent /
+   * By project — applied before buildSessionNav. Not a SessionNavMode.
+   */
+  activityDayFilter?: string | null
+  /** Human label for the chip, e.g. "Mon 14 Jul 2025". */
+  activityDayFilterLabel?: string | null
+  onClearActivityDayFilter?: () => void
   onGoHome: () => void
   onGoChat: () => void
   onGoProjects: () => void
@@ -36,6 +50,10 @@ interface Props {
   onArchiveSession: (id: string) => void
   onExportSession: (id: string, format: 'md' | 'json') => void
   onDeleteSession: (id: string) => void
+  /**
+   * Still accepted so App does not fork its props shape; project pin/remove live
+   * on the Build browse screen and project menus there, not on this session rail.
+   */
   onRemoveProject: (cwd: string) => void
   onPinProject: (cwd: string, pinned: boolean) => void
   /** Opens the Plugins & Skills panel without a detour through Settings. */
@@ -43,47 +61,23 @@ interface Props {
   onNewProjectSession: () => void
   onOpenArchived: () => void
   onOpenSettings: () => void
-  onLogout: () => void
   onSignIn: () => void
 }
-
-/** Enough to hop between what you actually work in; the rest live in Build. */
-const SWITCHER_LIMIT = 8
 
 /** Rails are a hop list, not an archive: the browse homes hold the full set. */
 const LIST_LIMIT = 40
 
 const COLLAPSE_KEY = 'gronk.sidebar.collapse.v2'
+const SESSION_MODE_KEY = 'gronk.sidebar.sessionMode.v1'
 
-/**
- * Project rail actions. "Remove from list" only forgets the recent entry. It
- * never deletes the folder on disk. The wording must stay that careful.
- */
-function projectOptions(pinned: boolean): MenuOption[] {
-  return [
-    { id: 'reveal', label: 'Show in folder', description: 'Open it in your file manager' },
-    {
-      id: 'pin',
-      label: pinned ? 'Unpin' : 'Pin to top',
-      description: pinned ? 'Return to normal recent order' : 'Keep this project at the top'
-    },
-    {
-      id: 'remove',
-      label: 'Remove from list',
-      description: 'Forget this recent entry. Does not delete files.'
-    }
-  ]
-}
-
-/**
- * revealLocalPath already accepts a project directory: its containment check
- * allows every recent project cwd as a root, and a path equal to its root counts
- * as inside. Nothing in the main process had to change for this.
- */
-function revealProject(cwd: string): void {
-  // Failure means the folder moved or went away, and the rail has nowhere to
-  // say so, so the file manager simply not opening is the whole message.
-  void window.gronk.revealLocalPath(cwd).catch(() => undefined)
+function loadSessionMode(): SessionNavMode {
+  try {
+    const raw = localStorage.getItem(SESSION_MODE_KEY)
+    if (raw === 'by-project' || raw === 'recent') return raw
+  } catch {
+    /* ignore */
+  }
+  return 'recent'
 }
 
 function loadCollapse(): { folders: boolean; sessions: boolean; chats: boolean } {
@@ -108,11 +102,10 @@ function loadCollapse(): { folders: boolean; sessions: boolean; chats: boolean }
 /**
  * Left rail: the navigator for whichever surface you are on.
  *
- * It stays put whether you are browsing or inside a conversation, so choosing
- * Build shows your projects immediately rather than after you have already
- * picked one. The browse homes still hold the richer view (activity, sessions
- * per project); the rail is the hop list, capped by SWITCHER_LIMIT / LIST_LIMIT,
- * and says how many rows it is hiding when it cuts.
+ * On Build, sessions are the primary list (flat by recency by default, or
+ * grouped by project). Projects are no longer a drill-down you must walk before
+ * the sessions appear — opening a session sets the agent cwd, and every row
+ * shows which project that is. Browse homes still hold the full project map.
  */
 export function Sidebar({
   authLabel,
@@ -125,26 +118,29 @@ export function Sidebar({
   activeCwd,
   activeSessionId,
   archivedCount,
+  activityDayFilter = null,
+  activityDayFilterLabel = null,
+  onClearActivityDayFilter,
   onGoHome,
   onGoChat,
   onGoProjects,
-  onOpenProject,
+  onOpenProject: _onOpenProject,
   onOpenChat,
   onSelectSession,
   onRenameSession,
   onArchiveSession,
   onExportSession,
   onDeleteSession,
-  onRemoveProject,
-  onPinProject,
+  onRemoveProject: _onRemoveProject,
+  onPinProject: _onPinProject,
   onOpenPlugins,
   onNewProjectSession,
   onOpenArchived,
   onOpenSettings,
-  onLogout,
   onSignIn
 }: Props) {
   const [open, setOpen] = useState(loadCollapse)
+  const [sessionMode, setSessionMode] = useState<SessionNavMode>(loadSessionMode)
 
   useEffect(() => {
     try {
@@ -154,7 +150,15 @@ export function Sidebar({
     }
   }, [open])
 
-  const toggle = (key: 'folders' | 'sessions' | 'chats') => {
+  useEffect(() => {
+    try {
+      localStorage.setItem(SESSION_MODE_KEY, sessionMode)
+    } catch {
+      /* ignore */
+    }
+  }, [sessionMode])
+
+  const toggle = (key: 'chats') => {
     setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
@@ -197,24 +201,38 @@ export function Sidebar({
     return map
   }, [chatSessions, projectSessions])
 
-  /** Only the open project's sessions. The all-projects view is ProjectHome's job */
-  const folderSessionsAll = useMemo(() => {
-    if (!activeCwd) return []
-    return projectSessions
-      .filter((s) => pathsEqual(s.cwd, activeCwd))
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-  }, [activeCwd, projectSessions])
-
-  const folderSessions = useMemo(
-    () => folderSessionsAll.slice(0, LIST_LIMIT),
-    [folderSessionsAll]
+  /**
+   * Day filter first (local updatedAt day), then session-nav order/group.
+   * Transient filter is orthogonal to Recent / By project.
+   */
+  const filteredProjectSessions = useMemo(
+    () => filterSessionsByLocalDay(projectSessions, activityDayFilter),
+    [projectSessions, activityDayFilter]
   )
 
-  const folderSwitcher = useMemo(() => projects.slice(0, SWITCHER_LIMIT), [projects])
+  const projectSessionNav = useMemo(
+    () =>
+      buildSessionNav({
+        sessions: filteredProjectSessions,
+        projects,
+        mode: sessionMode,
+        chatWorkspacePath,
+        limit: SESSION_NAV_LIMIT
+      }),
+    [filteredProjectSessions, projects, sessionMode, chatWorkspacePath]
+  )
+
+  const projectSessionCount = useMemo(() => {
+    if (projectSessionNav.mode === 'recent') return projectSessionNav.entries.length
+    return projectSessionNav.groups.reduce((n, g) => n + g.entries.length, 0)
+  }, [projectSessionNav])
 
   const chatListAll = useMemo(
-    () => [...chatSessions].sort((a, b) => b.updatedAt - a.updatedAt),
-    [chatSessions]
+    () =>
+      filterSessionsByLocalDay(chatSessions, activityDayFilter).sort(
+        (a, b) => b.updatedAt - a.updatedAt
+      ),
+    [chatSessions, activityDayFilter]
   )
 
   const chatList = useMemo(() => chatListAll.slice(0, LIST_LIMIT), [chatListAll])
@@ -225,18 +243,12 @@ export function Sidebar({
    * is worse than no count at all.
    */
   const hiddenChats = chatListAll.length - chatList.length
-  const hiddenFolders = projects.length - folderSwitcher.length
-  const hiddenFolderSessions = folderSessionsAll.length - folderSessions.length
 
   /**
    * The rails follow the SURFACE, not whether a conversation is open.
    *
-   * They used to be hidden while browsing, so picking Build gave you a browse
-   * screen with an empty rail, and the list of projects only appeared after you
-   * had already chosen one, the moment you no longer needed it. Worse, getting
-   * back to the list meant leaving the project entirely, which is what the
-   * "Switch workspace / All" buttons existed to undo. Keeping the list on screen
-   * removes the round trip and both buttons with it.
+   * Build shows sessions immediately (flat recency by default). Chat keeps its
+   * own list. Search still spans both and replaces the rails while active.
    */
   const showChatRail = surface === 'chat' && !searching
   const showProjectRails = surface === 'project' && !searching
@@ -245,9 +257,7 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="brand">
-          <div className="brand-mark" aria-hidden>
-            G
-          </div>
+          <BrandMark />
           <div className="brand-text">
             <h1>Gronk</h1>
             <p>Grok desktop</p>
@@ -259,6 +269,7 @@ export function Sidebar({
             type="button"
             className={`nav-item ${surface === 'home' ? 'active' : ''}`}
             onClick={onGoHome}
+            title="Home"
           >
             Home
           </button>
@@ -391,8 +402,25 @@ export function Sidebar({
                     New chat
                   </button>
                 </div>
+                {activityDayFilter ? (
+                  <div className="session-day-filter" role="status">
+                    <span className="session-day-filter-label" title={activityDayFilter}>
+                      {activityDayFilterLabel || activityDayFilter}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-mini"
+                      onClick={() => onClearActivityDayFilter?.()}
+                      title="Show chats from every day again"
+                    >
+                      Clear day
+                    </button>
+                  </div>
+                ) : null}
                 {chatList.length === 0 ? (
-                  <div className="muted-note">No chats yet</div>
+                  <div className="muted-note">
+                    {activityDayFilter ? 'No chats last updated this day' : 'No chats yet'}
+                  </div>
                 ) : (
                   chatList.map((s) => (
                     <SessionRow
@@ -425,169 +453,130 @@ export function Sidebar({
           </div>
         ) : null}
 
-        {/* ---- Build: projects, and the sessions inside the open one ---- */}
+        {/*
+          Build: the panel is the session list. No rail header, chevron, count,
+          Add project, or agent-folder summary — those are furniture around the
+          thing the surface exists for. Search (above) + one way to start a
+          session + sessions. Mode sits on the same line as New session so it
+          does not own a row. Chat still uses rails; it has several sections.
+        */}
         {showProjectRails ? (
-          <>
-            <div className={`sidebar-rail ${open.folders ? 'open' : 'collapsed'}`}>
+          <div className="session-nav">
+            <div className="session-nav-bar">
               <button
                 type="button"
-                className="sidebar-rail-head"
-                onClick={() => toggle('folders')}
-                aria-expanded={open.folders}
-                title={open.folders ? 'Minimize projects' : 'Expand projects'}
+                className="session-nav-new"
+                disabled={!authenticated || !activeCwd}
+                onClick={onNewProjectSession}
+                title={
+                  activeCwd
+                    ? `Start a fresh agent session in ${folderName(activeCwd)}`
+                    : 'Open a session first so the agent has a folder'
+                }
               >
-                <span className="sidebar-rail-chevron" aria-hidden>
-                  {open.folders ? '▾' : '▸'}
-                </span>
-                <span className="sidebar-rail-title">Projects</span>
-                <span className="sidebar-rail-count">{folderSwitcher.length || ''}</span>
+                + New session
               </button>
-              {open.folders ? (
-                <div className="sidebar-rail-body">
-                  {/* One action, not two. "Open…" and "All" were a pair of large
-                      buttons for adding a project and for returning to a list
-                      that is now permanently on screen. Adding is the only one
-                      of those the list cannot do itself. */}
-                  <div className="sidebar-rail-toolbar">
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm btn-block sidebar-rail-action"
-                      disabled={!authenticated}
-                      onClick={() => onOpenProject()}
-                      title="Pick a folder on your computer to work in"
-                    >
-                      + Add project
-                    </button>
-                  </div>
-                  {folderSwitcher.length === 0 ? (
-                    <div className="muted-note">No projects yet</div>
-                  ) : (
-                    folderSwitcher.map((p) => {
-                      const active = !!activeCwd && pathsEqual(p.cwd, activeCwd)
-                      const name = p.name || folderName(p.cwd)
-                      // Same shape as a session row: the card still opens the
-                      // project, and the menu is its sibling rather than a
-                      // control nested inside a button, which is not allowed.
-                      return (
-                        <div key={p.cwd} className="project-item-row">
-                          <button
-                            type="button"
-                            className={`project-card ${active ? 'active' : ''}`}
-                            disabled={!authenticated}
-                            title={p.cwd}
-                            onClick={() => onOpenProject(p.cwd)}
-                          >
-                            <div className="name">
-                              {p.pinned ? <span className="pin-mark" title="Pinned">·</span> : null}
-                              {name}
-                            </div>
-                            <div className="path">{p.cwd}</div>
-                          </button>
-                          <MenuButton
-                            label="Project actions"
-                            title={`Actions for ${name}`}
-                            trigger="icon"
-                            placement="down"
-                            options={projectOptions(!!p.pinned)}
-                            onSelect={(id) => {
-                              if (id === 'reveal') revealProject(p.cwd)
-                              if (id === 'pin') onPinProject(p.cwd, !p.pinned)
-                              if (id === 'remove') onRemoveProject(p.cwd)
-                            }}
-                            disabled={!authenticated}
-                          />
-                        </div>
-                      )
-                    })
-                  )}
-                  {hiddenFolders > 0 ? (
-                    <button
-                      type="button"
-                      className="sidebar-rail-more"
-                      onClick={onGoProjects}
-                      title="All projects, with their sessions and activity"
-                    >
-                      +{hiddenFolders} more · See all
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
+              <div
+                className="session-mode-toggle"
+                role="group"
+                aria-label="How to organise sessions"
+              >
+                <button
+                  type="button"
+                  className={`session-mode-btn ${sessionMode === 'recent' ? 'active' : ''}`}
+                  aria-pressed={sessionMode === 'recent'}
+                  onClick={() => setSessionMode('recent')}
+                  title="All sessions, newest first"
+                >
+                  Recent
+                </button>
+                <button
+                  type="button"
+                  className={`session-mode-btn ${sessionMode === 'by-project' ? 'active' : ''}`}
+                  aria-pressed={sessionMode === 'by-project'}
+                  onClick={() => setSessionMode('by-project')}
+                  title="Sessions grouped by project"
+                >
+                  By project
+                </button>
+              </div>
             </div>
-
-            {/* Only once a project is open. With none, this rail was a header, a
-                disabled button and a line telling you to go do the thing the
-                rail above it already offers. */}
-            {activeCwd ? (
-            <div className={`sidebar-rail ${open.sessions ? 'open' : 'collapsed'}`}>
-              <button
-                type="button"
-                className="sidebar-rail-head"
-                onClick={() => toggle('sessions')}
-                aria-expanded={open.sessions}
-                title={open.sessions ? 'Minimize sessions' : 'Expand sessions'}
-              >
-                <span className="sidebar-rail-chevron" aria-hidden>
-                  {open.sessions ? '▾' : '▸'}
+            {activityDayFilter ? (
+              <div className="session-day-filter" role="status">
+                <span className="session-day-filter-label" title={activityDayFilter}>
+                  {activityDayFilterLabel || activityDayFilter}
                 </span>
-                <span className="sidebar-rail-title">Sessions</span>
-                <span className="sidebar-rail-count">{folderSessions.length || ''}</span>
-              </button>
-              {open.sessions ? (
-                <div className="sidebar-rail-body">
-                  <div className="sidebar-rail-toolbar">
-                    <div className="sidebar-rail-sub">
-                      {activeCwd ? folderName(activeCwd) : 'No project open'}
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm btn-block sidebar-rail-action"
-                      disabled={!authenticated || !activeCwd}
-                      onClick={onNewProjectSession}
-                      title={
-                        activeCwd
-                          ? 'Start a fresh agent session in this project'
-                          : 'Add a project first'
-                      }
-                    >
-                      New session
-                    </button>
+                <button
+                  type="button"
+                  className="btn-mini"
+                  onClick={() => onClearActivityDayFilter?.()}
+                  title="Show sessions from every day again"
+                >
+                  Clear day
+                </button>
+              </div>
+            ) : null}
+            {projectSessionCount === 0 ? (
+              <div className="muted-note">
+                {activityDayFilter ? 'No sessions last updated this day' : 'No sessions yet'}
+              </div>
+            ) : projectSessionNav.mode === 'recent' ? (
+              projectSessionNav.entries.map((entry) => {
+                const s = entry.session
+                return (
+                  <SessionRow
+                    key={s.id}
+                    session={s}
+                    active={s.id === activeSessionId}
+                    authenticated={authenticated}
+                    chatWorkspacePath={chatWorkspacePath}
+                    meta={sessionNavMeta(entry)}
+                    onSelect={() => onSelectSession(s)}
+                    onRename={(t) => onRenameSession(s.id, t)}
+                    onArchive={() => onArchiveSession(s.id)}
+                    onExport={(f) => onExportSession(s.id, f)}
+                    onDelete={() => onDeleteSession(s.id)}
+                  />
+                )
+              })
+            ) : (
+              projectSessionNav.groups.map((group) => (
+                <div key={group.cwd} className="session-nav-group">
+                  <div className="session-nav-group-head" title={group.cwd}>
+                    {group.projectLabel}
                   </div>
-                  {folderSessions.length === 0 ? (
-                    <div className="muted-note">
-                      {activeCwd ? 'No sessions in this project yet' : 'Add a project first'}
-                    </div>
-                  ) : (
-                    folderSessions.map((s) => (
+                  {group.entries.map((entry) => {
+                    const s = entry.session
+                    return (
                       <SessionRow
                         key={s.id}
                         session={s}
                         active={s.id === activeSessionId}
                         authenticated={authenticated}
                         chatWorkspacePath={chatWorkspacePath}
-                        meta={new Date(s.updatedAt).toLocaleDateString()}
+                        meta={sessionNavMeta(entry)}
                         onSelect={() => onSelectSession(s)}
                         onRename={(t) => onRenameSession(s.id, t)}
                         onArchive={() => onArchiveSession(s.id)}
                         onExport={(f) => onExportSession(s.id, f)}
                         onDelete={() => onDeleteSession(s.id)}
                       />
-                    ))
-                  )}
-                  {hiddenFolderSessions > 0 ? (
-                    <button
-                      type="button"
-                      className="sidebar-rail-more"
-                      onClick={onGoProjects}
-                      title="Open the full session list for every folder"
-                    >
-                      +{hiddenFolderSessions} older · See all
-                    </button>
-                  ) : null}
+                    )
+                  })}
                 </div>
-              ) : null}
-            </div>
+              ))
+            )}
+            {projectSessionNav.hidden > 0 ? (
+              <button
+                type="button"
+                className="sidebar-rail-more"
+                onClick={onGoProjects}
+                title="All projects and sessions on the Build browse screen"
+              >
+                +{projectSessionNav.hidden} older · See all
+              </button>
             ) : null}
-          </>
+          </div>
         ) : null}
       </div>
 
@@ -605,7 +594,6 @@ export function Sidebar({
             Sign in
           </button>
         ) : null}
-        {/* Stays hidden until there is something archived: archiving is meant to be quiet */}
         {archivedCount > 0 ? (
           <button
             type="button"
@@ -623,12 +611,9 @@ export function Sidebar({
         <button type="button" className="btn btn-ghost btn-block" onClick={onOpenSettings}>
           Settings
         </button>
-        {authenticated ? (
-          <button type="button" className="btn btn-ghost btn-block" onClick={onLogout}>
-            Sign out
-          </button>
-        ) : null}
-        <div className="version-tag">v{__APP_VERSION__}</div>
+        <div className="version-tag" title={`package ${__APP_VERSION__}`}>
+          {__APP_BUILD_LABEL__}
+        </div>
       </div>
     </aside>
   )

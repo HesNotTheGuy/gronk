@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useActivityCalendar } from '../hooks/useGronk'
+import type { ActivityCalendarState } from '../hooks/useActivityCalendar'
 import {
   calendarSummary,
   dayClassName,
@@ -15,19 +15,28 @@ const LABELLED_WEEKDAYS = new Set([1, 3, 5])
 
 const LEGEND_STEPS = Array.from({ length: INTENSITY_LEVELS + 1 }, (_, i) => i)
 
+interface Props {
+  /** Lifted above Home so leaving the surface does not wipe the painted grid. */
+  state: ActivityCalendarState
+  /** Local `YYYY-MM-DD` currently filtering the sidebar, if any. */
+  selectedDay?: string | null
+  /** Day click — host owns filter state and any surface switch. */
+  onSelectDay?: (dayKey: string) => void
+}
+
 /**
  * Contribution-style heatmap of the user's own work in Gronk.
  *
  * Every colour, size and gap belongs to `src/styles.css`. Intensity travels as a
  * `level-N` class rather than as a computed style so the palette can be replaced
- * without touching this file. See the class list in the styling notes.
+ * without touching this file.
  *
- * Self-contained on purpose: it fetches its own data through
- * `useActivityCalendar`, so mounting it anywhere costs the host component no
- * props and no plumbing.
+ * Data comes from a parent-owned `useActivityCalendar` so the grid survives
+ * Home unmount. Days are buttons when `onSelectDay` is provided; selection is
+ * paint only — filtering lives in the host.
  */
-export function ActivityCalendar() {
-  const { calendar, loading, error, refresh } = useActivityCalendar()
+export function ActivityCalendar({ state, selectedDay = null, onSelectDay }: Props) {
+  const { calendar, loading, error, refresh } = state
 
   const weeks = useMemo(() => (calendar ? toWeekColumns(calendar.days) : []), [calendar])
   const months = useMemo(() => {
@@ -37,6 +46,7 @@ export function ActivityCalendar() {
   }, [weeks])
 
   const summary = calendar ? calendarSummary(calendar) : ''
+  const selectable = typeof onSelectDay === 'function'
 
   return (
     <section className="calendar-panel">
@@ -81,21 +91,44 @@ export function ActivityCalendar() {
               </div>
 
               {/* One image with one description: a screen reader reading 365
-                  squares aloud is noise, and the summary is the actual content. */}
+                  squares aloud is noise, and the summary is the actual content.
+                  Individual day buttons still get a title for pointer users. */}
               <div className="calendar-grid" role="img" aria-label={summary}>
                 {weeks.map((week, column) => (
                   <div key={`week-${column}`} className="calendar-week">
-                    {week.map((day, row) => (
-                      <div
-                        key={day ? day.date : `pad-${column}-${row}`}
-                        className={
-                          day && day.date === calendar.to
-                            ? `${dayClassName(day, calendar.peak)} calendar-day-today`
-                            : dayClassName(day, calendar.peak)
-                        }
-                        title={day ? dayTooltip(day) : undefined}
-                      />
-                    ))}
+                    {week.map((day, row) => {
+                      if (!day) {
+                        return (
+                          <div
+                            key={`pad-${column}-${row}`}
+                            className={dayClassName(null, calendar.peak)}
+                          />
+                        )
+                      }
+                      const classes = [
+                        dayClassName(day, calendar.peak),
+                        day.date === calendar.to ? 'calendar-day-today' : '',
+                        selectedDay === day.date ? 'calendar-day-selected' : ''
+                      ]
+                        .filter(Boolean)
+                        .join(' ')
+                      const tip = dayTooltip(day)
+                      if (!selectable) {
+                        return (
+                          <div key={day.date} className={classes} title={tip} />
+                        )
+                      }
+                      return (
+                        <button
+                          key={day.date}
+                          type="button"
+                          className={classes}
+                          title={`${tip} · show sessions from this day`}
+                          aria-pressed={selectedDay === day.date}
+                          onClick={() => onSelectDay(day.date)}
+                        />
+                      )
+                    })}
                   </div>
                 ))}
               </div>

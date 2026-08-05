@@ -8,6 +8,7 @@ import {
   type KeyboardEvent
 } from 'react'
 import type {
+  ConnectionState,
   FileEntry,
   ModelInfo,
   PermissionMode,
@@ -15,9 +16,12 @@ import type {
 } from '../../shared/types'
 import { PERMISSION_MODE_OPTIONS } from '../../shared/types'
 import { MenuButton } from './MenuButton'
+import { composerPermissions, composerPlaceholder } from '../lib/composer-state'
 
 interface Props {
-  disabled: boolean
+  connection: ConnectionState
+  /** A transcript is being restored onto the screen. */
+  hydrating: boolean
   busy: boolean
   cwd: string | null
   onSend: (text: string, attachments: PromptAttachment[]) => void
@@ -68,7 +72,8 @@ function fileToAttachment(file: File): Promise<PromptAttachment | null> {
 }
 
 export function Composer({
-  disabled,
+  connection,
+  hydrating,
   busy,
   cwd,
   onSend,
@@ -90,6 +95,15 @@ export function Composer({
   const [dragOver, setDragOver] = useState(false)
   const ref = useRef<HTMLTextAreaElement | null>(null)
   const mentionStart = useRef<number | null>(null)
+
+  // One decision object rather than six `disabled` expressions. Typing is
+  // allowed while a session restores; everything that needs the agent is not.
+  const perms = composerPermissions({
+    connection,
+    hydrating,
+    busy,
+    hasContent: !!text.trim() || attachments.length > 0
+  })
 
   useEffect(() => {
     const el = ref.current
@@ -186,7 +200,7 @@ export function Composer({
   }
 
   const submit = () => {
-    if ((!text.trim() && attachments.length === 0) || disabled) return
+    if (!perms.canSend) return
     onSend(text, attachments)
     setText('')
     setAttachments([])
@@ -352,14 +366,8 @@ export function Composer({
             const t = e.currentTarget
             detectMention(t.value, t.selectionStart ?? t.value.length)
           }}
-          placeholder={
-            disabled
-              ? 'Sign in and open Chat or a Project…'
-              : cwd
-                ? 'Message the project agent  ·  @ files  ·  paste images  ·  Enter send'
-                : 'Message Grok  ·  paste images  ·  Enter send'
-          }
-          disabled={disabled}
+          placeholder={composerPlaceholder(perms, { hydrating, cwd })}
+          disabled={!perms.canType}
           rows={2}
         />
         <div className="composer-bar">
@@ -375,7 +383,7 @@ export function Composer({
                   dangerous: o.dangerous
                 }))}
                 onSelect={(id) => onChangeMode(id as PermissionMode)}
-                disabled={disabled}
+                disabled={!perms.canChangeAgentSettings}
                 title="How the agent's tools are approved"
               />
             ) : null}
@@ -394,14 +402,14 @@ export function Composer({
                   description: m.description
                 }))}
                 onSelect={(id) => onChangeModel(id)}
-                disabled={disabled}
+                disabled={!perms.canChangeAgentSettings}
                 title="Switch model (restarts the agent)"
               />
             ) : null}
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              disabled={disabled}
+              disabled={!perms.canAttach}
               onClick={() => void pickFiles()}
               title="Attach file"
             >
@@ -420,7 +428,7 @@ export function Composer({
             <button
               type="button"
               className="btn btn-primary"
-              disabled={disabled || busy || (!text.trim() && attachments.length === 0)}
+              disabled={!perms.canSend}
               onClick={submit}
             >
               Send

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ActivePlan,
   AgentSurface,
@@ -20,6 +20,14 @@ import {
   hasAssistantReplyAfter
 } from '../lib/messages'
 import { parsePlan } from '../lib/plan'
+import { needsSessionReload } from '../lib/session-nav'
+import {
+  cachedTranscript,
+  forgetTranscript,
+  rememberTranscript,
+  type CachedTranscript
+} from '../lib/transcript-cache'
+import { prependHead, splitForMount } from '../lib/transcript-mount'
 import {
   isScrollbarClick,
   keyIntent,
@@ -36,6 +44,26 @@ import { useExportNotice } from './useExportNotice'
 import { usePlugins } from './usePlugins'
 import { usePreview } from './usePreview'
 import { useSessionCatalog } from './useSessionCatalog'
+
+/**
+ * A message coming back out of storage rather than off the wire.
+ *
+ * Nothing restored is still streaming, and a user turn that was mid-flight when
+ * the app closed is shown as sent: the only send state worth persisting is a
+ * failure, because that one still offers Retry.
+ */
+function restored(m: ChatMessage): ChatMessage {
+  return {
+    ...m,
+    streaming: false,
+    sendStatus:
+      m.role === 'user'
+        ? m.sendStatus === 'failed'
+          ? ('failed' as const)
+          : ('sent' as const)
+        : m.sendStatus
+  }
+}
 
 // ActivityCalendar.tsx imports these from this module. Re-exported so splitting
 // the file changes no component's import path.
@@ -86,6 +114,76 @@ export function useGronk() {
    */
   const programmaticScroll = useRef(false)
   const messagesRef = useRef<ChatMessage[]>([])
+
+  /**
+   * The last few transcripts this renderer already had, so going back to a
+   * session you just left is a render rather than a round trip. Never a
+   * substitute for `loadSession`: see the module comment.
+   */
+  const transcriptCache = useRef<CachedTranscript[]>([])
+
+  /**
+   * Set while a restore has painted its end but not yet its beginning.
+   *
+   * `messages` is genuinely partial in that window, and THREE things read it
+   * expecting the whole conversation:
+   *
+   * - the debounced save-to-store effect, which would truncate the stored
+   *   transcript to whatever is on screen;
+   * - the `message-done` save, which is the dangerous one because it is
+   *   immediate rather than debounced, and a turn really can complete during a
+   *   restore: the composer stays live throughout one on purpose;
+   * - the transcript cache, which would hand the truncation back on the next
+   *   visit.
+   *
+   * All three go through `settledTranscript`. Anything added here that reads the
+   * transcript to persist or to keep it has to as well, and this count is the
+   * thing to re-derive rather than trust.
+   */
+  const partialMount = useRef<{ anchorId: string; head: ChatMessage[] } | null>(null)
+
+  /**
+   * The transcript as it will be, rather than as it is mid-paint.
+   *
+   * `prependHead` returning its input unchanged is how "the head already landed,
+   * or this list belongs to another session now" arrives here, and it is the
+   * only signal needed to drop the pending record.
+   */
+  const settledTranscript = useCallback((): ChatMessage[] => {
+    const pending = partialMount.current
+    const live = messagesRef.current
+    if (!pending) return live
+    const merged = prependHead(live, pending.head, pending.anchorId)
+    if (merged === live) partialMount.current = null
+    return merged
+  }, [])
+
+  /**
+   * Paint a restored transcript end first.
+   *
+   * The reader is at the bottom, so the messages above the fold are latency and
+   * nothing else. The tail is an ordinary update because it is what the user is
+   * waiting for; the head is a transition because it is not, and React may pause
+   * it to service the keyboard.
+   *
+   * A frame is yielded before the head so the tail actually reaches the screen:
+   * scheduled in the same tick, React can batch the two into one render and the
+   * split buys nothing.
+   */
+  const paintTranscript = useCallback((list: ChatMessage[]) => {
+    const { tail, head, anchorId } = splitForMount(list)
+    setMessages(tail)
+    if (!head.length || !anchorId) {
+      partialMount.current = null
+      return
+    }
+    partialMount.current = { anchorId, head }
+    requestAnimationFrame(() => {
+      startTransition(() => {
+        setMessages((prev) => prependHead(prev, head, anchorId))
+      })
+    })
+  }, [])
 
   /**
    * The one way this hook moves the viewport. The flag is cleared on the next
@@ -159,6 +257,7 @@ export function useGronk() {
     setSessions,
     setChatWorkspacePath,
     chatWorkspacePath,
+    renameSession: renameSessionInCatalog,
     ...catalog
   } = useSessionCatalog()
 
@@ -184,19 +283,35 @@ export function useGronk() {
    * and `setAuth`, write-throughs those hooks expose for this function alone.
    */
   refreshMetaImpl.current = async () => {
-    const [projects, sess, s, path, modelList, auditList, healthStatus, authStatus, chatPath] =
-      await Promise.all([
-        window.gronk.getRecentProjects(),
-        window.gronk.listSessions(),
-        window.gronk.getSettings(),
-        window.gronk.getGrokPath(),
-        window.gronk.listModels(),
-        window.gronk.getPermissionAudit(),
-        window.gronk.getHealth(),
-        window.gronk.getAuthStatus(),
-        window.gronk.getChatWorkspacePath()
-      ])
-    hydrateCatalog({ recentProjects: projects, sessions: sess, chatWorkspacePath: chatPath })
+    const [
+      projects,
+      sess,
+      s,
+      path,
+      modelList,
+      auditList,
+      healthStatus,
+      authStatus,
+      chatPath,
+      notes
+    ] = await Promise.all([
+      window.gronk.getRecentProjects(),
+      window.gronk.listSessions(),
+      window.gronk.getSettings(),
+      window.gronk.getGrokPath(),
+      window.gronk.listModels(),
+      window.gronk.getPermissionAudit(),
+      window.gronk.getHealth(),
+      window.gronk.getAuthStatus(),
+      window.gronk.getChatWorkspacePath(),
+      window.gronk.getProjectNotes()
+    ])
+    hydrateCatalog({
+      recentProjects: projects,
+      sessions: sess,
+      chatWorkspacePath: chatPath,
+      projectNotes: notes
+    })
     hydrateSettings({
       settings: s,
       grokPath: path,
@@ -233,18 +348,16 @@ export function useGronk() {
           break
         case 'history-replace':
           // Bulk restore from local cache: one paint, no clear/rebuild thrash.
-          setMessages(
-            event.messages.map((m) => ({
-              ...m,
-              streaming: false,
-              sendStatus:
-                m.role === 'user'
-                  ? m.sendStatus === 'failed'
-                    ? ('failed' as const)
-                    : ('sent' as const)
-                  : m.sendStatus
-            }))
-          )
+          //
+          // End first, then the rest in a transition. The transition does NOT
+          // make the render faster; measured at 200 messages the work is the
+          // same either way. What it changes is who owns the thread while it
+          // happens, and a restore that keeps the keyboard is the whole point of
+          // it. What the split changes is how much of that work stands between
+          // the user and something to read. yieldPaint elsewhere is the same
+          // instinct at the other end: it exists so the skeleton paints before
+          // heavy main-process work, which neither of these does.
+          paintTranscript(event.messages.map(restored))
           setHistorySource('local')
           setActivePlan(null)
           setUsage(null)
@@ -374,12 +487,18 @@ export function useGronk() {
           // The save deliberately sits OUTSIDE the updater. React may call an
           // updater more than once for a single dispatch, and does so on every
           // render in development, so an IPC write in there ran twice per turn.
-          // Updaters have to be pure; messagesRef holds the same list, written
-          // by the effect that mirrors messages.
+          // Updaters have to be pure.
+          //
+          // settledTranscript, not messagesRef: this write is immediate rather
+          // than debounced, so a turn that completes while a restore has painted
+          // its end and not yet its beginning would put those messages over the
+          // whole stored conversation. That is reachable on purpose, because the
+          // composer stays live during a restore: prompt into a long transcript,
+          // and the turn can finish before the head lands.
           const doneSessionId = event.sessionId
           if (doneSessionId) {
             queueMicrotask(() => {
-              const settled = messagesRef.current.map((m) =>
+              const settled = settledTranscript().map((m) =>
                 m.id === event.messageId ? { ...m, streaming: false } : m
               )
               void window.gronk.saveTranscript(doneSessionId, settled)
@@ -422,7 +541,9 @@ export function useGronk() {
     })
 
     return unsub
-  }, [refreshMeta, refreshSessions, refreshAudit, pinToBottom])
+    // paintTranscript and settledTranscript are both stable, so naming them here
+    // costs no re-subscription and keeps the handler's reads honest.
+  }, [refreshMeta, refreshSessions, refreshAudit, pinToBottom, paintTranscript, settledTranscript])
 
   // Stick-to-bottom only while the user is actually at the end. Streaming
   // updates must not yank the viewport if they scrolled up to read earlier turns.
@@ -436,13 +557,33 @@ export function useGronk() {
     const el = scrollRef.current
     if (!el) return
 
+    // Carried between measurements so a scroll can be told from a reflow. A turn
+    // ending makes the document shorter, and if the reader had scrolled up the
+    // browser clamps scrollTop and reports a scroll they did not make.
+    let previousScrollHeight = el.scrollHeight
+    // Set by every intent handler, cleared by every measurement, so it always
+    // means "since the last measurement". It is the only thing separating the
+    // clamp above from a reader genuinely scrolling to the end while a turn
+    // finishes.
+    let gestureSinceMeasure = false
+
     const distance = () => el.scrollHeight - el.scrollTop - el.clientHeight
     const apply = (cause: StickCause) => {
+      const scrollHeight = el.scrollHeight
       stickToBottom.current = nextStick({
         cause,
         distanceFromBottom: distance(),
-        sticking: stickToBottom.current
+        sticking: stickToBottom.current,
+        scrollHeight,
+        previousScrollHeight,
+        gestureSinceMeasure
       })
+      previousScrollHeight = scrollHeight
+      // A gesture arms the flag; any measurement consumes it. Written as an
+      // assignment rather than a pair of branches so there is no path that
+      // leaves a stale gesture armed, which would make the next reflow look
+      // like the reader had moved.
+      gestureSinceMeasure = cause === 'gesture-up' || cause === 'gesture-down'
     }
 
     // A scroll the app caused says nothing about what the user wants, and it
@@ -505,10 +646,13 @@ export function useGronk() {
   useEffect(() => {
     if (!sessionId || messages.length === 0) return
     const t = setTimeout(() => {
-      void window.gronk.saveTranscript(sessionId, messagesRef.current)
+      // settledTranscript, not messagesRef: a restore that has painted its end
+      // and not yet its beginning would otherwise write those messages over the
+      // whole stored transcript.
+      void window.gronk.saveTranscript(sessionId, settledTranscript())
     }, 400)
     return () => clearTimeout(t)
-  }, [messages, sessionId])
+  }, [messages, sessionId, settledTranscript])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -733,6 +877,39 @@ export function useGronk() {
 
   const selectSession = useCallback(
     async (session: SessionInfo) => {
+      // Clicking the session you are already in used to tear it down and rebuild
+      // it: clear the transcript, set hydrating, round trip through loadSession,
+      // re-render every message, and switch the composer off for the duration.
+      //
+      // Deliberately NOT guarded on the id alone. A session that failed to load
+      // has the same id as the one the user is clicking to retry, so guarding on
+      // identity would make the retry click do nothing. needsSessionReload wants
+      // the session to be both current AND healthy before it skips the work.
+      if (
+        !needsSessionReload({
+          requestedId: session.id,
+          activeId: sessionId,
+          connection,
+          error,
+          hydrating
+        })
+      ) {
+        // Still navigate: the click can come from a browse list, and the user
+        // means "take me there" even when nothing needs reloading.
+        setBrowsing(false)
+        stickToBottom.current = true
+        return
+      }
+
+      // Keep the transcript being left behind, so coming back to it is a render
+      // rather than another read. Recorded before the auth probe: a sign-in that
+      // fails is still a session the user was just reading.
+      transcriptCache.current = rememberTranscript(
+        transcriptCache.current,
+        sessionId,
+        settledTranscript()
+      )
+
       setError(null)
       const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
@@ -763,23 +940,17 @@ export function useGronk() {
       await yieldPaint()
 
       try {
-        // Paint the local cache first so the user is reading history while the
-        // agent process boots: loadSession will history-replace the same data
-        // and then session/load in the background of the UI.
-        const local = await window.gronk.getTranscript(session.id)
+        // Paint the local transcript first so the user is reading history while
+        // the agent process boots: loadSession will history-replace the same
+        // data and then session/load in the background of the UI.
+        //
+        // A session visited earlier is already in memory, so that read is
+        // skipped. The load below is not: the cache says what to draw, never
+        // which session the agent is on.
+        const held = cachedTranscript(transcriptCache.current, session.id)
+        const local = held ?? (await window.gronk.getTranscript(session.id)).map(restored)
         if (local.length) {
-          setMessages(
-            local.map((m) => ({
-              ...m,
-              streaming: false,
-              sendStatus:
-                m.role === 'user'
-                  ? m.sendStatus === 'failed'
-                    ? ('failed' as const)
-                    : ('sent' as const)
-                  : m.sendStatus
-            }))
-          )
+          paintTranscript(local)
           setHistorySource('local')
         } else setMessages([])
 
@@ -795,7 +966,10 @@ export function useGronk() {
         setHydrating(false)
       }
     },
-    [refreshMeta, chatWorkspacePath]
+    // The guard reads live state, so it has to be in the deps or a stale
+    // closure would compare against whichever session was open when this
+    // callback was last built.
+    [refreshMeta, chatWorkspacePath, sessionId, connection, error, hydrating]
   )
   selectSessionRef.current = selectSession
 
@@ -926,6 +1100,7 @@ export function useGronk() {
    */
   const deleteSession = useCallback(
     async (id: string) => {
+      transcriptCache.current = forgetTranscript(transcriptCache.current, id)
       const sess = await window.gronk.deleteSession(id)
       setSessions(sess)
       if (sessionId === id) {
@@ -939,8 +1114,23 @@ export function useGronk() {
     [sessionId, setSessions, restartAgent]
   )
 
+  /**
+   * Renaming changes the title and not one message, so the held transcript is
+   * still accurate. It is dropped anyway: a cache whose invalidation rule is
+   * "everything except the case I reasoned about" is the one that eventually
+   * shows somebody a conversation that is not there.
+   */
+  const renameSession = useCallback(
+    async (id: string, title: string) => {
+      transcriptCache.current = forgetTranscript(transcriptCache.current, id)
+      await renameSessionInCatalog(id, title)
+    },
+    [renameSessionInCatalog]
+  )
+
   const archiveSession = useCallback(
     async (id: string) => {
+      transcriptCache.current = forgetTranscript(transcriptCache.current, id)
       await window.gronk.archiveSession(id, true)
       const sess = await window.gronk.listSessions()
       setSessions(sess)
@@ -977,6 +1167,7 @@ export function useGronk() {
     sessionId,
     messages,
     ...catalog,
+    renameSession,
     chatWorkspacePath,
     surface,
     browsing,

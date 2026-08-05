@@ -127,6 +127,15 @@ button {
   isolation: isolate;
 }
 
+/* Focus: chat + composer only. Topbar Focus button or [ when not in a field. */
+.app.focus-mode {
+  --sidebar-w: 0px;
+}
+
+.app.focus-mode > .sidebar {
+  display: none;
+}
+
 /* Explicit placement so decorative layers never steal grid cells */
 .app > .sidebar {
   grid-column: 1;
@@ -188,12 +197,21 @@ button {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(10, 10, 10, 0.96), rgba(0, 0, 0, 0.98));
+  /* Chrome recedes: pure void, lower edge energy than the chat stage. */
+  background: #000000;
   min-width: 0;
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  backdrop-filter: blur(20px);
+  color: var(--ink-3);
+}
+
+.project-card .path {
+  display: none;
+}
+
+.project-card .name {
+  font-size: 12px;
 }
 
 .sidebar-header {
@@ -231,31 +249,24 @@ button {
 }
 
 .brand-mark {
-  width: 36px;
-  height: 36px;
   position: relative;
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: 0.02em;
-  color: var(--void);
-  background: var(--flare);
-  clip-path: polygon(0 0, 100% 0, 100% 72%, 72% 100%, 0 100%);
-  box-shadow: 0 0 24px rgba(255, 255, 255, 0.18);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  line-height: 0;
 }
 
-.brand-mark::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 10px;
-  height: 10px;
-  background: var(--ignite);
-  clip-path: polygon(100% 0, 0 100%, 100% 100%);
+.brand-mark-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Outer glow lives in SVG; keep CSS filter light so 16px stays crisp. */
+  filter: drop-shadow(0 0 6px rgba(234, 255, 251, 0.2));
+  user-select: none;
+  pointer-events: none;
 }
 
 .brand-text h1 {
@@ -295,7 +306,139 @@ button {
   border-bottom: none;
 }
 
-/* Collapsible Projects / Sessions rails: minimize to title only.
+/*
+  Build session panel: not a rail. Search is above; this is one action line
+  then the list. Mode shares the New session row so it costs no extra height.
+*/
+.session-day-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  margin: 0 0 6px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ignite) 12%, var(--panel-2));
+  border: 1px solid var(--line);
+}
+
+.session-day-filter-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-nav {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: 8px;
+}
+
+.session-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 6px;
+  flex-shrink: 0;
+}
+
+.session-nav-new {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  white-space: nowrap;
+}
+
+.session-nav-new:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.session-nav-new:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.session-mode-toggle {
+  display: flex;
+  gap: 0;
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.session-mode-btn {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 4px 7px;
+  border: none;
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.session-mode-btn + .session-mode-btn {
+  border-left: 1px solid var(--line);
+}
+
+.session-mode-btn:hover {
+  background: var(--hover);
+  color: var(--ink-2);
+}
+
+.session-mode-btn.active {
+  background: var(--panel-2);
+  color: var(--ink-2);
+}
+
+.session-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 2px;
+}
+
+.session-nav-group-head {
+  padding: 8px 12px 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-nav .muted-note {
+  padding: 8px 12px;
+}
+
+/* Collapsible Sessions / Chats rails: minimize to title only.
    Rails size to their content and stack; the ONLY scroll region is
    .sidebar-body, which scrolls as one unit when the combined content
    exceeds the sidebar height. No per-rail inner scroll boxes (those
@@ -666,8 +809,8 @@ button {
   gap: 12px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(12, 12, 12, 0.9), rgba(0, 0, 0, 0.55));
-  backdrop-filter: blur(16px);
+  /* Header chrome stays quieter than the message column. */
+  background: #000000;
   -webkit-app-region: drag;
 }
 
@@ -1093,7 +1236,8 @@ button {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 28px 32px 40px;
+  /* Extra bottom pad so the last project card isn't tight against the chrome */
+  padding: 28px 32px 64px;
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -1493,12 +1637,14 @@ button {
   overflow: visible;
 }
 
-/* Workspace folder list should scroll as one column, not fight flex siblings */
+/* Project list: natural height inside .browse-home. A nested flex:1 +
+   overflow:auto here clipped the last cards (two scrollports fighting).
+   Single scroll stays on .browse-home. */
 .browse-home > .browse-panel.workspace-folder-list,
 .browse-home > .workspace-folder-list {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
 }
 
 /* Prefer wrapping long titles over cutting them off the viewport */
@@ -2053,7 +2199,9 @@ button {
   height: 6px;
   border-radius: 1px;
   background: var(--ink-4);
-  opacity: 0.45;
+  /* Done recedes: 0.45 was invisible on pure black; 0.8 read a bit busy in
+     the tray list. 0.7 stays findable under a message and quieter next to type. */
+  opacity: 0.7;
   flex: none;
 }
 
@@ -2757,11 +2905,18 @@ button {
 .version-tag {
   font-family: var(--font-mono);
   font-size: 9px;
-  letter-spacing: 0.16em;
+  /* letter-spacing kept tight so "v0.2.0-nightly · abcdef0" still fits */
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-4);
   text-align: center;
   padding-top: 4px;
+  /* Sha + channel can be long; allow wrap rather than clip the identity. */
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.35;
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 /* Scan line (subtle, not distracting) */
@@ -3437,6 +3592,8 @@ html[data-theme='light'] .code-block {
 
 /* ---------- Session tray (plan · agents · usage in one rail) ---------- */
 .session-tray {
+  /* Sheet: rail stays in flow; body floats up over the transcript. */
+  position: relative;
   flex-shrink: 0;
   max-width: min(100%, 860px);
   width: calc(100% - 44px);
@@ -3444,7 +3601,13 @@ html[data-theme='light'] .code-block {
   border-top: 1px solid var(--line);
   border-left: 1px solid var(--line-2);
   border-right: 1px solid var(--line-2);
-  background: var(--panel);
+  /* Chrome recedes under the chat stage. */
+  background: #000000;
+  z-index: 5;
+}
+
+.app.focus-mode .session-tray:not(.open) {
+  display: none;
 }
 
 .session-tray.live {
@@ -3532,11 +3695,19 @@ html[data-theme='light'] .code-block {
 }
 
 .session-tray-body {
-  border-top: 1px solid var(--line);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  border: 1px solid var(--line-2);
+  border-bottom: none;
   padding: 10px 12px 12px;
   max-height: min(220px, 32vh);
   overflow: auto;
   overscroll-behavior: contain;
+  background: #050607;
+  box-shadow: 0 -16px 48px rgba(0, 0, 0, 0.75);
+  z-index: 6;
 }
 
 .session-tray-body .plan-list {
@@ -3545,12 +3716,92 @@ html[data-theme='light'] .code-block {
   padding: 0;
 }
 
-.session-tray-body .agent-chip-row {
-  margin: 0;
+/* Agents tab: mission log, not chip cloud — borderless rows, status = luminance. */
+.agent-tray-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-tray-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  max-width: 100%;
+  padding: 1px 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.agent-tray-row .agent-dot {
+  /* Slightly larger than the under-message glance so it reads next to type. */
+  width: 7px;
+  height: 7px;
+}
+
+.agent-tray-label {
+  min-width: 0;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+
+.agent-tray-more {
+  padding: 2px 0 0 15px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-4);
 }
 
 .session-tray-body .usage-cols {
   margin: 0;
+}
+
+/*
+ * Notes tab: a scratchpad, so the box gets the whole panel and reads as text
+ * rather than as a form field. Taller than the other bodies because a note is
+ * the one thing here the user writes instead of reads.
+ */
+.session-tray-body.notes-body {
+  max-height: min(300px, 42vh);
+}
+
+.project-note {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  max-height: 40vh;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: none;
+  background: var(--panel-2);
+  line-height: 1.55;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.project-note:focus {
+  border-color: color-mix(in srgb, var(--ignite) 45%, var(--line-2));
+}
+
+.project-note:disabled {
+  opacity: 0.5;
+}
+
+.project-note::placeholder {
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
 }
 
 .session-tray-note {
@@ -4341,59 +4592,14 @@ html[data-theme='light'] .session-search {
   background: #fff;
 }
 
-.session-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
-  align-items: center;
-  gap: 2px;
-  border-radius: var(--radius);
-  min-width: 0;
-  width: 100%;
-}
-
-.session-row.active {
-  background: linear-gradient(90deg, var(--ignite-dim), transparent 80%);
-}
-
-.session-row .session-item {
-  border: none;
-  background: transparent;
-  min-width: 0;
-  width: 100%;
-  overflow: hidden;
-}
-
-.session-row .session-item:hover {
-  background: transparent;
-}
-
-/* Title truncates to sidebar width (reacts to window / column size) */
-.session-row .session-item .name {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.session-row .session-item .meta {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.session-menu-wrap {
-  position: relative;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* The `.session-row` block that used to sit here is gone. Nothing rendered it.
+   The sidebar row was renamed to `.session-item-row` in 0392e8e and given a
+   fresh block further down, but `.session-row.active` was never carried across,
+   so the open session had a class with no rule behind it and did not highlight.
+   The dead selectors survived long enough to look like the styling, which is
+   why the highlight rule now lives beside the class that is actually emitted.
+   `.session-item .name` and `.session-item .meta` were always styled
+   independently, so nothing else here was load-bearing. */
 
 .session-menu-btn {
   width: 26px;
@@ -4410,12 +4616,6 @@ html[data-theme='light'] .session-search {
     opacity var(--dur) var(--ease),
     border-color var(--dur) var(--ease),
     background var(--dur) var(--ease);
-}
-
-.session-row:hover .session-menu-btn,
-.session-row.menu-open .session-menu-btn,
-.session-row.active .session-menu-btn {
-  opacity: 1;
 }
 
 .session-menu-btn:hover {
@@ -5958,6 +6158,25 @@ html[data-theme='light'] .auth-card {
   border-radius: 2px;
   background: var(--panel-2);
   box-shadow: inset 0 0 0 1px var(--line);
+  /* Days are sometimes <button>; reset so the square keeps its size. */
+  padding: 0;
+  border: none;
+  display: block;
+  cursor: default;
+}
+
+button.calendar-day {
+  cursor: pointer;
+}
+
+button.calendar-day:hover {
+  outline: 1px solid var(--flare);
+  outline-offset: 1px;
+}
+
+button.calendar-day:focus-visible {
+  outline: 1px solid var(--flare);
+  outline-offset: 1px;
 }
 
 /* Leading and trailing slots that fall outside the range. Invisible on purpose:
@@ -6003,6 +6222,16 @@ html[data-theme='light'] .auth-card {
 .calendar-day.level-4.calendar-day-today {
   box-shadow:
     0 0 0 1px var(--flare),
+    0 0 8px var(--ignite-glow);
+}
+
+.calendar-day-selected {
+  box-shadow: 0 0 0 2px var(--ignite);
+}
+
+.calendar-day.level-4.calendar-day-selected {
+  box-shadow:
+    0 0 0 2px var(--flare),
     0 0 8px var(--ignite-glow);
 }
 
@@ -6160,6 +6389,23 @@ html[data-theme='light'] .plugin-origin {
 .project-item-row .project-card {
   flex: 1;
   min-width: 0;
+}
+
+/* The open session. This is the rule the sidebar had been asking for since the
+   row was renamed: SessionRow emits `session-item-row active`, and the only
+   `.active` background in the file was on the `.session-row` block that nothing
+   rendered any more. The project row above it kept highlighting the whole time,
+   which is what made it read as an identity bug rather than a missing rule. */
+.session-item-row.active {
+  /* Wash was --ignite-dim at 0.1 → ~1.1:1 on pure black (same hole as dim
+     agent-dots). Raise the fill and pin a full-opacity left edge so selection
+     reads at a glance without a full-row shout. */
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ignite) 30%, transparent),
+    transparent 70%
+  );
+  box-shadow: inset 2px 0 0 var(--ignite);
 }
 
 /* The menu stays out of the way until the row is hovered or its menu is open,

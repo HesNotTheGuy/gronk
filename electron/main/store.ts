@@ -7,6 +7,7 @@ import {
   type PermissionAuditEntry,
   type PermissionMode,
   type ProjectContext,
+  type ProjectNotes,
   type SessionInfo
 } from '../../shared/types'
 import { isChatWorkspace, normalizePath } from '../../shared/path'
@@ -45,6 +46,14 @@ interface StoreData {
   /** sessionId -> chat messages (local transcript cache) */
   transcripts: Record<string, ChatMessage[]>
   permissionAudit: PermissionAuditEntry[]
+  /**
+   * normalized project cwd -> scratchpad text.
+   *
+   * Its own key rather than a field on `recentProjects` because that list is
+   * capped and pruned; see the ProjectNotes doc in shared/types.ts. Nothing
+   * evicts from here, so a note outlives the rail row it was written beside.
+   */
+  projectNotes: ProjectNotes
 }
 
 /** Store as read off disk: older files also carried the now-derived field. */
@@ -151,7 +160,8 @@ function emptyStore(): StoreData {
     recentProjects: [],
     sessions: [],
     transcripts: {},
-    permissionAudit: []
+    permissionAudit: [],
+    projectNotes: {}
   }
 }
 
@@ -199,6 +209,14 @@ function migrate(raw: RawStore, from: number): RawStore {
   return raw
 }
 
+/** A `{ key: string }` map and nothing else: not an array, not a prototype trick. */
+function isPlainRecord(value: unknown): value is ProjectNotes {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const proto = Object.getPrototypeOf(value)
+  if (proto !== Object.prototype && proto !== null) return false
+  return Object.values(value as Record<string, unknown>).every((v) => typeof v === 'string')
+}
+
 function fromRaw(raw: RawStore): StoreData {
   const from = typeof raw.version === 'number' ? raw.version : SCHEMA_VERSION
   const data = migrate(raw, from)
@@ -208,7 +226,10 @@ function fromRaw(raw: RawStore): StoreData {
     recentProjects: data.recentProjects ?? [],
     sessions: data.sessions ?? [],
     transcripts: data.transcripts ?? {},
-    permissionAudit: data.permissionAudit ?? []
+    permissionAudit: data.permissionAudit ?? [],
+    // Guarded rather than defaulted: the file is user-writable, and every reader
+    // of this one iterates its keys.
+    projectNotes: isPlainRecord(data.projectNotes) ? data.projectNotes : {}
   }
 }
 
@@ -534,6 +555,30 @@ export function setRecentProjectPinned(cwd: string, pinned: boolean): ProjectCon
   if (!found) return getRecentProjects()
   writeStore(data)
   return data.recentProjects
+}
+
+export function getProjectNotes(): ProjectNotes {
+  return readStore().projectNotes
+}
+
+/**
+ * Write one project's scratchpad. An empty note forgets it entirely.
+ *
+ * Stored exactly as given. The note is the user's own writing, so it is NOT
+ * redacted and NOT truncated, the same rule message text follows (FIX-R1): a
+ * scratchpad that silently rewrites what you typed is worse than no scratchpad.
+ * Trimming the ends is the renderer's job (`normalizeNote`), and `''` arriving
+ * here is what "forget this note" looks like on the wire, which is why the key
+ * is deleted rather than left holding an empty string for every folder ever
+ * opened.
+ */
+export function setProjectNote(cwd: string, note: string): ProjectNotes {
+  const data = readStore()
+  const normalized = normalizeCwd(cwd)
+  if (note) data.projectNotes[normalized] = note
+  else delete data.projectNotes[normalized]
+  writeStore(data)
+  return data.projectNotes
 }
 
 export function listSessions(): SessionInfo[] {

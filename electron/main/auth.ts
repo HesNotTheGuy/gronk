@@ -16,6 +16,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { resolveGrokBinary } from './acp/client'
+import { decideAuth } from './auth-decision'
 import { cachedProbe } from './cache'
 import { grokHome } from './grok-home'
 import { getSettings } from './store'
@@ -126,121 +127,6 @@ export function looksUnauthenticated(stdout: string, stderr: string): boolean {
   )
 }
 
-function modelsListLooksSuccessful(stdout: string, label: string | undefined): boolean {
-  return Boolean(label || /available models|default model/i.test(stdout))
-}
-
-export interface ModelsProbeInput {
-  code: number | null
-  stdout: string
-  stderr: string
-  hasAuthFile: boolean
-  hasEnvApiKey: boolean
-}
-
-/**
- * Pure interpretation of a `grok models` probe. Exported for tests.
- *
- * A models list alone is not enough: some CLI builds print models without usable
- * credentials. Require a credential signal (login label, auth.json, or env key),
- * and never treat unauth phrasing as signed-in even when models appear on stdout.
- */
-export function interpretModelsProbe(input: ModelsProbeInput): AuthStatus {
-  const { code, stdout, stderr, hasAuthFile: filePresent, hasEnvApiKey: envKey } = input
-  const combined = `${stdout}\n${stderr}`
-  const label = parseLoginLabel(stdout)
-  const modelsOk = modelsListLooksSuccessful(stdout, label)
-  const unauthText = looksUnauthenticated(stdout, stderr)
-
-  if (unauthText) {
-    if (envKey && !filePresent) {
-      return {
-        state: 'unauthenticated',
-        authenticated: false,
-        method: 'api_key_env',
-        hasAuthFile: false,
-        hasEnvApiKey: true,
-        message:
-          'XAI_API_KEY is set but the CLI rejected it (or network failed). Fix the key or sign in with browser login.'
-      }
-    }
-    return {
-      state: 'unauthenticated',
-      authenticated: false,
-      method: 'none',
-      hasAuthFile: filePresent,
-      hasEnvApiKey: envKey,
-      message: filePresent
-        ? 'Cached credentials look invalid or expired. Sign in again.'
-        : 'Not signed in. Sign in with your own Grok account to continue.'
-    }
-  }
-
-  if (code === 0 && modelsOk) {
-    const hasCredentialSignal = Boolean(label || filePresent || envKey)
-    if (!hasCredentialSignal) {
-      return {
-        state: 'unauthenticated',
-        authenticated: false,
-        method: 'none',
-        hasAuthFile: false,
-        hasEnvApiKey: false,
-        message:
-          'Grok CLI listed models but no credentials were found. Sign in with your Grok account to continue.'
-      }
-    }
-
-    let method: AuthStatus['method'] = 'unknown'
-    if (label) method = 'session'
-    else if (envKey && !filePresent) method = 'api_key_env'
-    else if (filePresent) method = 'session'
-    else if (envKey) method = 'api_key_env'
-
-    return {
-      state: 'authenticated',
-      authenticated: true,
-      method,
-      accountLabel: label || (method === 'api_key_env' ? 'API key (environment)' : 'Signed in'),
-      hasAuthFile: filePresent,
-      hasEnvApiKey: envKey,
-      message: label ? `Signed in via ${label}` : 'Credentials accepted by Grok CLI'
-    }
-  }
-
-  if (code !== 0) {
-    if (envKey && !filePresent) {
-      return {
-        state: 'unauthenticated',
-        authenticated: false,
-        method: 'api_key_env',
-        hasAuthFile: false,
-        hasEnvApiKey: true,
-        message:
-          'XAI_API_KEY is set but the CLI rejected it (or network failed). Fix the key or sign in with browser login.'
-      }
-    }
-    return {
-      state: 'unauthenticated',
-      authenticated: false,
-      method: 'none',
-      hasAuthFile: filePresent,
-      hasEnvApiKey: envKey,
-      message: filePresent
-        ? 'Cached credentials look invalid or expired. Sign in again.'
-        : 'Not signed in. Sign in with your own Grok account to continue.'
-    }
-  }
-
-  return {
-    state: 'unknown',
-    authenticated: false,
-    method: 'none',
-    hasAuthFile: filePresent,
-    hasEnvApiKey: envKey,
-    message: sanitizeCliText(combined).slice(0, 280) || 'Could not determine auth status'
-  }
-}
-
 /**
  * Every call spawns the CLI and makes an authenticated request to xAI. There are
  * ten call sites, several on hot paths — starting an agent, restoring a session,
@@ -262,9 +148,18 @@ export function invalidateAuthCache(): void {
   authProbe.invalidate()
 }
 
+/** Does stdout look like the CLI actually printed a model list? */
+export function looksLikeModelList(stdout: string): boolean {
+  return /available models|default model/i.test(stdout)
+}
+
 /**
- * Probe auth without exposing secrets. Uses `grok models` as the primary signal
- * (same path the app already needs) and soft signals for method.
+ * Probe auth without exposing secrets.
+ *
+ * This function's whole job is now observation: spawn the CLI, read the disk for
+ * existence only, and hand the facts to `decideAuth`. It deliberately makes no
+ * judgement of its own, because the judgement is the part that was wrong and the
+ * part that has to stay tested.
  */
 async function probeAuthStatus(): Promise<AuthStatus> {
   const binary = resolveBinary()
@@ -277,14 +172,32 @@ async function probeAuthStatus(): Promise<AuthStatus> {
     }
   }
 
+  const filePresent = hasAuthFile()
+  const envKey = hasEnvApiKey()
+
   const { code, stdout, stderr } = await runGrok(['models'], { timeoutMs: 12_000 })
-  return interpretModelsProbe({
+  const combined = `${stdout}\n${stderr}`
+
+  const decision = decideAuth({
     code,
-    stdout,
-    stderr,
-    hasAuthFile: hasAuthFile(),
-    hasEnvApiKey: hasEnvApiKey()
+    label: parseLoginLabel(stdout),
+    modelsListed: looksLikeModelList(stdout),
+    saysUnauthenticated: looksUnauthenticated(stdout, stderr),
+    filePresent,
+    envKey
   })
+
+  // The one thing the pure decision cannot supply: the CLI's own words, for the
+  // state where we genuinely do not know what happened. Redacted on the way
+  // through, like every other subprocess output that crosses IPC.
+  if (decision.state === 'unknown') {
+    return {
+      ...decision,
+      message: sanitizeCliText(combined).slice(0, 280) || decision.message
+    }
+  }
+
+  return decision
 }
 
 export interface LoginResult {
@@ -374,15 +287,19 @@ export async function logoutWithCli(): Promise<{ ok: boolean; message: string; a
   // The CLI just changed sign-in state on disk; the cached probe is now a lie.
   invalidateAuthCache()
   const auth = await getAuthStatus()
-  if (auth.authenticated && auth.hasEnvApiKey) {
-    return {
-      ok: false,
-      message:
-        'CLI session cleared, but XAI_API_KEY is still set in this process environment. Gronk cannot unset it — remove the variable from your shell/launch environment, then re-check status or sign in with browser login.',
-      auth
-    }
-  }
   if (code === 0 || !auth.authenticated) {
+    // Signing out clears the session, and an environment key is not a session.
+    // Saying so is the difference between a button that looks broken and one
+    // that worked: before the probe was fixed the state flipped straight back to
+    // "Signed in" and there was nothing to read that explained why.
+    if (auth.authenticated && auth.method === 'api_key_env') {
+      return {
+        ok: true,
+        message:
+          'Session cleared, but XAI_API_KEY is still set in the environment and the CLI accepts it, so this machine is still authenticated. Unset XAI_API_KEY to sign out completely.',
+        auth
+      }
+    }
     return {
       ok: true,
       message:

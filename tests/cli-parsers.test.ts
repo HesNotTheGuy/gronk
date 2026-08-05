@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import { defaultModels, parseModelsText } from '../electron/main/models'
 import {
   extractDeviceHint,
-  interpretModelsProbe,
   looksUnauthenticated,
   parseLoginLabel,
   sanitizeCliText
@@ -89,72 +88,6 @@ test('common CLI sign-out phrasings are detected', () => {
 test('a normal successful response is not read as signed out', () => {
   assert.equal(looksUnauthenticated('Available models:\n * grok-4.5', ''), false)
   assert.equal(looksUnauthenticated('', ''), false)
-})
-
-// ── Models probe → auth status ──────────────────────────────────────
-
-const MODELS_OK = 'Available models:\n * grok-4.5 (default)\nYou are logged in with grok.com.'
-
-test('models list with no credential signal is not authenticated', () => {
-  const status = interpretModelsProbe({
-    code: 0,
-    stdout: 'Available models:\n * grok-4.5',
-    stderr: '',
-    hasAuthFile: false,
-    hasEnvApiKey: false
-  })
-  assert.equal(status.authenticated, false)
-  assert.equal(status.state, 'unauthenticated')
-})
-
-test('unauth text wins even when models appear on stdout', () => {
-  const status = interpretModelsProbe({
-    code: 0,
-    stdout: 'Available models:\n * grok-4.5',
-    stderr: 'Error: not logged in',
-    hasAuthFile: true,
-    hasEnvApiKey: false
-  })
-  assert.equal(status.authenticated, false)
-  assert.equal(status.state, 'unauthenticated')
-})
-
-test('login label plus successful models is authenticated', () => {
-  const status = interpretModelsProbe({
-    code: 0,
-    stdout: MODELS_OK,
-    stderr: '',
-    hasAuthFile: false,
-    hasEnvApiKey: false
-  })
-  assert.equal(status.authenticated, true)
-  assert.equal(status.state, 'authenticated')
-  assert.equal(status.accountLabel, 'grok.com')
-  assert.equal(status.method, 'session')
-})
-
-test('auth file plus successful models is authenticated', () => {
-  const status = interpretModelsProbe({
-    code: 0,
-    stdout: 'Available models:\n * grok-4.5',
-    stderr: '',
-    hasAuthFile: true,
-    hasEnvApiKey: false
-  })
-  assert.equal(status.authenticated, true)
-  assert.equal(status.method, 'session')
-})
-
-test('env API key plus successful models is authenticated', () => {
-  const status = interpretModelsProbe({
-    code: 0,
-    stdout: 'Available models:\n * grok-4.5',
-    stderr: '',
-    hasAuthFile: false,
-    hasEnvApiKey: true
-  })
-  assert.equal(status.authenticated, true)
-  assert.equal(status.method, 'api_key_env')
 })
 
 // ── CLI text surfaced to the UI ─────────────────────────────────────

@@ -17,7 +17,9 @@ export default defineConfig({
     }
   },
   define: {
-    __APP_VERSION__: JSON.stringify('0.1.0')
+    __APP_VERSION__: JSON.stringify('0.1.0'),
+    // Fixture-stable: harness must not depend on the host git sha.
+    __APP_BUILD_LABEL__: JSON.stringify('v0.1.0 · fixture')
   },
   plugins: [react()],
   server: {

@@ -1,8 +1,9 @@
 /**
  * Shared Grok CLI spawn helper.
  *
- * Extracted from the module-private `runGrok` in auth.ts (Gotcha #1) so auth,
- * models, and plugins can share one code path.
+ * Extracted from the module-private `runGrok` in auth.ts so auth, models and
+ * plugins share one code path, with one timeout and one autoupdater override
+ * rather than three drifting copies.
  *
  * Security notes (do not weaken):
  * - Args are always passed as discrete argv (never `shell: true`), so shell

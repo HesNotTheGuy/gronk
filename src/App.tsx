@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AuthGate } from './components/AuthGate'
 import { ChatHome } from './components/ChatHome'
@@ -22,7 +22,9 @@ import { PaneSplitter } from './components/PaneSplitter'
 import { PreviewPane } from './components/PreviewPane'
 
 import { useGronk } from './hooks/useGronk'
+import { useActivityCalendar } from './hooks/useActivityCalendar'
 import { folderName, isChatSession } from '../shared/path'
+import { formatDayLabel } from './lib/calendar'
 import type { LoginMethod, SessionInfo } from '../shared/types'
 
 const ONBOARD_HIDE_KEY = 'gronk.onboarding.hide'
@@ -41,6 +43,19 @@ const CHAT_HINTS = [
 
 export function App() {
   const g = useGronk()
+  /**
+   * Lifted above Home so leaving the surface does not wipe the painted grid.
+   * Refreshed only when Home becomes visible — getActivityCalendar re-reads up
+   * to 50 transcripts, which activity.ts pays on a Home visit, not per turn.
+   */
+  const activityCalendar = useActivityCalendar()
+  /**
+   * Transient day filter from the heatmap. Not a SessionNavMode: Recent / By
+   * project still apply on top. Cleared explicitly (chip) or by re-clicking the
+   * same day. Not persisted — leaving and coming back should not trap you in a
+   * day you forgot you picked.
+   */
+  const [selectedActivityDay, setSelectedActivityDay] = useState<string | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showPlugins, setShowPlugins] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -52,6 +67,20 @@ export function App() {
     }
   })
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  /** Chat + composer only. Toggle with [ when not typing in a field. */
+  const [focusMode, setFocusMode] = useState(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '[' || e.metaKey || e.ctrlKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t?.closest('input, textarea, select, [contenteditable="true"]')) return
+      e.preventDefault()
+      setFocusMode((v) => !v)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   /**
    * Viewport coords for the portalled Export menu. The menu cannot live inside
    * .topbar: that header sets backdrop-filter, which makes it the containing
@@ -83,6 +112,32 @@ export function App() {
   const inConversation = !g.browsing && (surface === 'chat' || surface === 'project') && !!g.cwd
   const inChat = inConversation && surface === 'chat'
   const inProject = inConversation && surface === 'project'
+
+  // Soft-refresh the calendar when Home is shown. Not on session catalog churn:
+  // every completed turn would otherwise re-read every transcript.
+  useEffect(() => {
+    if (surface !== 'home') return
+    void activityCalendar.refresh()
+  }, [surface, activityCalendar.refresh])
+
+  /** Day click on the heatmap: toggle if same day, else set, then show Build rail. */
+  const selectActivityDay = (dayKey: string): void => {
+    setSelectedActivityDay((prev) => (prev === dayKey ? null : dayKey))
+    // Home's sidebar has no session list; Build does. Land there so the filter
+    // is something the user can see without an extra hop.
+    g.goProjects()
+  }
+
+  /**
+   * Stable across App re-renders. An inline `(id) => void g.retryPrompt(id)`
+   * is a new function every token and busts MessageRow memo for every row.
+   */
+  const onRetryPrompt = useCallback(
+    (id: string) => {
+      void g.retryPrompt(id)
+    },
+    [g.retryPrompt]
+  )
 
   /**
    * The Export menu portals out of .app, so it would otherwise float above a
@@ -244,7 +299,7 @@ export function App() {
   const hints = inChat ? CHAT_HINTS : PROJECT_HINTS
 
   return (
-    <div className="app">
+    <div className={['app', focusMode ? 'focus-mode' : ''].filter(Boolean).join(' ')}>
       <Sidebar
         authLabel={g.auth?.accountLabel}
         authenticated={g.isAuthenticated}
@@ -256,6 +311,11 @@ export function App() {
         activeCwd={g.cwd}
         activeSessionId={g.sessionId}
         archivedCount={g.archivedSessions.length}
+        activityDayFilter={selectedActivityDay}
+        activityDayFilterLabel={
+          selectedActivityDay ? formatDayLabel(selectedActivityDay) : null
+        }
+        onClearActivityDayFilter={() => setSelectedActivityDay(null)}
         onGoHome={() => g.goHome()}
         onGoChat={() => g.goChat()}
         onGoProjects={() => g.goProjects()}
@@ -272,7 +332,6 @@ export function App() {
         onNewProjectSession={() => void g.newChat()}
         onOpenArchived={() => g.setShowArchived(true)}
         onOpenSettings={() => g.setShowSettings(true)}
-        onLogout={() => void g.logout()}
         onSignIn={() => setShowAuthModal(true)}
       />
 
@@ -312,6 +371,15 @@ export function App() {
             </div>
           </div>
           <div className="topbar-actions">
+            <button
+              type="button"
+              className={`btn btn-sm btn-ghost ${focusMode ? 'active' : ''}`}
+              title="Focus mode: chat + composer only. Toggle with ["
+              aria-pressed={focusMode}
+              onClick={() => setFocusMode((v) => !v)}
+            >
+              {focusMode ? 'Exit focus' : 'Focus'}
+            </button>
             {inProject ? (
               <button
                 type="button"
@@ -547,6 +615,9 @@ export function App() {
               authLabel={g.auth?.accountLabel}
               grokFound={!!g.grokPath || !!g.health?.grokFound}
               model={g.settings?.model}
+              activityCalendar={activityCalendar}
+              selectedActivityDay={selectedActivityDay}
+              onSelectActivityDay={selectActivityDay}
               onOpenChat={() => g.goChat()}
               onOpenProjects={() => g.goProjects()}
               onOpenProject={(cwd) => openProject(cwd)}
@@ -646,7 +717,7 @@ export function App() {
                   <MessageList
                     messages={g.messages}
                     canRetry={g.connection === 'ready' && !g.busy}
-                    onRetry={(id) => void g.retryPrompt(id)}
+                    onRetry={onRetryPrompt}
                   />
                 </>
               )}
@@ -659,6 +730,7 @@ export function App() {
             {inConversation ? (
               <SessionTray
                 showPlan={inProject}
+                sessionId={g.sessionId}
                 plan={
                   g.activePlan && g.sessionId && g.activePlan.sessionId === g.sessionId
                     ? g.activePlan
@@ -667,11 +739,15 @@ export function App() {
                 messages={g.messages}
                 usage={g.usage}
                 auth={g.auth}
+                notesCwd={inProject ? g.cwd : null}
+                notes={g.projectNotes}
+                onSaveNote={(cwd, note) => void g.setProjectNote(cwd, note)}
               />
             ) : null}
 
             <Composer
-              disabled={g.connection !== 'ready'}
+              connection={g.connection}
+              hydrating={g.hydrating}
               busy={g.busy || g.connection === 'loading'}
               cwd={inChat ? null : g.cwd}
               models={g.models}

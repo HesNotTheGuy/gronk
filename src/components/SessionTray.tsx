@@ -1,13 +1,38 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ActivePlan, AuthStatus, ChatMessage, SessionUsage } from '../../shared/types'
+import type {
+  ActivePlan,
+  AuthStatus,
+  ChatMessage,
+  ProjectNotes,
+  SessionUsage
+} from '../../shared/types'
+import { nextRetained } from '../lib/agent-retention'
+import {
+  NOTE_MAX_CHARS,
+  noteFor,
+  noteWordCount,
+  pendingNoteSave
+} from '../lib/project-notes'
 import {
   agentActivitySummary,
   collectAgentUnitsFromMessages,
   orderUnitsForDisplay
 } from '../lib/agent-activity'
+import { statusToDot } from '../lib/agent-dots'
 import { costNote, detailCostLabel, summaryCostLabel } from '../lib/cost'
+import { toolActivitySignature } from '../lib/tool-activity-sig'
+import { shortenForDisplay } from '../lib/tool-format'
 
-type TrayTab = 'plan' | 'agents' | 'usage'
+type TrayTab = 'plan' | 'agents' | 'usage' | 'notes'
+
+/**
+ * How long typing has to stop before a note is written.
+ *
+ * Every write re-serializes the whole store file and rolls the backup forward,
+ * so this is not a keystroke-level save. Nothing is lost by waiting: the pending
+ * text is flushed when the project changes and when the tray unmounts.
+ */
+const NOTE_SAVE_DEBOUNCE_MS = 600
 
 function planStatusClass(status: string): string {
   const s = status.toLowerCase()
@@ -50,47 +75,27 @@ function cachedShare(inputTokens: number, cached: number): number | null {
   return Math.min(100, Math.round((cached / inputTokens) * 100))
 }
 
-function statusShort(s: string): string {
-  switch (s) {
-    case 'completed':
-      return 'done'
-    case 'failed':
-      return 'fail'
-    case 'in_progress':
-      return 'run'
-    case 'pending':
-      return 'wait'
-    case 'cancelled':
-      return 'stop'
-    default:
-      return s
-  }
-}
-
-function kindTag(k: string): string {
-  switch (k) {
-    case 'subagent':
-      return 'AGENT'
-    case 'background':
-      return 'BG'
-    case 'workflow':
-      return 'FLOW'
-    case 'monitor':
-      return 'WATCH'
-    case 'scheduler':
-      return 'CRON'
-    default:
-      return 'TASK'
-  }
-}
-
 interface Props {
   /** Build surface only */
   showPlan: boolean
+  /** Which session is on screen. A change of id is a restore, not new work. */
+  sessionId: string | null
   plan: ActivePlan | null
   messages: ChatMessage[]
   usage: SessionUsage | null
   auth?: AuthStatus | null
+  /**
+   * The project folder this scratchpad belongs to, or null for no scratchpad.
+   *
+   * Null on the Chat surface deliberately. Chat runs in an app-local sandbox
+   * whose path is superseded rather than kept, so a note filed under it would
+   * quietly stop being findable; and "notes about this folder" means nothing for
+   * a folder the user never chose.
+   */
+  notesCwd: string | null
+  /** Every project's note, or null until they have loaded. */
+  notes: ProjectNotes | null
+  onSaveNote: (cwd: string, note: string) => void
 }
 
 /**
@@ -100,23 +105,142 @@ interface Props {
  * single thin rail of tabs; only one body expands at a time, and empty sections
  * do not appear.
  */
-export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
-  const units = useMemo(
-    () => collectAgentUnitsFromMessages(messages, { maxMessages: 16 }),
-    [messages]
+export function SessionTray({
+  showPlan,
+  sessionId,
+  plan,
+  messages,
+  usage,
+  auth,
+  notesCwd,
+  notes,
+  onSaveNote
+}: Props) {
+  // Wide scan so status updates still reach units that started many turns ago.
+  // Display history is the sticky `retained` list below — a 16-message window
+  // made the AGENTS tab vanish as soon as chat moved on, which felt like
+  // "only while something is running".
+  //
+  // Signature, not `messages`: every streaming token is a new messages array,
+  // and re-extracting + setRetained on each one was a full second React pass
+  // for zero agent change.
+  const toolsSig = useMemo(() => toolActivitySignature(messages, 200), [messages])
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
+  const fromMessages = useMemo(
+    () => collectAgentUnitsFromMessages(messagesRef.current, { maxMessages: 200 }),
+    // toolsSig is the gate; read messages via ref so a text-only token does not
+    // re-extract, and a real tool change still sees the latest array.
+    [toolsSig]
   )
-  const agentSummary = useMemo(() => agentActivitySummary(units), [units])
+  const [retained, setRetained] = useState<typeof fromMessages>([])
+  /**
+   * The first scan after a session appears is a restore snapshot, not live work.
+   *
+   * Without this the tray could not tell "ran while you were here" from "is in
+   * the transcript", so reopening a session presented its entire history as
+   * current: AGENTS 50, mostly red, with nothing actually wrong.
+   */
+  const restoreKey = useRef<string | null | undefined>(undefined)
   const [tab, setTab] = useState<TrayTab | null>(null)
   const [agentsDismissed, setAgentsDismissed] = useState(false)
   const prevLive = useRef(0)
 
+  // Merge newly seen units into session memory. The first scan of a session is
+  // a restore snapshot and keeps only what is still running; everything after it
+  // is this session own work and is kept when it finishes.
+  //
+  // When toolsSig is unchanged, `fromMessages` keeps its previous reference, so
+  // this effect does not run on pure text tokens — no setRetained, no second pass.
+  useEffect(() => {
+    const isRestoreSnapshot = restoreKey.current !== sessionId
+    if (isRestoreSnapshot) restoreKey.current = sessionId
+    // An empty scan mid-session drops nothing: the unit is still this session own
+    // work even once its tool call has scrolled out of the window.
+    if (!isRestoreSnapshot && fromMessages.length === 0) return
+    setRetained((prev) => {
+      const next = nextRetained({ prev, incoming: fromMessages, isRestoreSnapshot })
+      // Same contents → keep the previous array so consumers do not re-render.
+      if (
+        next.length === prev.length &&
+        next.every((u, i) => u === prev[i] || (u.id === prev[i]?.id && u.status === prev[i]?.status))
+      ) {
+        return prev
+      }
+      return next
+    })
+  }, [fromMessages, sessionId])
+
+  const units = retained
+  const agentSummary = useMemo(() => agentActivitySummary(units), [units])
+
+  // ── Project notes ────────────────────────────────────────────────
+  //
+  // The draft carries the cwd it was loaded for. Without that pairing there is
+  // one render, between the project changing and the draft being reloaded, where
+  // the previous project's text is sitting in state next to the new project's
+  // cwd; a save fired from that render files one project's notes under another.
+  const [draft, setDraft] = useState<{ cwd: string; text: string } | null>(null)
+  const notesReady = notes !== null
+  const storedNote = noteFor(notes, notesCwd)
+  const loadedFor = useRef<string | null>(null)
+  /** Text typed but not yet written, kept so it can be flushed rather than lost. */
+  const unsaved = useRef<{ cwd: string; text: string } | null>(null)
+  const saveNote = useRef(onSaveNote)
+  saveNote.current = onSaveNote
+
+  const flushNote = useRef(() => {
+    const pending = unsaved.current
+    if (!pending) return
+    unsaved.current = null
+    saveNote.current(pending.cwd, pending.text)
+  })
+
+  // Leaving a project writes whatever it was holding. This runs before the
+  // reload below, so the text it flushes still belongs to the project it was
+  // typed into.
+  const prevCwd = useRef<string | null>(null)
+  useEffect(() => {
+    if (prevCwd.current !== null && prevCwd.current !== notesCwd) flushNote.current()
+    prevCwd.current = notesCwd
+  }, [notesCwd])
+
+  // Load once per project. Deliberately not re-run when `notes` changes: saving
+  // writes the map straight back through, and re-seeding the box from it would
+  // fight anyone still typing.
+  useEffect(() => {
+    if (!notesCwd || !notesReady) {
+      loadedFor.current = null
+      return
+    }
+    if (loadedFor.current === notesCwd) return
+    loadedFor.current = notesCwd
+    setDraft({ cwd: notesCwd, text: storedNote })
+  }, [notesCwd, notesReady, storedNote])
+
+  useEffect(() => {
+    if (!notesCwd || !draft || draft.cwd !== notesCwd) return
+    const next = pendingNoteSave(notes, notesCwd, draft.text)
+    if (next === null) {
+      unsaved.current = null
+      return
+    }
+    unsaved.current = { cwd: notesCwd, text: next }
+    const timer = setTimeout(() => flushNote.current(), NOTE_SAVE_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [draft, notes, notesCwd])
+
+  // Closing the session, or the tray disappearing, must not eat the last thing
+  // typed into it.
+  useEffect(() => () => flushNote.current(), [])
+
+  const noteText = draft && draft.cwd === notesCwd ? draft.text : storedNote
+  const noteWords = noteWordCount(noteText)
+
+  const hasNotes = !!notesCwd
   const hasPlan = showPlan && !!plan && plan.entries.length > 0
-  // Only surface Agents when something is actually running, or the user already
-  // has the tab open. A restored transcript full of finished tool calls used to
-  // paint "Agents 6" as if work were live.
-  const hasAgents =
-    !agentsDismissed &&
-    (agentSummary.live > 0 || (tab === 'agents' && units.length > 0))
+  // Tab stays for the whole session once any agent has been seen, until ×.
+  const hasAgents = !agentsDismissed && units.length > 0
   const hasUsage = !!usage && usage.turns > 0
 
   useEffect(() => {
@@ -136,9 +260,8 @@ export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
     if (agentSummary.live > 0) {
       setAgentsDismissed(false)
     } else if (prevLive.current > 0 && tab === 'agents') {
-      // Closing when the last agent finishes is kept: the user is then looking
-      // at a panel about work that has stopped, and it collapses itself rather
-      // than needing a dismiss.
+      // Collapse the expanded body when the last agent finishes, but leave the
+      // tab itself so the user can reopen history without waiting for new work.
       setTab(null)
     }
     prevLive.current = agentSummary.live
@@ -149,9 +272,14 @@ export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
     if (tab === 'plan' && !hasPlan) setTab(null)
     if (tab === 'agents' && !hasAgents) setTab(null)
     if (tab === 'usage' && !hasUsage) setTab(null)
-  }, [tab, hasPlan, hasAgents, hasUsage])
+    if (tab === 'notes' && !hasNotes) setTab(null)
+  }, [tab, hasPlan, hasAgents, hasUsage, hasNotes])
 
-  if (!hasPlan && !hasAgents && !hasUsage) return null
+  // Consequence worth knowing: in a project session the rail is now always here,
+  // because Notes is the one tab that cannot wait for content to exist before it
+  // appears: there would be nowhere to write the first note. Chat sessions pass
+  // no cwd and are unchanged.
+  if (!hasPlan && !hasAgents && !hasUsage && !hasNotes) return null
 
   const planDone = hasPlan
     ? plan!.entries.filter((e) => planStatusClass(e.status) === 'done').length
@@ -228,16 +356,33 @@ export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
           </button>
         ) : null}
 
+        {hasNotes ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'notes'}
+            className={`session-tray-tab ${tab === 'notes' ? 'active' : ''}`}
+            onClick={() => select('notes')}
+            title="Scratchpad for this project folder"
+          >
+            <span className="session-tray-kicker">Notes</span>
+            <span className="session-tray-value">
+              {noteWords > 0 ? `${noteWords} ${noteWords === 1 ? 'word' : 'words'}` : '—'}
+            </span>
+          </button>
+        ) : null}
+
         <span className="session-tray-spacer" />
 
         {tab === 'agents' ? (
           <button
             type="button"
             className="session-tray-dismiss"
-            title="Hide agents until new ones start"
+            title="Hide agents until new work starts"
             aria-label="Hide agents"
             onClick={() => {
               setAgentsDismissed(true)
+              setRetained([])
               setTab(null)
             }}
           >
@@ -277,21 +422,72 @@ export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
 
       {tab === 'agents' && hasAgents ? (
         <div className="session-tray-body" role="tabpanel">
-          <div className="agent-chip-row">
-            {agentChips.map((u) => (
-              <span
-                key={u.id}
-                className={`agent-chip status-${u.status} kind-${u.kind}`}
-                title={[u.label, u.detail, u.source].filter(Boolean).join('\n')}
-              >
-                <span className="agent-chip-kind">{kindTag(u.kind)}</span>
-                <span className="agent-chip-label">{u.label}</span>
-                <span className="agent-chip-status">{statusShort(u.status)}</span>
-              </span>
-            ))}
-            {agentOverflow > 0 ? <span className="agent-chip more">+{agentOverflow}</span> : null}
+          {/*
+            Detail list, not a second glance strip: status is the same dot tones
+            as AgentDots (luminance hierarchy, one accent for fail). Labels stay
+            so you can tell agents apart; kind tags and RUN/DONE words go.
+            Paths in labels/titles run through shortenForDisplay so a home
+            directory never lands in the tray (or a screenshot of it).
+          */}
+          <div className="agent-tray-list">
+            {agentChips.map((u) => {
+              const tone = statusToDot(u.status)
+              // Tight cap: identity over provenance; long tool titles become noise.
+              const label = shortenForDisplay(u.label, 48)
+              const detail = u.detail ? shortenForDisplay(u.detail, 72) : ''
+              return (
+                <div
+                  key={u.id}
+                  className="agent-tray-row"
+                  title={[label, detail, u.source ? shortenForDisplay(u.source, 72) : '']
+                    .filter(Boolean)
+                    .join('\n')}
+                >
+                  <span className={`agent-dot ${tone}`} aria-hidden />
+                  <span className="agent-tray-label">{label}</span>
+                </div>
+              )
+            })}
+            {agentOverflow > 0 ? (
+              <div className="agent-tray-more">+{agentOverflow} more</div>
+            ) : null}
           </div>
           <p className="session-tray-note">From Grok tool calls only. No extra model narration.</p>
+        </div>
+      ) : null}
+
+      {tab === 'notes' && hasNotes ? (
+        <div className="session-tray-body notes-body" role="tabpanel">
+          {/*
+            A textarea, and only ever a textarea. Notes are user-authored text
+            that gets persisted and re-rendered, which is the exact shape the
+            markdown surface is dangerous for, so this one never goes near it.
+            A textarea's value is not parsed as anything, so there is no rendering
+            decision here to get wrong later.
+          */}
+          <textarea
+            className="project-note"
+            value={noteText}
+            disabled={!notesReady}
+            maxLength={NOTE_MAX_CHARS}
+            rows={6}
+            spellCheck
+            aria-label="Notes for this project"
+            placeholder="Things to remember about this project. Snippets, decisions, what to pick up next."
+            /*
+              onInput rather than onChange, which is what the rest of the app
+              uses. React fires it for exactly the same keystrokes, and it is the
+              event the suite's jsdom harness can actually deliver: React 19's
+              change plugin does not synthesize onChange from a dispatched input
+              event outside a real browser, so onChange here would leave the
+              whole save path with no test at all.
+            */
+            onInput={(e) => setDraft({ cwd: notesCwd!, text: e.currentTarget.value })}
+          />
+          <p className="session-tray-note">
+            Plain text, one note per folder, saved with Gronk's own settings rather than in
+            the project itself, so it is never committed by accident.
+          </p>
         </div>
       ) : null}
 
