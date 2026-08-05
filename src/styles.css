@@ -127,6 +127,15 @@ button {
   isolation: isolate;
 }
 
+/* Focus: chat + composer only. Topbar Focus button or [ when not in a field. */
+.app.focus-mode {
+  --sidebar-w: 0px;
+}
+
+.app.focus-mode > .sidebar {
+  display: none;
+}
+
 /* Explicit placement so decorative layers never steal grid cells */
 .app > .sidebar {
   grid-column: 1;
@@ -188,12 +197,21 @@ button {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(10, 10, 10, 0.96), rgba(0, 0, 0, 0.98));
+  /* Chrome recedes: pure void, lower edge energy than the chat stage. */
+  background: #000000;
   min-width: 0;
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  backdrop-filter: blur(20px);
+  color: var(--ink-3);
+}
+
+.project-card .path {
+  display: none;
+}
+
+.project-card .name {
+  font-size: 12px;
 }
 
 .sidebar-header {
@@ -231,31 +249,24 @@ button {
 }
 
 .brand-mark {
-  width: 36px;
-  height: 36px;
   position: relative;
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: 0.02em;
-  color: var(--void);
-  background: var(--flare);
-  clip-path: polygon(0 0, 100% 0, 100% 72%, 72% 100%, 0 100%);
-  box-shadow: 0 0 24px rgba(255, 255, 255, 0.18);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  line-height: 0;
 }
 
-.brand-mark::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 10px;
-  height: 10px;
-  background: var(--ignite);
-  clip-path: polygon(100% 0, 0 100%, 100% 100%);
+.brand-mark-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Outer glow lives in SVG; keep CSS filter light so 16px stays crisp. */
+  filter: drop-shadow(0 0 6px rgba(234, 255, 251, 0.2));
+  user-select: none;
+  pointer-events: none;
 }
 
 .brand-text h1 {
@@ -666,8 +677,8 @@ button {
   gap: 12px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(12, 12, 12, 0.9), rgba(0, 0, 0, 0.55));
-  backdrop-filter: blur(16px);
+  /* Header chrome stays quieter than the message column. */
+  background: #000000;
   -webkit-app-region: drag;
 }
 
@@ -1093,7 +1104,8 @@ button {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 28px 32px 40px;
+  /* Extra bottom pad so the last project card isn't tight against the chrome */
+  padding: 28px 32px 64px;
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -1493,12 +1505,14 @@ button {
   overflow: visible;
 }
 
-/* Workspace folder list should scroll as one column, not fight flex siblings */
+/* Project list: natural height inside .browse-home. A nested flex:1 +
+   overflow:auto here clipped the last cards (two scrollports fighting).
+   Single scroll stays on .browse-home. */
 .browse-home > .browse-panel.workspace-folder-list,
 .browse-home > .workspace-folder-list {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
 }
 
 /* Prefer wrapping long titles over cutting them off the viewport */
@@ -2053,7 +2067,9 @@ button {
   height: 6px;
   border-radius: 1px;
   background: var(--ink-4);
-  opacity: 0.45;
+  /* Done recedes: 0.45 was invisible on pure black; 0.8 read a bit busy in
+     the tray list. 0.7 stays findable under a message and quieter next to type. */
+  opacity: 0.7;
   flex: none;
 }
 
@@ -3437,6 +3453,8 @@ html[data-theme='light'] .code-block {
 
 /* ---------- Session tray (plan · agents · usage in one rail) ---------- */
 .session-tray {
+  /* Sheet: rail stays in flow; body floats up over the transcript. */
+  position: relative;
   flex-shrink: 0;
   max-width: min(100%, 860px);
   width: calc(100% - 44px);
@@ -3444,7 +3462,13 @@ html[data-theme='light'] .code-block {
   border-top: 1px solid var(--line);
   border-left: 1px solid var(--line-2);
   border-right: 1px solid var(--line-2);
-  background: var(--panel);
+  /* Chrome recedes under the chat stage. */
+  background: #000000;
+  z-index: 5;
+}
+
+.app.focus-mode .session-tray:not(.open) {
+  display: none;
 }
 
 .session-tray.live {
@@ -3532,11 +3556,19 @@ html[data-theme='light'] .code-block {
 }
 
 .session-tray-body {
-  border-top: 1px solid var(--line);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  border: 1px solid var(--line-2);
+  border-bottom: none;
   padding: 10px 12px 12px;
   max-height: min(220px, 32vh);
   overflow: auto;
   overscroll-behavior: contain;
+  background: #050607;
+  box-shadow: 0 -16px 48px rgba(0, 0, 0, 0.75);
+  z-index: 6;
 }
 
 .session-tray-body .plan-list {
@@ -3545,8 +3577,48 @@ html[data-theme='light'] .code-block {
   padding: 0;
 }
 
-.session-tray-body .agent-chip-row {
-  margin: 0;
+/* Agents tab: mission log, not chip cloud — borderless rows, status = luminance. */
+.agent-tray-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-tray-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  max-width: 100%;
+  padding: 1px 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.agent-tray-row .agent-dot {
+  /* Slightly larger than the under-message glance so it reads next to type. */
+  width: 7px;
+  height: 7px;
+}
+
+.agent-tray-label {
+  min-width: 0;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+
+.agent-tray-more {
+  padding: 2px 0 0 15px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-4);
 }
 
 .session-tray-body .usage-cols {

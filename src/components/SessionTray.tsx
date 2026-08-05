@@ -5,7 +5,9 @@ import {
   collectAgentUnitsFromMessages,
   orderUnitsForDisplay
 } from '../lib/agent-activity'
+import { statusToDot } from '../lib/agent-dots'
 import { costNote, detailCostLabel, summaryCostLabel } from '../lib/cost'
+import { shortenForDisplay } from '../lib/tool-format'
 
 type TrayTab = 'plan' | 'agents' | 'usage'
 
@@ -50,40 +52,6 @@ function cachedShare(inputTokens: number, cached: number): number | null {
   return Math.min(100, Math.round((cached / inputTokens) * 100))
 }
 
-function statusShort(s: string): string {
-  switch (s) {
-    case 'completed':
-      return 'done'
-    case 'failed':
-      return 'fail'
-    case 'in_progress':
-      return 'run'
-    case 'pending':
-      return 'wait'
-    case 'cancelled':
-      return 'stop'
-    default:
-      return s
-  }
-}
-
-function kindTag(k: string): string {
-  switch (k) {
-    case 'subagent':
-      return 'AGENT'
-    case 'background':
-      return 'BG'
-    case 'workflow':
-      return 'FLOW'
-    case 'monitor':
-      return 'WATCH'
-    case 'scheduler':
-      return 'CRON'
-    default:
-      return 'TASK'
-  }
-}
-
 interface Props {
   /** Build surface only */
   showPlan: boolean
@@ -101,22 +69,35 @@ interface Props {
  * do not appear.
  */
 export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
-  const units = useMemo(
-    () => collectAgentUnitsFromMessages(messages, { maxMessages: 16 }),
+  // Wide scan so status updates still reach units that started many turns ago.
+  // Display history is the sticky `retained` list below — a 16-message window
+  // made the AGENTS tab vanish as soon as chat moved on, which felt like
+  // "only while something is running".
+  const fromMessages = useMemo(
+    () => collectAgentUnitsFromMessages(messages, { maxMessages: 200 }),
     [messages]
   )
-  const agentSummary = useMemo(() => agentActivitySummary(units), [units])
+  const [retained, setRetained] = useState<typeof fromMessages>([])
   const [tab, setTab] = useState<TrayTab | null>(null)
   const [agentsDismissed, setAgentsDismissed] = useState(false)
   const prevLive = useRef(0)
 
+  // Merge newly seen units into session memory; never drop on an empty scan.
+  useEffect(() => {
+    if (fromMessages.length === 0) return
+    setRetained((prev) => {
+      const byId = new Map(prev.map((u) => [u.id, u]))
+      for (const u of fromMessages) byId.set(u.id, u)
+      return [...byId.values()]
+    })
+  }, [fromMessages])
+
+  const units = retained
+  const agentSummary = useMemo(() => agentActivitySummary(units), [units])
+
   const hasPlan = showPlan && !!plan && plan.entries.length > 0
-  // Only surface Agents when something is actually running, or the user already
-  // has the tab open. A restored transcript full of finished tool calls used to
-  // paint "Agents 6" as if work were live.
-  const hasAgents =
-    !agentsDismissed &&
-    (agentSummary.live > 0 || (tab === 'agents' && units.length > 0))
+  // Tab stays for the whole session once any agent has been seen, until ×.
+  const hasAgents = !agentsDismissed && units.length > 0
   const hasUsage = !!usage && usage.turns > 0
 
   useEffect(() => {
@@ -136,9 +117,8 @@ export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
     if (agentSummary.live > 0) {
       setAgentsDismissed(false)
     } else if (prevLive.current > 0 && tab === 'agents') {
-      // Closing when the last agent finishes is kept: the user is then looking
-      // at a panel about work that has stopped, and it collapses itself rather
-      // than needing a dismiss.
+      // Collapse the expanded body when the last agent finishes, but leave the
+      // tab itself so the user can reopen history without waiting for new work.
       setTab(null)
     }
     prevLive.current = agentSummary.live
@@ -234,10 +214,11 @@ export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
           <button
             type="button"
             className="session-tray-dismiss"
-            title="Hide agents until new ones start"
+            title="Hide agents until new work starts"
             aria-label="Hide agents"
             onClick={() => {
               setAgentsDismissed(true)
+              setRetained([])
               setTab(null)
             }}
           >
@@ -277,19 +258,35 @@ export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
 
       {tab === 'agents' && hasAgents ? (
         <div className="session-tray-body" role="tabpanel">
-          <div className="agent-chip-row">
-            {agentChips.map((u) => (
-              <span
-                key={u.id}
-                className={`agent-chip status-${u.status} kind-${u.kind}`}
-                title={[u.label, u.detail, u.source].filter(Boolean).join('\n')}
-              >
-                <span className="agent-chip-kind">{kindTag(u.kind)}</span>
-                <span className="agent-chip-label">{u.label}</span>
-                <span className="agent-chip-status">{statusShort(u.status)}</span>
-              </span>
-            ))}
-            {agentOverflow > 0 ? <span className="agent-chip more">+{agentOverflow}</span> : null}
+          {/*
+            Detail list, not a second glance strip: status is the same dot tones
+            as AgentDots (luminance hierarchy, one accent for fail). Labels stay
+            so you can tell agents apart; kind tags and RUN/DONE words go.
+            Paths in labels/titles run through shortenForDisplay so a home
+            directory never lands in the tray (or a screenshot of it).
+          */}
+          <div className="agent-tray-list">
+            {agentChips.map((u) => {
+              const tone = statusToDot(u.status)
+              // Tight cap: identity over provenance; long tool titles become noise.
+              const label = shortenForDisplay(u.label, 48)
+              const detail = u.detail ? shortenForDisplay(u.detail, 72) : ''
+              return (
+                <div
+                  key={u.id}
+                  className="agent-tray-row"
+                  title={[label, detail, u.source ? shortenForDisplay(u.source, 72) : '']
+                    .filter(Boolean)
+                    .join('\n')}
+                >
+                  <span className={`agent-dot ${tone}`} aria-hidden />
+                  <span className="agent-tray-label">{label}</span>
+                </div>
+              )
+            })}
+            {agentOverflow > 0 ? (
+              <div className="agent-tray-more">+{agentOverflow} more</div>
+            ) : null}
           </div>
           <p className="session-tray-note">From Grok tool calls only. No extra model narration.</p>
         </div>
