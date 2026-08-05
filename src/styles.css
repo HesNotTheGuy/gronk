@@ -306,7 +306,76 @@ button {
   border-bottom: none;
 }
 
-/* Collapsible Projects / Sessions rails: minimize to title only.
+/* Session organisation: Recent (flat) vs By project. Compact so it does not
+   push the session list below the fold on short windows. */
+.session-mode-toggle {
+  display: flex;
+  gap: 0;
+  margin: 0 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.session-mode-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.session-mode-btn + .session-mode-btn {
+  border-left: 1px solid var(--line);
+}
+
+.session-mode-btn:hover {
+  background: var(--hover);
+  color: var(--ink-2);
+}
+
+.session-mode-btn.active {
+  background: var(--panel-2);
+  color: var(--ink);
+}
+
+.session-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 4px;
+}
+
+.session-nav-group-head {
+  padding: 8px 12px 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-nav-cwd {
+  padding: 0 12px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Collapsible Sessions / Chats rails: minimize to title only.
    Rails size to their content and stack; the ONLY scroll region is
    .sidebar-body, which scrolls as one unit when the combined content
    exceeds the sidebar height. No per-rail inner scroll boxes (those

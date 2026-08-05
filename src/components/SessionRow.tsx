@@ -175,7 +175,8 @@ export function SessionRow({
         type="button"
         className="session-item"
         disabled={!authenticated}
-        title={title}
+        // Title carries destination: opening this row sets agent cwd to session.cwd.
+        title={session.cwd ? `${title}\n${meta}\n${session.cwd}` : `${title}\n${meta}`}
         onClick={onSelect}
       >
         <div className="name">{title}</div>
