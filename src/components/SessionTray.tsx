@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ActivePlan, AuthStatus, ChatMessage, SessionUsage } from '../../shared/types'
+import { nextRetained } from '../lib/agent-retention'
 import {
   agentActivitySummary,
   collectAgentUnitsFromMessages,
@@ -55,6 +56,8 @@ function cachedShare(inputTokens: number, cached: number): number | null {
 interface Props {
   /** Build surface only */
   showPlan: boolean
+  /** Which session is on screen. A change of id is a restore, not new work. */
+  sessionId: string | null
   plan: ActivePlan | null
   messages: ChatMessage[]
   usage: SessionUsage | null
@@ -68,7 +71,7 @@ interface Props {
  * single thin rail of tabs; only one body expands at a time, and empty sections
  * do not appear.
  */
-export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
+export function SessionTray({ showPlan, sessionId, plan, messages, usage, auth }: Props) {
   // Wide scan so status updates still reach units that started many turns ago.
   // Display history is the sticky `retained` list below — a 16-message window
   // made the AGENTS tab vanish as soon as chat moved on, which felt like
@@ -78,19 +81,29 @@ export function SessionTray({ showPlan, plan, messages, usage, auth }: Props) {
     [messages]
   )
   const [retained, setRetained] = useState<typeof fromMessages>([])
+  /**
+   * The first scan after a session appears is a restore snapshot, not live work.
+   *
+   * Without this the tray could not tell "ran while you were here" from "is in
+   * the transcript", so reopening a session presented its entire history as
+   * current: AGENTS 50, mostly red, with nothing actually wrong.
+   */
+  const restoreKey = useRef<string | null | undefined>(undefined)
   const [tab, setTab] = useState<TrayTab | null>(null)
   const [agentsDismissed, setAgentsDismissed] = useState(false)
   const prevLive = useRef(0)
 
-  // Merge newly seen units into session memory; never drop on an empty scan.
+  // Merge newly seen units into session memory. The first scan of a session is
+  // a restore snapshot and keeps only what is still running; everything after it
+  // is this session own work and is kept when it finishes.
   useEffect(() => {
-    if (fromMessages.length === 0) return
-    setRetained((prev) => {
-      const byId = new Map(prev.map((u) => [u.id, u]))
-      for (const u of fromMessages) byId.set(u.id, u)
-      return [...byId.values()]
-    })
-  }, [fromMessages])
+    const isRestoreSnapshot = restoreKey.current !== sessionId
+    if (isRestoreSnapshot) restoreKey.current = sessionId
+    // An empty scan mid-session drops nothing: the unit is still this session own
+    // work even once its tool call has scrolled out of the window.
+    if (!isRestoreSnapshot && fromMessages.length === 0) return
+    setRetained((prev) => nextRetained({ prev, incoming: fromMessages, isRestoreSnapshot }))
+  }, [fromMessages, sessionId])
 
   const units = retained
   const agentSummary = useMemo(() => agentActivitySummary(units), [units])
