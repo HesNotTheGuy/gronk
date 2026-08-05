@@ -6,12 +6,17 @@ declare global {
   }
 
   /**
-   * The app version, substituted at build time from package.json by
-   * electron.vite.config.ts. Injected rather than written out so the number the
-   * UI shows cannot drift from the one that gets released, which it already did
-   * once: the sidebar read v0.2.0 while package.json said 0.1.0.
+   * Semver from package.json, substituted at build time by electron.vite.config.ts.
+   * Not unique across nightlies that share the same package version.
    */
   const __APP_VERSION__: string
+
+  /**
+   * What the sidebar footer shows: package version, channel when not stable,
+   * and a short commit sha. Two builds of "0.2.0" must not look identical.
+   * Built by scripts/build-label.mjs via electron.vite.config.ts.
+   */
+  const __APP_BUILD_LABEL__: string
 }
 
 export {}

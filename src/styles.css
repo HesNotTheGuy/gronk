@@ -2883,11 +2883,18 @@ button {
 .version-tag {
   font-family: var(--font-mono);
   font-size: 9px;
-  letter-spacing: 0.16em;
+  /* letter-spacing kept tight so "v0.2.0-nightly · abcdef0" still fits */
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-4);
   text-align: center;
   padding-top: 4px;
+  /* Sha + channel can be long; allow wrap rather than clip the identity. */
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.35;
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 /* Scan line (subtle, not distracting) */
@@ -6295,7 +6302,15 @@ html[data-theme='light'] .plugin-origin {
    rendered any more. The project row above it kept highlighting the whole time,
    which is what made it read as an identity bug rather than a missing rule. */
 .session-item-row.active {
-  background: linear-gradient(90deg, var(--ignite-dim), transparent 80%);
+  /* Wash was --ignite-dim at 0.1 → ~1.1:1 on pure black (same hole as dim
+     agent-dots). Raise the fill and pin a full-opacity left edge so selection
+     reads at a glance without a full-row shout. */
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ignite) 30%, transparent),
+    transparent 70%
+  );
+  box-shadow: inset 2px 0 0 var(--ignite);
 }
 
 /* The menu stays out of the way until the row is hovered or its menu is open,

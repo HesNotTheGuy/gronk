@@ -552,7 +552,9 @@ export function Sidebar({
         <button type="button" className="btn btn-ghost btn-block" onClick={onOpenSettings}>
           Settings
         </button>
-        <div className="version-tag">v{__APP_VERSION__}</div>
+        <div className="version-tag" title={`package ${__APP_VERSION__}`}>
+          {__APP_BUILD_LABEL__}
+        </div>
       </div>
     </aside>
   )
