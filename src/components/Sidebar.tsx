@@ -112,7 +112,7 @@ export function Sidebar({
   onGoHome,
   onGoChat,
   onGoProjects,
-  onOpenProject,
+  onOpenProject: _onOpenProject,
   onOpenChat,
   onSelectSession,
   onRenameSession,
@@ -146,7 +146,7 @@ export function Sidebar({
     }
   }, [sessionMode])
 
-  const toggle = (key: 'sessions' | 'chats') => {
+  const toggle = (key: 'chats') => {
     setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
@@ -416,83 +416,82 @@ export function Sidebar({
           </div>
         ) : null}
 
-        {/* ---- Build: sessions first; project is a label on every row ---- */}
+        {/*
+          Build: the panel is the session list. No rail header, chevron, count,
+          Add project, or agent-folder summary — those are furniture around the
+          thing the surface exists for. Search (above) + one way to start a
+          session + sessions. Mode sits on the same line as New session so it
+          does not own a row. Chat still uses rails; it has several sections.
+        */}
         {showProjectRails ? (
-          <div className={`sidebar-rail ${open.sessions ? 'open' : 'collapsed'}`}>
-            <button
-              type="button"
-              className="sidebar-rail-head"
-              onClick={() => toggle('sessions')}
-              aria-expanded={open.sessions}
-              title={open.sessions ? 'Minimize sessions' : 'Expand sessions'}
-            >
-              <span className="sidebar-rail-chevron" aria-hidden>
-                {open.sessions ? '▾' : '▸'}
-              </span>
-              <span className="sidebar-rail-title">Sessions</span>
-              <span className="sidebar-rail-count">{projectSessionCount || ''}</span>
-            </button>
-            {open.sessions ? (
-              <div className="sidebar-rail-body">
-                <div
-                  className="session-mode-toggle"
-                  role="group"
-                  aria-label="How to organise sessions"
+          <div className="session-nav">
+            <div className="session-nav-bar">
+              <button
+                type="button"
+                className="session-nav-new"
+                disabled={!authenticated || !activeCwd}
+                onClick={onNewProjectSession}
+                title={
+                  activeCwd
+                    ? `Start a fresh agent session in ${folderName(activeCwd)}`
+                    : 'Open a session first so the agent has a folder'
+                }
+              >
+                + New session
+              </button>
+              <div
+                className="session-mode-toggle"
+                role="group"
+                aria-label="How to organise sessions"
+              >
+                <button
+                  type="button"
+                  className={`session-mode-btn ${sessionMode === 'recent' ? 'active' : ''}`}
+                  aria-pressed={sessionMode === 'recent'}
+                  onClick={() => setSessionMode('recent')}
+                  title="All sessions, newest first"
                 >
-                  <button
-                    type="button"
-                    className={`session-mode-btn ${sessionMode === 'recent' ? 'active' : ''}`}
-                    aria-pressed={sessionMode === 'recent'}
-                    onClick={() => setSessionMode('recent')}
-                    title="All sessions, newest first"
-                  >
-                    Recent
-                  </button>
-                  <button
-                    type="button"
-                    className={`session-mode-btn ${sessionMode === 'by-project' ? 'active' : ''}`}
-                    aria-pressed={sessionMode === 'by-project'}
-                    onClick={() => setSessionMode('by-project')}
-                    title="Sessions grouped by project"
-                  >
-                    By project
-                  </button>
-                </div>
-                <div className="sidebar-rail-toolbar">
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm btn-block sidebar-rail-action"
-                    disabled={!authenticated || !activeCwd}
-                    onClick={onNewProjectSession}
-                    title={
-                      activeCwd
-                        ? `Start a fresh agent session in ${folderName(activeCwd)}`
-                        : 'Open a session (or add a project) so the agent has a folder'
-                    }
-                  >
-                    New session
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm btn-block sidebar-rail-action"
-                    disabled={!authenticated}
-                    onClick={() => onOpenProject()}
-                    title="Pick a folder on your computer to work in"
-                  >
-                    + Add project
-                  </button>
-                </div>
-                {activeCwd ? (
-                  <div className="sidebar-rail-sub session-nav-cwd" title={activeCwd}>
-                    Agent folder · {folderName(activeCwd)}
+                  Recent
+                </button>
+                <button
+                  type="button"
+                  className={`session-mode-btn ${sessionMode === 'by-project' ? 'active' : ''}`}
+                  aria-pressed={sessionMode === 'by-project'}
+                  onClick={() => setSessionMode('by-project')}
+                  title="Sessions grouped by project"
+                >
+                  By project
+                </button>
+              </div>
+            </div>
+            {projectSessionCount === 0 ? (
+              <div className="muted-note">No sessions yet</div>
+            ) : projectSessionNav.mode === 'recent' ? (
+              projectSessionNav.entries.map((entry) => {
+                const s = entry.session
+                return (
+                  <SessionRow
+                    key={s.id}
+                    session={s}
+                    active={s.id === activeSessionId}
+                    authenticated={authenticated}
+                    chatWorkspacePath={chatWorkspacePath}
+                    meta={sessionNavMeta(entry)}
+                    onSelect={() => onSelectSession(s)}
+                    onRename={(t) => onRenameSession(s.id, t)}
+                    onArchive={() => onArchiveSession(s.id)}
+                    onExport={(f) => onExportSession(s.id, f)}
+                    onDelete={() => onDeleteSession(s.id)}
+                  />
+                )
+              })
+            ) : (
+              projectSessionNav.groups.map((group) => (
+                <div key={group.cwd} className="session-nav-group">
+                  <div className="session-nav-group-head" title={group.cwd}>
+                    {group.projectLabel}
                   </div>
-                ) : null}
-                {projectSessionCount === 0 ? (
-                  <div className="muted-note">
-                    No sessions yet. Add a project, or open one from Build.
-                  </div>
-                ) : projectSessionNav.mode === 'recent' ? (
-                  projectSessionNav.entries.map((entry) => {
+                  {group.entries.map((entry) => {
                     const s = entry.session
                     return (
                       <SessionRow
@@ -509,45 +508,19 @@ export function Sidebar({
                         onDelete={() => onDeleteSession(s.id)}
                       />
                     )
-                  })
-                ) : (
-                  projectSessionNav.groups.map((group) => (
-                    <div key={group.cwd} className="session-nav-group">
-                      <div className="session-nav-group-head" title={group.cwd}>
-                        {group.projectLabel}
-                      </div>
-                      {group.entries.map((entry) => {
-                        const s = entry.session
-                        return (
-                          <SessionRow
-                            key={s.id}
-                            session={s}
-                            active={s.id === activeSessionId}
-                            authenticated={authenticated}
-                            chatWorkspacePath={chatWorkspacePath}
-                            meta={sessionNavMeta(entry)}
-                            onSelect={() => onSelectSession(s)}
-                            onRename={(t) => onRenameSession(s.id, t)}
-                            onArchive={() => onArchiveSession(s.id)}
-                            onExport={(f) => onExportSession(s.id, f)}
-                            onDelete={() => onDeleteSession(s.id)}
-                          />
-                        )
-                      })}
-                    </div>
-                  ))
-                )}
-                {projectSessionNav.hidden > 0 ? (
-                  <button
-                    type="button"
-                    className="sidebar-rail-more"
-                    onClick={onGoProjects}
-                    title="All projects and sessions on the Build browse screen"
-                  >
-                    +{projectSessionNav.hidden} older · See all
-                  </button>
-                ) : null}
-              </div>
+                  })}
+                </div>
+              ))
+            )}
+            {projectSessionNav.hidden > 0 ? (
+              <button
+                type="button"
+                className="sidebar-rail-more"
+                onClick={onGoProjects}
+                title="All projects and sessions on the Build browse screen"
+              >
+                +{projectSessionNav.hidden} older · See all
+              </button>
             ) : null}
           </div>
         ) : null}

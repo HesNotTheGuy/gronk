@@ -306,12 +306,56 @@ button {
   border-bottom: none;
 }
 
-/* Session organisation: Recent (flat) vs By project. Compact so it does not
-   push the session list below the fold on short windows. */
+/*
+  Build session panel: not a rail. Search is above; this is one action line
+  then the list. Mode shares the New session row so it costs no extra height.
+*/
+.session-nav {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: 8px;
+}
+
+.session-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 6px;
+  flex-shrink: 0;
+}
+
+.session-nav-new {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  white-space: nowrap;
+}
+
+.session-nav-new:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.session-nav-new:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .session-mode-toggle {
   display: flex;
   gap: 0;
-  margin: 0 10px 8px;
+  margin-left: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
@@ -319,16 +363,16 @@ button {
 }
 
 .session-mode-btn {
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 4px 7px;
   border: none;
   background: transparent;
-  color: var(--ink-3);
+  color: var(--ink-4);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
   -webkit-app-region: no-drag;
@@ -345,18 +389,18 @@ button {
 
 .session-mode-btn.active {
   background: var(--panel-2);
-  color: var(--ink);
+  color: var(--ink-2);
 }
 
 .session-nav-group {
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .session-nav-group-head {
-  padding: 8px 12px 4px;
+  padding: 8px 12px 2px;
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
@@ -368,11 +412,8 @@ button {
   text-overflow: ellipsis;
 }
 
-.session-nav-cwd {
-  padding: 0 12px 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.session-nav .muted-note {
+  padding: 8px 12px;
 }
 
 /* Collapsible Sessions / Chats rails: minimize to title only.
