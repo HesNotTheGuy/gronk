@@ -8,11 +8,9 @@ import {
   addRecentProject,
   removeRecentProject,
   setRecentProjectPinned,
-  appendPermissionAudit,
   archiveSession,
   dedupeTranscriptMessages,
   deleteSession,
-  getPermissionAudit,
   getRecentProjects,
   getProjectNotes,
   getSettings,
@@ -730,36 +728,8 @@ test('a store that already holds duplicated turns heals itself on read', () => {
   assert.equal(JSON.parse(fs.readFileSync(storeFile(), 'utf8')).transcripts.s1.length, 2)
 })
 
-// ── Permission audit ────────────────────────────────────────────────
-
-test('audit entries are redacted and capped at 200', () => {
-  appendPermissionAudit({
-    id: 'a1',
-    at: 1,
-    sessionId: 's1',
-    cwd: 'C:/work/app',
-    toolCallId: 't1',
-    title: 'Read api_key=SUPERSECRET123',
-    decision: 'allow-once',
-    rawInputPreview: 'token: xai-abcdefgh1234567890'
-  })
-  const [entry] = getPermissionAudit()
-  assert.ok(!entry.title.includes('SUPERSECRET123'))
-  assert.ok(!(entry.rawInputPreview || '').includes('xai-abcdefgh1234567890'))
-
-  for (let i = 0; i < 250; i++) {
-    appendPermissionAudit({
-      id: `x${i}`,
-      at: i,
-      sessionId: 's1',
-      cwd: 'C:/work/app',
-      toolCallId: 't',
-      title: 'Read',
-      decision: 'allow-once'
-    })
-  }
-  assert.equal(getPermissionAudit().length, 200)
-})
+// Permission audit lives in gronk-permission-audit.json now — see
+// tests/permission-audit.test.ts (migration, durability, redaction, cap).
 
 // ── Crash safety: the store is rewritten on every message ───────────
 
@@ -894,14 +864,4 @@ test('the store is never written with a plain writeFileSync', () => {
   assert.ok(source.includes('writeFileAtomicSync'), 'writes must go through the atomic helper')
   assert.equal(source.includes('fs.writeFileSync'), false)
   assert.equal(source.includes("app.getPath"), false, 'the path comes from data-dir.ts')
-})
-
-test('the newest audit entry is first', () => {
-  appendPermissionAudit({
-    id: 'old', at: 1, sessionId: 's', cwd: 'C:/w', toolCallId: 't', title: 'A', decision: 'allow-once'
-  })
-  appendPermissionAudit({
-    id: 'new', at: 2, sessionId: 's', cwd: 'C:/w', toolCallId: 't', title: 'B', decision: 'reject-once'
-  })
-  assert.equal(getPermissionAudit()[0].id, 'new')
 })
