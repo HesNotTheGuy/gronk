@@ -34,11 +34,15 @@ test('isImageProducingTool matches image generators by title or kind', () => {
   assert.equal(isImageProducingTool({ title: 'Shell', kind: 'image_gen' }), true)
   assert.equal(isImageProducingTool({ title: 'something', kind: 'IMAGE' }), true)
   assert.equal(isImageProducingTool({ title: 'imagine' }), true)
+  assert.equal(isImageProducingTool({ title: 'Call image_gen now' }), true)
   assert.equal(isImageProducingTool({ title: 'bash' }), false)
   assert.equal(isImageProducingTool({ title: 'Shell', kind: 'SHELL' }), false)
   assert.equal(isImageProducingTool({ title: 'list_dir' }), false)
   // A title that merely contains the word "image" is not a producer.
   assert.equal(isImageProducingTool({ title: 'read image_refs.ts' }), false)
+  // Substring of an English word must not match — unanchored /imagine/ would.
+  assert.equal(isImageProducingTool({ title: 'Reimagine the layout' }), false)
+  assert.equal(isImageProducingTool({ title: 'reimagine' }), false)
 })
 
 test('structured JSON image results surface even on a non-image tool title', () => {
@@ -107,4 +111,16 @@ test('a list-style tool that dumps many image paths yields no refs', () => {
     })
   )
   assert.equal(refs.length, 0)
+})
+
+test('a non-image tool titled with an English "imagine" substring stays gated', () => {
+  const output = 'C:\\Users\\sam\\project\\build\\icon.png\nC:\\Users\\sam\\splash.bmp'
+  const refs = extractImageRefsFromTool(
+    tool({
+      title: 'Reimagine the layout',
+      kind: 'edit',
+      content: output
+    })
+  )
+  assert.deepEqual(refs, [])
 })

@@ -286,7 +286,6 @@ export function App() {
         onNewProjectSession={() => void g.newChat()}
         onOpenArchived={() => g.setShowArchived(true)}
         onOpenSettings={() => g.setShowSettings(true)}
-        onLogout={() => void g.logout()}
         onSignIn={() => setShowAuthModal(true)}
       />
 

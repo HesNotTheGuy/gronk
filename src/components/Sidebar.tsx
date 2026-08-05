@@ -44,7 +44,6 @@ interface Props {
   onNewProjectSession: () => void
   onOpenArchived: () => void
   onOpenSettings: () => void
-  onLogout: () => void
   onSignIn: () => void
 }
 
@@ -142,7 +141,6 @@ export function Sidebar({
   onNewProjectSession,
   onOpenArchived,
   onOpenSettings,
-  onLogout,
   onSignIn
 }: Props) {
   const [open, setOpen] = useState(loadCollapse)
@@ -617,11 +615,6 @@ export function Sidebar({
         <button type="button" className="btn btn-ghost btn-block" onClick={onOpenSettings}>
           Settings
         </button>
-        {authenticated ? (
-          <button type="button" className="btn btn-ghost btn-block" onClick={onLogout}>
-            Sign out
-          </button>
-        ) : null}
         <div className="version-tag">v{__APP_VERSION__}</div>
       </div>
     </aside>
