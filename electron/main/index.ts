@@ -1,6 +1,9 @@
 import { app, BrowserWindow, Menu, session, shell } from 'electron'
 import path from 'node:path'
 import { agentManager } from './agent-manager'
+import { getAuthStatus, invalidateAuthCache } from './auth'
+import { shouldRefreshOnFocus } from './auth-decision'
+import { invalidateCliVersionCache } from './cli-version'
 import { installContextMenu } from './context-menu'
 import { isAllowedExternalUrl, isAppUrl } from './ipc-guard'
 import { initPreview, stopPreview } from './preview'
@@ -20,6 +23,14 @@ if (!gotLock) {
 }
 
 let mainWindow: BrowserWindow | null = null
+
+/**
+ * Floor between focus-triggered auth re-probes. Long enough that alt-tabbing
+ * does not turn into request traffic, short enough that coming back from a
+ * terminal where you just installed or signed in re-reads on arrival.
+ */
+const FOCUS_REFRESH_MIN_MS = 5_000
+let lastFocusRefreshAt: number | null = null
 
 /**
  * The whole of index.ts that the IPC modules can see. Handlers ask for the
@@ -83,6 +94,35 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+  })
+
+  /**
+   * Re-probe sign-in state when the window comes back to the front.
+   *
+   * A mac tester installed the Grok CLI while Gronk was open and Gronk went on
+   * saying it was not installed. Nothing here polls, and nothing watches the
+   * filesystem, so a change made in a terminal is invisible until something
+   * happens to ask again. Alt-tabbing back is the moment the user expects the
+   * app to have noticed.
+   *
+   * The auth probe spawns the CLI and makes a network call, so this is throttled
+   * rather than run on every focus. The cli-version cache is invalidated too:
+   * its TTL is five minutes, long enough that a fresh install looks permanent.
+   */
+  mainWindow.on('focus', () => {
+    const now = Date.now()
+    if (!shouldRefreshOnFocus(lastFocusRefreshAt, now, FOCUS_REFRESH_MIN_MS)) return
+    lastFocusRefreshAt = now
+    invalidateAuthCache()
+    invalidateCliVersionCache()
+    void getAuthStatus()
+      .then((auth) => {
+        if (!mainWindow || mainWindow.isDestroyed()) return
+        mainWindow.webContents.send('gronk:event', { type: 'auth', auth })
+      })
+      .catch(() => {
+        /* a failed probe must not take the window down; the next focus retries */
+      })
   })
   // Fallback if ready-to-show never fires (blank window reports)
   setTimeout(() => {
