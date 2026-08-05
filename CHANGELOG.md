@@ -17,6 +17,11 @@ Notable changes to Gronk. Format based on
   underline for. A link offers Copy link, and only Copy link: nothing here opens
   anything.
 
+- **Focus mode.** A topbar button or the `[` key hides the sidebar and idle
+  tray so the conversation fills the frame.
+- **The agent tray keeps session history.** Finished agents stay listed until
+  dismissed, instead of the tab vanishing the moment work stops.
+
 ### Changed
 
 - **Agent activity is a row of dots under the turn that started it**, instead of
@@ -41,6 +46,17 @@ Notable changes to Gronk. Format based on
   that merely appeared in a tool's output was rendered as a full-size preview
   with no limit, so listing a folder of icons buried the reply. Previews are now
   for tools that actually produce images, and the row is capped.
+- **Sign-in state is honest.** A successful model list no longer counts as
+  being signed in: the CLI answering is necessary, not sufficient, so a fresh
+  install reads as signed out until something positively indicates an account,
+  and signing out no longer flips straight back. If an environment API key is
+  still answering after sign-out, the app says so by name.
+- **Scrolling holds when a reply finishes.** The end of a turn shortens the
+  transcript, and the browser's scroll clamp used to read as "the reader came
+  back to the bottom", snapping them down. A scroll nobody made no longer
+  re-attaches.
+- **Sign out lives in Settings only**, next to the account it acts on, instead
+  of a top-level sidebar button.
 - **macOS builds ship the Electron and Chromium licences again.** The packaged
   app pointed at a directory that release builds never populate, and the missing
   files were skipped silently.
