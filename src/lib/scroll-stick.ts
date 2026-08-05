@@ -15,6 +15,13 @@
  * One shared threshold cannot do both. The version this replaces used 120px for
  * each direction, so a 40px scroll up read as "still near the bottom, re-pin",
  * and the next streamed token undid the scroll.
+ *
+ * The second rule, which the first version missed entirely: the distance answers
+ * "where is the viewport", never "did the reader move it". Twice now the viewport
+ * has arrived at the bottom without anybody asking, once because the app set
+ * scrollTop and once because the document got shorter and the browser clamped.
+ * Both look identical to a distance check, and both need a fact from outside it.
+ * A third of these will turn up; the shape to look for is a scroll nobody made.
  */
 
 /**
@@ -54,6 +61,18 @@ export interface StickInput {
   distanceFromBottom: number
   /** Whether the transcript is pinned right now. */
   sticking: boolean
+  /** `scrollHeight` as of this measurement. */
+  scrollHeight: number
+  /** `scrollHeight` as of the previous one, to tell a reflow from a scroll. */
+  previousScrollHeight: number
+  /**
+   * Did the user touch anything between the previous measurement and this one?
+   *
+   * This is the whole discriminator for the shrink case below, so it has to mean
+   * "since the last measurement" and not "ever". The hook clears it every time it
+   * measures.
+   */
+  gestureSinceMeasure: boolean
 }
 
 /**
@@ -70,13 +89,38 @@ export interface StickInput {
  * from a gesture that moved nothing. That is the same bug wearing a different
  * hat.
  */
-export function nextStick({ cause, distanceFromBottom, sticking }: StickInput): boolean {
+export function nextStick({
+  cause,
+  distanceFromBottom,
+  sticking,
+  scrollHeight,
+  previousScrollHeight,
+  gestureSinceMeasure
+}: StickInput): boolean {
   switch (cause) {
     case 'gesture-up':
       return false
     case 'gesture-down':
       return sticking
     case 'scroll':
+      // The document got shorter and the user did nothing, so this scroll is the
+      // browser clamping scrollTop into a range that just moved, not a person
+      // arriving anywhere. Reading the distance here is what snapped a reader
+      // back the moment a reply finished: the turn ends, the live summary line
+      // and the streaming caret stop rendering, the content under a reader who
+      // had scrolled up gets shorter than their scrollTop, and the clamp reports
+      // distance zero. From the distance alone they ARE at the bottom. They just
+      // never moved.
+      //
+      // Same shape as 'programmatic' below, which exists for the same reason: a
+      // cause the distance cannot distinguish. The difference is only who moved
+      // the viewport, the app there and the browser here.
+      //
+      // The gesture check is what keeps this from swallowing a real arrival. A
+      // reader who scrolls down to the end while the content happens to be
+      // shrinking must still re-attach, or one bug is traded for a transcript
+      // that never follows again.
+      if (scrollHeight < previousScrollHeight && !gestureSinceMeasure) return sticking
       return distanceFromBottom <= ARRIVED_EPS
     case 'programmatic':
       // The app just moved the viewport to the bottom, so the distance says
