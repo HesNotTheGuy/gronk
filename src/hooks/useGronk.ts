@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ActivePlan,
   AgentSurface,
@@ -20,6 +20,7 @@ import {
   hasAssistantReplyAfter
 } from '../lib/messages'
 import { parsePlan } from '../lib/plan'
+import { needsSessionReload } from '../lib/session-nav'
 import {
   isScrollbarClick,
   keyIntent,
@@ -233,18 +234,29 @@ export function useGronk() {
           break
         case 'history-replace':
           // Bulk restore from local cache: one paint, no clear/rebuild thrash.
-          setMessages(
-            event.messages.map((m) => ({
-              ...m,
-              streaming: false,
-              sendStatus:
-                m.role === 'user'
-                  ? m.sendStatus === 'failed'
-                    ? ('failed' as const)
-                    : ('sent' as const)
-                  : m.sendStatus
-            }))
-          )
+          //
+          // Wrapped in startTransition so React may pause this render to service
+          // input and resume after. It does NOT make the render faster; measured
+          // at 200 messages the work is the same either way. What it changes is
+          // who owns the thread while it happens, and a restore that keeps the
+          // keyboard is the whole point of the change. yieldPaint below is the
+          // same instinct without the ability to interrupt a render already
+          // underway, and it is kept: it exists so the skeleton paints before
+          // heavy main-process work, which a transition does not do.
+          startTransition(() => {
+            setMessages(
+              event.messages.map((m) => ({
+                ...m,
+                streaming: false,
+                sendStatus:
+                  m.role === 'user'
+                    ? m.sendStatus === 'failed'
+                      ? ('failed' as const)
+                      : ('sent' as const)
+                    : m.sendStatus
+              }))
+            )
+          })
           setHistorySource('local')
           setActivePlan(null)
           setUsage(null)
@@ -753,6 +765,30 @@ export function useGronk() {
 
   const selectSession = useCallback(
     async (session: SessionInfo) => {
+      // Clicking the session you are already in used to tear it down and rebuild
+      // it: clear the transcript, set hydrating, round trip through loadSession,
+      // re-render every message, and switch the composer off for the duration.
+      //
+      // Deliberately NOT guarded on the id alone. A session that failed to load
+      // has the same id as the one the user is clicking to retry, so guarding on
+      // identity would make the retry click do nothing. needsSessionReload wants
+      // the session to be both current AND healthy before it skips the work.
+      if (
+        !needsSessionReload({
+          requestedId: session.id,
+          activeId: sessionId,
+          connection,
+          error,
+          hydrating
+        })
+      ) {
+        // Still navigate: the click can come from a browse list, and the user
+        // means "take me there" even when nothing needs reloading.
+        setBrowsing(false)
+        stickToBottom.current = true
+        return
+      }
+
       setError(null)
       const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
@@ -815,7 +851,10 @@ export function useGronk() {
         setHydrating(false)
       }
     },
-    [refreshMeta, chatWorkspacePath]
+    // The guard reads live state, so it has to be in the deps or a stale
+    // closure would compare against whichever session was open when this
+    // callback was last built.
+    [refreshMeta, chatWorkspacePath, sessionId, connection, error, hydrating]
   )
   selectSessionRef.current = selectSession
 
