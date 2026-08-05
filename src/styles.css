@@ -4413,59 +4413,14 @@ html[data-theme='light'] .session-search {
   background: #fff;
 }
 
-.session-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
-  align-items: center;
-  gap: 2px;
-  border-radius: var(--radius);
-  min-width: 0;
-  width: 100%;
-}
-
-.session-row.active {
-  background: linear-gradient(90deg, var(--ignite-dim), transparent 80%);
-}
-
-.session-row .session-item {
-  border: none;
-  background: transparent;
-  min-width: 0;
-  width: 100%;
-  overflow: hidden;
-}
-
-.session-row .session-item:hover {
-  background: transparent;
-}
-
-/* Title truncates to sidebar width (reacts to window / column size) */
-.session-row .session-item .name {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.session-row .session-item .meta {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.session-menu-wrap {
-  position: relative;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* The `.session-row` block that used to sit here is gone. Nothing rendered it.
+   The sidebar row was renamed to `.session-item-row` in 0392e8e and given a
+   fresh block further down, but `.session-row.active` was never carried across,
+   so the open session had a class with no rule behind it and did not highlight.
+   The dead selectors survived long enough to look like the styling, which is
+   why the highlight rule now lives beside the class that is actually emitted.
+   `.session-item .name` and `.session-item .meta` were always styled
+   independently, so nothing else here was load-bearing. */
 
 .session-menu-btn {
   width: 26px;
@@ -4482,12 +4437,6 @@ html[data-theme='light'] .session-search {
     opacity var(--dur) var(--ease),
     border-color var(--dur) var(--ease),
     background var(--dur) var(--ease);
-}
-
-.session-row:hover .session-menu-btn,
-.session-row.menu-open .session-menu-btn,
-.session-row.active .session-menu-btn {
-  opacity: 1;
 }
 
 .session-menu-btn:hover {
@@ -6228,6 +6177,15 @@ html[data-theme='light'] .plugin-origin {
 .project-item-row .project-card {
   flex: 1;
   min-width: 0;
+}
+
+/* The open session. This is the rule the sidebar had been asking for since the
+   row was renamed: SessionRow emits `session-item-row active`, and the only
+   `.active` background in the file was on the `.session-row` block that nothing
+   rendered any more. The project row above it kept highlighting the whole time,
+   which is what made it read as an identity bug rather than a missing rule. */
+.session-item-row.active {
+  background: linear-gradient(90deg, var(--ignite-dim), transparent 80%);
 }
 
 /* The menu stays out of the way until the row is hovered or its menu is open,

@@ -2,7 +2,7 @@
  * Grok CLI plugin / skill / MCP wrapper (main process only).
  *
  * Every read path uses the CLI's own `--json` output — never scrape text.
- * See SKILLS-PLUGINS-SPEC.md §1/§2; command shapes verified against grok 0.2.111.
+ * Command shapes verified against grok 0.2.111.
  *
  * All validation, mapping and redaction lives in `plugins-map.ts` (pure, unit
  * tested). This module only decides which argv to spawn and with what budget.
@@ -10,7 +10,8 @@
  * Security rules (do not weaken):
  * - Args are discrete argv (no shell), but a value starting with '-' would be
  *   parsed by grok as a flag → every caller-supplied value goes through
- *   `assertCliToken` (option injection, Gotcha #8).
+ *   `assertCliToken`. This is option injection: a plugin or server name is
+ *   attacker-chosen text, and `--trust` in that position is a real escalation.
  * - `--trust` is passed ONLY when the caller explicitly says trust === true.
  *   Installing runs third-party hooks/MCP servers outside Gronk's fs jail.
  */
@@ -111,7 +112,7 @@ export async function listMarketplaces(): Promise<MarketplaceSource[]> {
 
 /**
  * Marketplace catalog. `--available` requires `--json` and syncs the marketplace
- * git caches, hence the 60s budget (Gotcha #4).
+ * git caches, hence the 60s budget. A default timeout kills it mid-clone.
  */
 export async function listAvailablePlugins(): Promise<Plugin[]> {
   const raw = await runGrokJson<unknown>(['plugin', 'list', '--available', '--json'], {
@@ -144,7 +145,8 @@ export async function listMcpServers(): Promise<McpServer[]> {
   return mapMcpServers(raw)
 }
 
-/** `mcp doctor` actually dials the servers → network budget (Gotcha #4). */
+/** `mcp doctor` actually dials the servers and spawns the stdio ones, so it
+ *  needs a network budget rather than a local-command one. */
 export async function mcpDoctor(name?: string): Promise<McpServer[]> {
   const args = ['mcp', 'doctor']
   if (name !== undefined && name !== null && name !== '') {
@@ -155,7 +157,7 @@ export async function mcpDoctor(name?: string): Promise<McpServer[]> {
   return mapMcpServers(raw)
 }
 
-// ── Marketplace cache: pinned commits (spec §4.2) ──────────────────
+// ── Marketplace cache: pinned commits ──────────────────────────────
 
 /** Same resolution as auth.ts: GROK_HOME wins, else ~/.grok. */
 /** Third-party files — bound what we are willing to read (observed catalogs run to ~160 KB). */
@@ -262,7 +264,8 @@ export async function disablePlugin(name: string): Promise<PluginActionResult> {
   return runPluginCommand(['plugin', 'disable', assertName(name, 'plugin name')], `Disabled ${name}`)
 }
 
-/** `--confirm` skips the interactive multi-plugin-repo prompt (Gotcha #6). */
+/** `--confirm` skips the interactive multi-plugin-repo prompt, which would
+ *  otherwise block on stdin nothing is attached to and read as a hang. */
 export async function uninstallPlugin(name: string): Promise<PluginActionResult> {
   return runPluginCommand(
     ['plugin', 'uninstall', assertName(name, 'plugin name'), '--confirm'],
@@ -284,7 +287,8 @@ async function runPluginCommand(args: string[], okMessage: string): Promise<Plug
  *
  * MVP restriction: `-s project` writes ./.grok/config.toml relative to the spawn
  * cwd — Gronk's own directory, not the user's project — so project scope is
- * refused until a validated cwd is plumbed through (spec §5 / Gotcha #2).
+ * refused until a validated cwd is plumbed through. Writing config into the
+ * wrong directory is silent, and it is the app's own directory.
  */
 export async function addMcpServer(input: McpAddInput): Promise<McpActionResult> {
   if (!input || typeof input !== 'object') throw new Error('Invalid MCP server input')

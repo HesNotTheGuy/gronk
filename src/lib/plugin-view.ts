@@ -19,7 +19,8 @@ export interface ComponentCounts {
 /**
  * Counts derived from `components.*` only.
  * The flat `skill_count` / `has_*` summary fields are unreliable for
- * `status: "available"` catalog entries (SKILLS-PLUGINS-SPEC §1). Never read them.
+ * `status: "available"` catalog entries. Never read them: they report counts
+ * that are simply wrong for anything not installed.
  */
 export function componentCounts(plugin: Plugin): ComponentCounts {
   const c = plugin?.components
@@ -74,7 +75,8 @@ export interface RiskTag {
 }
 
 /**
- * Static audit of the catalog-declared components (SKILLS-PLUGINS-SPEC §4.3).
+ * Static audit of the catalog-declared components: what the user is shown
+ * before deciding to trust one.
  * Fails safe: an MCP server with an unrecognised transport is treated as shell-exec.
  */
 export function auditPlugin(plugin: Plugin): RiskTag[] {
