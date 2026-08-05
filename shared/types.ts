@@ -49,6 +49,32 @@ export interface ProjectContext {
   pinned?: boolean
 }
 
+/**
+ * One scratchpad per project folder, keyed by normalized project cwd.
+ *
+ * Deliberately NOT a field on ProjectContext. That list is a most-recently-used
+ * rail: `addRecentProject` caps it at 12 and `removeRecentProject` (whose whole
+ * promise is that it "never deletes files") drops an entry outright. A note
+ * riding on those rows would be destroyed by opening a thirteenth project or by
+ * tidying the sidebar, neither of which reads as "throw my notes away".
+ *
+ * Held in the app's own store rather than as a file in the project folder: a
+ * file there would need gitignore handling, could be committed by accident, and
+ * would be readable by the agent working in that folder.
+ */
+export type ProjectNotes = Record<string, string>
+
+/**
+ * Ceiling on one note. Shared because both ends enforce it: the textarea stops
+ * accepting input at this length and the IPC boundary refuses anything longer.
+ *
+ * The store is a single JSON file that every store operation reads and parses,
+ * so an unbounded field in it is a performance cliff for everything else. The
+ * cap is a refusal and never a truncation: silently dropping the tail of what
+ * somebody wrote is the corruption FIX-R1 exists to prevent.
+ */
+export const NOTE_MAX_CHARS = 20_000
+
 export type ToolCallStatus =
   | 'pending'
   | 'in_progress'
@@ -646,6 +672,10 @@ export interface GronkApi {
   removeRecentProject: (cwd: string) => Promise<ProjectContext[]>
   /** Pin or unpin a recent project (pinned sort first). */
   setRecentProjectPinned: (cwd: string, pinned: boolean) => Promise<ProjectContext[]>
+  /** Every project scratchpad, so the renderer can answer without a round trip. */
+  getProjectNotes: () => Promise<ProjectNotes>
+  /** Write one project's scratchpad. An empty note forgets it. Returns the new map. */
+  setProjectNote: (cwd: string, note: string) => Promise<ProjectNotes>
   /**
    * Windows title-bar overlay colors. No-op on other platforms. Called when the
    * renderer resolves light/dark so the native chrome matches the theme.

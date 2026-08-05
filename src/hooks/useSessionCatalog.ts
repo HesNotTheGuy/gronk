@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import type { ProjectContext, SessionInfo } from '../../shared/types'
+import type { ProjectContext, ProjectNotes, SessionInfo } from '../../shared/types'
 import { isChatSession, isChatWorkspace, isWorkspaceSession } from '../../shared/path'
 
 /**
@@ -19,6 +19,16 @@ export function useSessionCatalog() {
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [recentProjects, setRecentProjects] = useState<ProjectContext[]>([])
   const [chatWorkspacePath, setChatWorkspacePath] = useState<string | null>(null)
+  /**
+   * Project scratchpads, `null` until the first hydrate.
+   *
+   * Null rather than `{}` because the tray has to tell "this project has no
+   * note" from "the notes have not arrived yet". Both show an empty box, but
+   * seeding the textarea from the second one and then hydrating underneath it
+   * would either wipe what the user had started typing or leave their note
+   * invisible until they switched projects.
+   */
+  const [projectNotes, setProjectNotes] = useState<ProjectNotes | null>(null)
   const [showArchived, setShowArchived] = useState(false)
 
   /**
@@ -30,10 +40,12 @@ export function useSessionCatalog() {
       recentProjects: ProjectContext[]
       sessions: SessionInfo[]
       chatWorkspacePath: string
+      projectNotes: ProjectNotes
     }) => {
       setRecentProjects(meta.recentProjects)
       setSessions(meta.sessions)
       setChatWorkspacePath(meta.chatWorkspacePath)
+      setProjectNotes(meta.projectNotes)
     },
     []
   )
@@ -63,6 +75,18 @@ export function useSessionCatalog() {
 
   const setRecentProjectPinned = useCallback(async (cwd: string, pinned: boolean) => {
     setRecentProjects(await window.gronk.setRecentProjectPinned(cwd, pinned))
+  }, [])
+
+  /**
+   * Save one project's scratchpad. Main returns the whole map, so the write is
+   * write-through and no re-read is needed.
+   *
+   * Takes the text already normalized: what to do with whitespace is a decision
+   * with tests behind it (`src/lib/project-notes.ts`), not something to repeat
+   * at each call site.
+   */
+  const setProjectNote = useCallback(async (cwd: string, note: string) => {
+    setProjectNotes(await window.gronk.setProjectNote(cwd, note))
   }, [])
 
   const uniqueSessions = useMemo(() => {
@@ -124,6 +148,8 @@ export function useSessionCatalog() {
     unarchiveSession,
     removeRecentProject,
     setRecentProjectPinned,
+    projectNotes,
+    setProjectNote,
     // For the composer only. Not part of the app's public surface.
     hydrate,
     refreshSessions,

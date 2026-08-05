@@ -14,6 +14,7 @@ import {
   deleteSession,
   getPermissionAudit,
   getRecentProjects,
+  getProjectNotes,
   getSettings,
   getStoreHealth,
   getTranscript,
@@ -22,6 +23,7 @@ import {
   renameSession,
   requestedPermissionMode,
   saveTranscript,
+  setProjectNote,
   setSettings,
   upsertSession
 } from '../electron/main/store'
@@ -441,6 +443,64 @@ test('pinned projects sort above recency', () => {
   assert.equal(list[0].name, 'alpha')
   assert.equal(list[0].pinned, true)
   assert.equal(list[1].name, 'beta')
+})
+
+// ── Project notes ───────────────────────────────────────────────────
+
+test('a note is stored under the normalized cwd and read straight back', () => {
+  // Backslashes and a trailing separator all resolve to the one key, so the same
+  // folder cannot end up holding two different notes.
+  setProjectNote('C:\\work\\alpha', 'check the retry path')
+  setProjectNote('C:/work/beta/', 'and this one')
+  assert.deepEqual(getProjectNotes(), {
+    'C:/work/alpha': 'check the retry path',
+    'C:/work/beta': 'and this one'
+  })
+})
+
+test('an empty note forgets the entry rather than storing an empty string', () => {
+  setProjectNote('C:/work/alpha', 'something')
+  const after = setProjectNote('C:/work/alpha', '')
+  assert.deepEqual(after, {})
+  // Otherwise every folder ever opened accumulates a key that means nothing.
+  assert.equal('C:/work/alpha' in (readStoreFile().projectNotes as object), false)
+})
+
+test('a note is NOT redacted on the way to disk', () => {
+  // The user's own writing, same rule as message text (FIX-R1). A scratchpad is
+  // exactly where somebody parks the thing they are about to paste, and quietly
+  // rewriting it would be worse than not having one.
+  const note = 'staging key is sk-live-abcd1234, rotate it on Friday'
+  setProjectNote('C:/work/alpha', note)
+  assert.equal((readStoreFile().projectNotes as Record<string, string>)['C:/work/alpha'], note)
+})
+
+test('a note survives its project falling off the recent rail', () => {
+  // The reason notes are not a field on ProjectContext: that list is capped at
+  // 12 and removeRecentProject drops rows outright, so a note riding on one
+  // would be destroyed by opening a thirteenth project or tidying the sidebar.
+  addRecentProject('C:/work/alpha')
+  setProjectNote('C:/work/alpha', 'keep me')
+  removeRecentProject('C:/work/alpha')
+  for (let i = 0; i < 20; i++) addRecentProject(`C:/work/p${i}`)
+  assert.equal(getProjectNotes()['C:/work/alpha'], 'keep me')
+})
+
+test('notes for other projects are untouched by a save', () => {
+  setProjectNote('C:/work/alpha', 'a')
+  setProjectNote('C:/work/beta', 'b')
+  setProjectNote('C:/work/alpha', '')
+  assert.deepEqual(getProjectNotes(), { 'C:/work/beta': 'b' })
+})
+
+test('a projectNotes key that is not a string map is discarded on read', () => {
+  // The store file is user-writable and every reader of this one walks its keys.
+  fs.writeFileSync(
+    storeFile(),
+    JSON.stringify({ version: 1, projectNotes: ['not', 'a', 'map'] }),
+    'utf8'
+  )
+  assert.deepEqual(getProjectNotes(), {})
 })
 
 // ── Sessions ────────────────────────────────────────────────────────

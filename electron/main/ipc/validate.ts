@@ -6,7 +6,7 @@
  * handler cannot accidentally depend on app state through a validator.
  */
 
-import type { McpTransport } from '../../../shared/types'
+import { NOTE_MAX_CHARS, type McpTransport } from '../../../shared/types'
 
 export function assertString(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value.trim()) {
@@ -18,6 +18,27 @@ export function assertString(value: unknown, name: string): string {
 export function assertOptionalString(value: unknown, name: string): string | undefined {
   if (value === undefined || value === null || value === '') return undefined
   if (typeof value !== 'string') throw new Error(`Invalid ${name}`)
+  return value
+}
+
+/**
+ * A project scratchpad on its way to the store.
+ *
+ * Deliberately looser than every other validator here, because this is the one
+ * argument that is the user's own prose rather than something bound for a
+ * command line or a path. Empty is legal and means "forget this note", and
+ * newlines, tabs and any character somebody chose to type are left exactly as
+ * written: this value reaches a `<textarea>` value and a JSON string and nothing
+ * else. Stripping control characters the way the CLI validators do would silently
+ * rewrite what the user typed, which is the FIX-R1 failure in store.ts.
+ *
+ * The length cap is the whole check, and it refuses rather than truncating.
+ */
+export function assertNoteText(value: unknown, name: string): string {
+  if (typeof value !== 'string') throw new Error(`Invalid ${name}: expected a string`)
+  if (value.length > NOTE_MAX_CHARS) {
+    throw new Error(`Invalid ${name}: longer than ${NOTE_MAX_CHARS} characters`)
+  }
   return value
 }
 

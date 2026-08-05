@@ -22,6 +22,9 @@ const api: GronkApi = {
   removeRecentProject: (cwd: string) => ipcRenderer.invoke('gronk:remove-recent-project', cwd),
   setRecentProjectPinned: (cwd: string, pinned: boolean) =>
     ipcRenderer.invoke('gronk:set-recent-project-pinned', cwd, pinned),
+  getProjectNotes: () => ipcRenderer.invoke('gronk:get-project-notes'),
+  setProjectNote: (cwd: string, note: string) =>
+    ipcRenderer.invoke('gronk:set-project-note', cwd, note),
   setChromeTheme: (theme: 'dark' | 'light') => ipcRenderer.invoke('gronk:set-chrome-theme', theme),
   writeClipboard: (text: string) => ipcRenderer.invoke('gronk:write-clipboard', text),
   startAgent: (cwd, options) => ipcRenderer.invoke('gronk:start-agent', cwd, options),

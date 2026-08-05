@@ -3742,6 +3742,46 @@ html[data-theme='light'] .code-block {
   margin: 0;
 }
 
+/*
+ * Notes tab: a scratchpad, so the box gets the whole panel and reads as text
+ * rather than as a form field. Taller than the other bodies because a note is
+ * the one thing here the user writes instead of reads.
+ */
+.session-tray-body.notes-body {
+  max-height: min(300px, 42vh);
+}
+
+.project-note {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  max-height: 40vh;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: none;
+  background: var(--panel-2);
+  line-height: 1.55;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.project-note:focus {
+  border-color: color-mix(in srgb, var(--ignite) 45%, var(--line-2));
+}
+
+.project-note:disabled {
+  opacity: 0.5;
+}
+
+.project-note::placeholder {
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
 .session-tray-note {
   margin: 8px 0 0;
   font-family: var(--font-mono);

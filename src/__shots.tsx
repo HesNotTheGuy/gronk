@@ -563,6 +563,11 @@ const api: Record<string, unknown> = {
   setSettings: async (partial: object) => ({ ...settings, ...partial }),
   getRecentProjects: async () => (empty ? [] : PROJECTS),
   addRecentProject: async () => PROJECTS,
+  // Deliberately empty: a baseline showing somebody's scratchpad text would put
+  // fixture prose in every screenshot of the tray and drift the moment it is
+  // edited. The tab renders its empty state instead.
+  getProjectNotes: async () => ({}),
+  setProjectNote: async () => ({}),
   listSessions: async () => (empty ? [] : SESSIONS),
   listModels: async () => [
     { id: 'grok-4.5', name: 'Grok 4.5', isDefault: true },
