@@ -17,11 +17,12 @@ Your projects, your sessions, your history, in a window instead of a terminal.
 
 </div>
 
-![Gronk Home, showing recent projects and an activity heatmap](docs/images/home.png)
+![Gronk Home with the rock brand mark, pure-black chrome, Focus in the topbar, an activity heatmap, and recent projects](docs/images/home.png)
 
 > [!WARNING]
-> **Pre-release.** Built and tested on Windows. The macOS and Linux installers
-> come from CI and have not been run by the author yet. Reports welcome.
+> **0.2.0 is the first full release.** Built and tested on Windows. The macOS and
+> Linux installers come from CI and have not been run by the author yet. Reports
+> welcome.
 
 ## Download
 
@@ -43,7 +44,8 @@ intact, which is integrity rather than authorship.
 
 Gronk runs your local `grok` binary as a child process and talks to it over ACP.
 No backend, no bundled credentials, no model calls of its own. You sign in with
-your own Grok account.
+your own Grok account. Sign out lives in Settings, next to the account it acts
+on.
 
 There are two surfaces, and the difference is whether your files are involved.
 
@@ -52,11 +54,19 @@ There are two surfaces, and the difference is whether your files are involved.
 | **Chat** | A conversation. No project folder, so nothing reads or edits your files. |
 | **Build** | Grok pointed at a folder on your computer, where it can read, edit and run. |
 
+The shell is pure black with the rock brand mark in the rail. **Focus** (topbar
+button, or `[` when you are not typing in a field) hides the sidebar and the idle
+session tray so the conversation fills the frame.
+
 ### Watch the agent work
 
 Every tool call becomes a card. Reads, edits and shell commands, with diffs.
+Spawned agents show as a row of status dots under the turn that started them:
+dim when finished, red when failed, pulsing while live. The Agents tab in the
+session tray keeps that history until you dismiss it, and no longer opens itself
+when work starts.
 
-![A Build session showing tool call cards for read, edit and shell](docs/images/build.png)
+![A Build session with pure-black chrome, the rock mark, Focus in the topbar, and tool call cards for read, edit and shell](docs/images/build.png)
 
 ### Approve before anything runs
 
@@ -71,7 +81,7 @@ Gronk.
 Search titles and message text across Chat and Build at once. Results say where
 they matched and which surface they came from.
 
-![Sidebar search showing results with matching snippets](docs/images/search.png)
+![Sidebar search with pure-black chrome, the rock mark, Focus in the topbar, and results with matching snippets](docs/images/search.png)
 
 ### See your skills
 
@@ -79,7 +89,7 @@ Every skill on your machine, yours and the ones bundled with the CLI. A skill is
 a folder containing `SKILL.md`. Dropping it into `~/.grok/skills` is the whole
 install.
 
-![The Skills tab listing installed skills](docs/images/skills.png)
+![The Plugins and Skills panel, reached from Settings](docs/images/skills.png)
 
 ### Know where a plugin came from
 
@@ -87,7 +97,7 @@ Plugin cards show the account that published them, like `github.com/xai-org`.
 A marketplace name is a string anyone can set, so it is shown as a plain label
 and never as a badge. Gronk marks nothing as verified, because it cannot know.
 
-![Plugin cards showing publisher origins](docs/images/plugins.png)
+![Plugin cards on the Installed tab showing publisher origins](docs/images/plugins.png)
 
 ### Also
 
@@ -167,7 +177,9 @@ the magenta regions in `tests/visual/diff/`, then accept it with
 `npm run test:visual:update` if the change was intended.
 
 Baselines are rendered by one machine's font stack, so comparing them on a
-different OS reports differences that are not regressions.
+different OS reports differences that are not regressions. Close every other
+Gronk window before running the harness: it drives by clicking text, and a live
+app window will receive those clicks.
 
 ## Contributing
 
