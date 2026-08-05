@@ -185,19 +185,35 @@ export function useGronk() {
    * and `setAuth`, write-throughs those hooks expose for this function alone.
    */
   refreshMetaImpl.current = async () => {
-    const [projects, sess, s, path, modelList, auditList, healthStatus, authStatus, chatPath] =
-      await Promise.all([
-        window.gronk.getRecentProjects(),
-        window.gronk.listSessions(),
-        window.gronk.getSettings(),
-        window.gronk.getGrokPath(),
-        window.gronk.listModels(),
-        window.gronk.getPermissionAudit(),
-        window.gronk.getHealth(),
-        window.gronk.getAuthStatus(),
-        window.gronk.getChatWorkspacePath()
-      ])
-    hydrateCatalog({ recentProjects: projects, sessions: sess, chatWorkspacePath: chatPath })
+    const [
+      projects,
+      sess,
+      s,
+      path,
+      modelList,
+      auditList,
+      healthStatus,
+      authStatus,
+      chatPath,
+      notes
+    ] = await Promise.all([
+      window.gronk.getRecentProjects(),
+      window.gronk.listSessions(),
+      window.gronk.getSettings(),
+      window.gronk.getGrokPath(),
+      window.gronk.listModels(),
+      window.gronk.getPermissionAudit(),
+      window.gronk.getHealth(),
+      window.gronk.getAuthStatus(),
+      window.gronk.getChatWorkspacePath(),
+      window.gronk.getProjectNotes()
+    ])
+    hydrateCatalog({
+      recentProjects: projects,
+      sessions: sess,
+      chatWorkspacePath: chatPath,
+      projectNotes: notes
+    })
     hydrateSettings({
       settings: s,
       grokPath: path,

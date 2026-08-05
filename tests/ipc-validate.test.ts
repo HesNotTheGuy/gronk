@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  assertNoteText,
   assertString,
   assertOptionalString,
   assertCliToken,
@@ -11,6 +12,7 @@ import {
   ENV_KEY_RE,
   HEADER_NAME_RE,
 } from "../electron/main/ipc/validate";
+import { NOTE_MAX_CHARS } from "../shared/types";
 
 /**
  * These validators run on renderer-supplied values at the IPC boundary, so they
@@ -363,4 +365,34 @@ test("assertOptionalStringRecord enforces size limits", () => {
     assertOptionalStringRecord(undefined, "env", ENV_KEY_RE),
     undefined,
   );
+});
+
+test("assertNoteText accepts an empty note, because empty means forget it", () => {
+  // Every other validator here rejects empty. This one must not: clearing a
+  // project's scratchpad is how the entry is deleted from the store.
+  assert.equal(assertNoteText("", "note"), "");
+  assert.equal(assertNoteText("   ", "note"), "   ");
+});
+
+test("assertNoteText leaves the user's own prose exactly as written", () => {
+  // Newlines and tabs are the point of a scratchpad, and the CLI validators'
+  // control-character rule would reject every multi-line note. Nothing here
+  // rewrites the value: this is the user's own text, not an argv element or a
+  // path, and it reaches a <textarea> value and a JSON string and nothing else.
+  const note = ["line one", "", "\tindented", "- bullet"].join("\n");
+  assert.equal(assertNoteText(note, "note"), note);
+});
+
+test("assertNoteText refuses a non-string rather than coercing one", () => {
+  for (const bad of [undefined, null, 42, {}, [], { toString: () => "x" }]) {
+    throws(() => assertNoteText(bad, "note"), `accepted ${JSON.stringify(bad)}`);
+  }
+});
+
+test("assertNoteText caps length, and refuses rather than truncating", () => {
+  const atLimit = "x".repeat(NOTE_MAX_CHARS);
+  assert.equal(assertNoteText(atLimit, "note"), atLimit);
+  // Truncating would silently eat the tail of what somebody wrote, which is the
+  // corruption FIX-R1 exists to prevent. The store never sees an over-long note.
+  throws(() => assertNoteText(atLimit + "x", "note"), "accepted an over-long note");
 });

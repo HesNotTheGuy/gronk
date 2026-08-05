@@ -13,13 +13,15 @@ import { assertTrustedSender } from '../ipc-guard'
 import {
   addRecentProject,
   getPermissionAudit,
+  getProjectNotes,
   getRecentProjects,
   getSettings,
   removeRecentProject,
+  setProjectNote,
   setRecentProjectPinned,
   setSettings
 } from '../store'
-import { assertString } from './validate'
+import { assertNoteText, assertString } from './validate'
 import type { AppSettings } from '../../../shared/types'
 
 export function registerSettingsIpc(): void {
@@ -56,6 +58,19 @@ export function registerSettingsIpc(): void {
     assertTrustedSender(e)
     if (typeof pinned !== 'boolean') throw new Error('pinned must be a boolean')
     return setRecentProjectPinned(assertString(cwd, 'cwd'), pinned)
+  })
+
+  ipcMain.handle('gronk:get-project-notes', (e) => {
+    assertTrustedSender(e)
+    return getProjectNotes()
+  })
+
+  ipcMain.handle('gronk:set-project-note', (e, cwd: string, note: unknown) => {
+    assertTrustedSender(e)
+    // cwd first: it is the key, and a bad one would file the note under garbage.
+    // The note itself is the user's own text and is stored verbatim (FIX-R1).
+    const dir = assertString(cwd, 'cwd')
+    return setProjectNote(dir, assertNoteText(note, 'note'))
   })
 
   ipcMain.handle('gronk:get-chat-workspace', (e) => {

@@ -94,6 +94,9 @@ const EXPECTED_MEMBERS: string[] = [
   "previewRunning",
   "previewUrl",
   "projectName",
+  // One scratchpad per project folder. Null until the first hydrate, so the
+  // tray can tell "no note" from "not loaded yet".
+  "projectNotes",
   "projectOnlySessions",
   "recentProjects",
   "refreshAuth",
@@ -115,6 +118,7 @@ const EXPECTED_MEMBERS: string[] = [
   "setCliInstallResult",
   "setError",
   "setPlanCollapsed",
+  "setProjectNote",
   "setRecentProjectPinned",
   "setShowArchived",
   "setShowCliInstall",

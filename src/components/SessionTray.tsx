@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ActivePlan, AuthStatus, ChatMessage, SessionUsage } from '../../shared/types'
+import type {
+  ActivePlan,
+  AuthStatus,
+  ChatMessage,
+  ProjectNotes,
+  SessionUsage
+} from '../../shared/types'
 import { nextRetained } from '../lib/agent-retention'
+import {
+  NOTE_MAX_CHARS,
+  noteFor,
+  noteWordCount,
+  pendingNoteSave
+} from '../lib/project-notes'
 import {
   agentActivitySummary,
   collectAgentUnitsFromMessages,
@@ -11,7 +23,16 @@ import { costNote, detailCostLabel, summaryCostLabel } from '../lib/cost'
 import { toolActivitySignature } from '../lib/tool-activity-sig'
 import { shortenForDisplay } from '../lib/tool-format'
 
-type TrayTab = 'plan' | 'agents' | 'usage'
+type TrayTab = 'plan' | 'agents' | 'usage' | 'notes'
+
+/**
+ * How long typing has to stop before a note is written.
+ *
+ * Every write re-serializes the whole store file and rolls the backup forward,
+ * so this is not a keystroke-level save. Nothing is lost by waiting: the pending
+ * text is flushed when the project changes and when the tray unmounts.
+ */
+const NOTE_SAVE_DEBOUNCE_MS = 600
 
 function planStatusClass(status: string): string {
   const s = status.toLowerCase()
@@ -63,6 +84,18 @@ interface Props {
   messages: ChatMessage[]
   usage: SessionUsage | null
   auth?: AuthStatus | null
+  /**
+   * The project folder this scratchpad belongs to, or null for no scratchpad.
+   *
+   * Null on the Chat surface deliberately. Chat runs in an app-local sandbox
+   * whose path is superseded rather than kept, so a note filed under it would
+   * quietly stop being findable; and "notes about this folder" means nothing for
+   * a folder the user never chose.
+   */
+  notesCwd: string | null
+  /** Every project's note, or null until they have loaded. */
+  notes: ProjectNotes | null
+  onSaveNote: (cwd: string, note: string) => void
 }
 
 /**
@@ -72,7 +105,17 @@ interface Props {
  * single thin rail of tabs; only one body expands at a time, and empty sections
  * do not appear.
  */
-export function SessionTray({ showPlan, sessionId, plan, messages, usage, auth }: Props) {
+export function SessionTray({
+  showPlan,
+  sessionId,
+  plan,
+  messages,
+  usage,
+  auth,
+  notesCwd,
+  notes,
+  onSaveNote
+}: Props) {
   // Wide scan so status updates still reach units that started many turns ago.
   // Display history is the sticky `retained` list below — a 16-message window
   // made the AGENTS tab vanish as soon as chat moved on, which felt like
@@ -131,6 +174,70 @@ export function SessionTray({ showPlan, sessionId, plan, messages, usage, auth }
   const units = retained
   const agentSummary = useMemo(() => agentActivitySummary(units), [units])
 
+  // ── Project notes ────────────────────────────────────────────────
+  //
+  // The draft carries the cwd it was loaded for. Without that pairing there is
+  // one render, between the project changing and the draft being reloaded, where
+  // the previous project's text is sitting in state next to the new project's
+  // cwd; a save fired from that render files one project's notes under another.
+  const [draft, setDraft] = useState<{ cwd: string; text: string } | null>(null)
+  const notesReady = notes !== null
+  const storedNote = noteFor(notes, notesCwd)
+  const loadedFor = useRef<string | null>(null)
+  /** Text typed but not yet written, kept so it can be flushed rather than lost. */
+  const unsaved = useRef<{ cwd: string; text: string } | null>(null)
+  const saveNote = useRef(onSaveNote)
+  saveNote.current = onSaveNote
+
+  const flushNote = useRef(() => {
+    const pending = unsaved.current
+    if (!pending) return
+    unsaved.current = null
+    saveNote.current(pending.cwd, pending.text)
+  })
+
+  // Leaving a project writes whatever it was holding. This runs before the
+  // reload below, so the text it flushes still belongs to the project it was
+  // typed into.
+  const prevCwd = useRef<string | null>(null)
+  useEffect(() => {
+    if (prevCwd.current !== null && prevCwd.current !== notesCwd) flushNote.current()
+    prevCwd.current = notesCwd
+  }, [notesCwd])
+
+  // Load once per project. Deliberately not re-run when `notes` changes: saving
+  // writes the map straight back through, and re-seeding the box from it would
+  // fight anyone still typing.
+  useEffect(() => {
+    if (!notesCwd || !notesReady) {
+      loadedFor.current = null
+      return
+    }
+    if (loadedFor.current === notesCwd) return
+    loadedFor.current = notesCwd
+    setDraft({ cwd: notesCwd, text: storedNote })
+  }, [notesCwd, notesReady, storedNote])
+
+  useEffect(() => {
+    if (!notesCwd || !draft || draft.cwd !== notesCwd) return
+    const next = pendingNoteSave(notes, notesCwd, draft.text)
+    if (next === null) {
+      unsaved.current = null
+      return
+    }
+    unsaved.current = { cwd: notesCwd, text: next }
+    const timer = setTimeout(() => flushNote.current(), NOTE_SAVE_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [draft, notes, notesCwd])
+
+  // Closing the session, or the tray disappearing, must not eat the last thing
+  // typed into it.
+  useEffect(() => () => flushNote.current(), [])
+
+  const noteText = draft && draft.cwd === notesCwd ? draft.text : storedNote
+  const noteWords = noteWordCount(noteText)
+
+  const hasNotes = !!notesCwd
   const hasPlan = showPlan && !!plan && plan.entries.length > 0
   // Tab stays for the whole session once any agent has been seen, until ×.
   const hasAgents = !agentsDismissed && units.length > 0
@@ -165,9 +272,14 @@ export function SessionTray({ showPlan, sessionId, plan, messages, usage, auth }
     if (tab === 'plan' && !hasPlan) setTab(null)
     if (tab === 'agents' && !hasAgents) setTab(null)
     if (tab === 'usage' && !hasUsage) setTab(null)
-  }, [tab, hasPlan, hasAgents, hasUsage])
+    if (tab === 'notes' && !hasNotes) setTab(null)
+  }, [tab, hasPlan, hasAgents, hasUsage, hasNotes])
 
-  if (!hasPlan && !hasAgents && !hasUsage) return null
+  // Consequence worth knowing: in a project session the rail is now always here,
+  // because Notes is the one tab that cannot wait for content to exist before it
+  // appears: there would be nowhere to write the first note. Chat sessions pass
+  // no cwd and are unchanged.
+  if (!hasPlan && !hasAgents && !hasUsage && !hasNotes) return null
 
   const planDone = hasPlan
     ? plan!.entries.filter((e) => planStatusClass(e.status) === 'done').length
@@ -240,6 +352,22 @@ export function SessionTray({ showPlan, sessionId, plan, messages, usage, auth }
             <span className="session-tray-value">
               {formatTokens(usage!.totals.totalTokens)}
               {sessionCost && costSuffix ? ` · ~${sessionCost}` : ''}
+            </span>
+          </button>
+        ) : null}
+
+        {hasNotes ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'notes'}
+            className={`session-tray-tab ${tab === 'notes' ? 'active' : ''}`}
+            onClick={() => select('notes')}
+            title="Scratchpad for this project folder"
+          >
+            <span className="session-tray-kicker">Notes</span>
+            <span className="session-tray-value">
+              {noteWords > 0 ? `${noteWords} ${noteWords === 1 ? 'word' : 'words'}` : '—'}
             </span>
           </button>
         ) : null}
@@ -325,6 +453,41 @@ export function SessionTray({ showPlan, sessionId, plan, messages, usage, auth }
             ) : null}
           </div>
           <p className="session-tray-note">From Grok tool calls only. No extra model narration.</p>
+        </div>
+      ) : null}
+
+      {tab === 'notes' && hasNotes ? (
+        <div className="session-tray-body notes-body" role="tabpanel">
+          {/*
+            A textarea, and only ever a textarea. Notes are user-authored text
+            that gets persisted and re-rendered, which is the exact shape the
+            markdown surface is dangerous for, so this one never goes near it.
+            A textarea's value is not parsed as anything, so there is no rendering
+            decision here to get wrong later.
+          */}
+          <textarea
+            className="project-note"
+            value={noteText}
+            disabled={!notesReady}
+            maxLength={NOTE_MAX_CHARS}
+            rows={6}
+            spellCheck
+            aria-label="Notes for this project"
+            placeholder="Things to remember about this project. Snippets, decisions, what to pick up next."
+            /*
+              onInput rather than onChange, which is what the rest of the app
+              uses. React fires it for exactly the same keystrokes, and it is the
+              event the suite's jsdom harness can actually deliver: React 19's
+              change plugin does not synthesize onChange from a dispatched input
+              event outside a real browser, so onChange here would leave the
+              whole save path with no test at all.
+            */
+            onInput={(e) => setDraft({ cwd: notesCwd!, text: e.currentTarget.value })}
+          />
+          <p className="session-tray-note">
+            Plain text, one note per folder, saved with Gronk's own settings rather than in
+            the project itself, so it is never committed by accident.
+          </p>
         </div>
       ) : null}
 
