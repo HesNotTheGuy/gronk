@@ -2883,11 +2883,18 @@ button {
 .version-tag {
   font-family: var(--font-mono);
   font-size: 9px;
-  letter-spacing: 0.16em;
+  /* letter-spacing kept tight so "v0.2.0-nightly · abcdef0" still fits */
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-4);
   text-align: center;
   padding-top: 4px;
+  /* Sha + channel can be long; allow wrap rather than clip the identity. */
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.35;
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 /* Scan line (subtle, not distracting) */

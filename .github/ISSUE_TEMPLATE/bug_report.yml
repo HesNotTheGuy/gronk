@@ -30,8 +30,10 @@ body:
     id: version
     attributes:
       label: Gronk version
-      description: Shown at the bottom of the sidebar, for example 0.1.7.
-      placeholder: "0.1.7"
+      description: >
+        Full string at the bottom of the sidebar (version, optional channel,
+        and short commit). Example: v0.2.0 · b6462a6 or v0.2.0-nightly · a1b2c3d.
+      placeholder: "v0.2.0 · b6462a6"
     validations:
       required: true
 
