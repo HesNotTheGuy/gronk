@@ -240,12 +240,32 @@ button {
   background: var(--line-2);
 }
 
+/* The mark is the way back to Home. A hover affordance, but deliberately no
+   selected state: Home is a view of both modes rather than a third mode, and
+   giving it the nav items' indicator would put it back among them. Assistive
+   tech gets aria-current instead. */
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
+  width: 100%;
   margin-bottom: 16px;
+  padding: 6px 8px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
   -webkit-app-region: no-drag;
+}
+
+.brand:hover {
+  background: var(--hover);
+  border-color: var(--line);
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .brand-mark {
@@ -269,18 +289,18 @@ button {
   pointer-events: none;
 }
 
-.brand-text h1 {
-  margin: 0;
+.brand-name {
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   line-height: 1;
+  color: var(--ink);
 }
 
-.brand-text p {
-  margin: 4px 0 0;
+.brand-tag {
+  margin-top: 4px;
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.18em;
@@ -1707,39 +1727,72 @@ button {
   color: var(--ink-3);
 }
 
+/* One group, not three peers: Chat and Build are the two halves of a single
+   choice, so they share one border and are divided from each other rather than
+   floated apart. */
 .nav-stack {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   margin-top: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
   -webkit-app-region: no-drag;
 }
 
 .nav-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   text-align: left;
   padding: 9px 12px;
+  color: var(--ink-3);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.nav-item + .nav-item {
+  border-top: 1px solid var(--line);
+}
+
+.nav-item-label {
   font-family: var(--font-display);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--ink-3);
-  border: 1px solid transparent;
-  border-left: 2px solid transparent;
-  border-radius: var(--radius);
+}
+
+/* Not decoration. This line is the difference between the two modes, and it is
+   the app's whole safety distinction. */
+.nav-item-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--ink-4);
+  text-transform: none;
 }
 
 .nav-item:hover:not(:disabled) {
   color: var(--ink);
   background: var(--hover);
-  border-color: var(--line);
 }
 
+/* The same indicator as the selected session row: an inset bar in --ignite over
+   the same tinted fill. Selection reads one way in this app, not three. */
 .nav-item.active {
   color: var(--ink);
-  background: linear-gradient(90deg, var(--ignite-dim), transparent 80%);
-  border-color: var(--line-2);
-  border-left-color: var(--ignite);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ignite) 30%, transparent),
+    transparent 70%
+  );
+  box-shadow: inset 2px 0 0 var(--ignite);
+}
+
+.nav-item.active .nav-item-sub {
+  color: var(--ink-3);
 }
 
 .nav-item:disabled {
@@ -3060,6 +3113,7 @@ html[data-theme='light'] .status-pill {
 html[data-theme='light'] .nav-item.active {
   background: rgba(11, 79, 69, 0.08);
   color: var(--ignite);
+  box-shadow: inset 2px 0 0 var(--ignite);
 }
 
 html[data-theme='light'] .activity-cell {
@@ -6069,6 +6123,55 @@ html[data-theme='light'] .auth-card {
   font-size: 12px;
   color: var(--ink-4);
   text-align: right;
+}
+
+.calendar-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Scope filter. Same segmented shape as the session Recent / By project switch,
+   because it does the same kind of job: one control, one row of choices, and
+   the chart underneath keeps its scale. */
+.calendar-scope {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.calendar-scope-btn {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.calendar-scope-btn + .calendar-scope-btn {
+  border-left: 1px solid var(--line);
+}
+
+.calendar-scope-btn:hover {
+  background: var(--hover);
+  color: var(--ink-2);
+}
+
+.calendar-scope-btn.active {
+  background: var(--panel-2);
+  color: var(--ink-2);
 }
 
 .calendar-error,

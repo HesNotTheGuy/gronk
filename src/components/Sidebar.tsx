@@ -256,30 +256,38 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="brand">
+        {/* The mark is Home. Home is a view of both modes rather than a third
+            one, so it reads better as the way back to the top than as a peer of
+            the two things it summarises. The name is a span, not a heading: every
+            browse screen already titles itself in <main>, and a second h1 in the
+            chrome competes with the one that describes the page. */}
+        <button
+          type="button"
+          className="brand"
+          onClick={onGoHome}
+          title="Home"
+          aria-current={surface === 'home' ? 'page' : undefined}
+        >
           <BrandMark />
-          <div className="brand-text">
-            <h1>Gronk</h1>
-            <p>Grok desktop</p>
-          </div>
-        </div>
+          <span className="brand-text">
+            <span className="brand-name">Gronk</span>
+            <span className="brand-tag">Grok desktop</span>
+          </span>
+        </button>
 
+        {/* Chat and Build are the app's one real distinction: whether the agent
+            is given a folder on this machine. The second line is that rule, on
+            the control that chooses it, rather than only in prose on a screen
+            you have to go looking for. */}
         <nav className="nav-stack" aria-label="Main">
-          <button
-            type="button"
-            className={`nav-item ${surface === 'home' ? 'active' : ''}`}
-            onClick={onGoHome}
-            title="Home"
-          >
-            Home
-          </button>
           <button
             type="button"
             className={`nav-item ${surface === 'chat' ? 'active' : ''}`}
             onClick={onGoChat}
             title="Conversations with Grok. No project folder."
           >
-            Chat
+            <span className="nav-item-label">Chat</span>
+            <span className="nav-item-sub">no project folder</span>
           </button>
           <button
             type="button"
@@ -287,7 +295,8 @@ export function Sidebar({
             onClick={onGoProjects}
             title="Grok working in a project on your computer"
           >
-            Build
+            <span className="nav-item-label">Build</span>
+            <span className="nav-item-sub">a folder on your computer</span>
           </button>
         </nav>
       </div>
@@ -359,16 +368,6 @@ export function Sidebar({
                   )
                 })
               )}
-            </div>
-          </div>
-        ) : null}
-
-        {surface === 'home' ? (
-          <div className="sidebar-section">
-            <div className="muted-note">
-              <strong>Chat</strong> is a conversation. No project folder.
-              <br />
-              <strong>Build</strong> gives Grok a folder on your computer to work in.
             </div>
           </div>
         ) : null}

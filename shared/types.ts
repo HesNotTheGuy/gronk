@@ -367,16 +367,32 @@ export interface MoveDataResult {
 
 // ── Activity calendar ──────────────────────────────────────────────
 /** One day's worth of work, for the contribution-style heatmap. */
-export interface DayActivity {
-  /** Local calendar day, `YYYY-MM-DD`. Local, not UTC: a day boundary the user
-   *  does not recognise makes their own history look wrong. */
-  date: string
-  /** Prompts the user sent that day — the honest measure of work done. */
+/** One day's work, counted. The same three numbers whatever is being counted. */
+export interface DayCounts {
+  /** Prompts the user sent: the honest measure of work done. */
   userTurns: number
   /** All messages, user and assistant. */
   messages: number
   /** Distinct sessions touched. */
   sessions: number
+}
+
+export interface DayActivity extends DayCounts {
+  /** Local calendar day, `YYYY-MM-DD`. Local, not UTC: a day boundary the user
+   *  does not recognise makes their own history look wrong. */
+  date: string
+  /**
+   * The same day counted for Chat sessions only, and for Build sessions only.
+   *
+   * A session has exactly one surface, so the two are a partition of the day:
+   * `chat.userTurns + build.userTurns === userTurns`. They exist so the heatmap
+   * can be filtered without a second fetch and, more importantly, without a
+   * second `peak`. Intensity is normalised against the busiest single day, and
+   * a per-scope peak would make the same shade mean different amounts depending
+   * on which filter was selected.
+   */
+  chat: DayCounts
+  build: DayCounts
 }
 
 export interface ActivityCalendar {

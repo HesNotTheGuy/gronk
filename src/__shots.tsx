@@ -145,7 +145,8 @@ const SESSIONS = [
 
 function buildActivity() {
   const random = makeRandom(20260127)
-  const days: Array<{ date: string; userTurns: number; messages: number; sessions: number }> = []
+  type Counts = { userTurns: number; messages: number; sessions: number }
+  const days: Array<Counts & { date: string; chat: Counts; build: Counts }> = []
   let peak = 0
   let total = 0
 
@@ -161,11 +162,24 @@ function buildActivity() {
 
     if (userTurns > peak) peak = userTurns
     total += userTurns
+    const messages = userTurns * 2 + (userTurns ? Math.floor(random() * 4) : 0)
+    const sessions = userTurns ? 1 + Math.floor(random() * 2) : 0
+    // Split so the scope filter has something to filter. Chat takes a third,
+    // Build the rest, and the two always add back up to the day.
+    const chatTurns = Math.floor(userTurns / 3)
+    const chatMessages = Math.floor(messages / 3)
+    const chatSessions = userTurns ? (chatTurns > 0 ? 1 : 0) : 0
     days.push({
       date: localDayKey(at),
       userTurns,
-      messages: userTurns * 2 + (userTurns ? Math.floor(random() * 4) : 0),
-      sessions: userTurns ? 1 + Math.floor(random() * 2) : 0
+      messages,
+      sessions,
+      chat: { userTurns: chatTurns, messages: chatMessages, sessions: chatSessions },
+      build: {
+        userTurns: userTurns - chatTurns,
+        messages: messages - chatMessages,
+        sessions: sessions - chatSessions
+      }
     })
   }
 
@@ -530,11 +544,12 @@ const settings = {
  * neither of which a user can actually hit.
  */
 const emptyActivity = (() => {
+  const zero = { userTurns: 0, messages: 0, sessions: 0 }
   const days = localDayWindow(365).map((at) => ({
     date: localDayKey(at),
-    userTurns: 0,
-    messages: 0,
-    sessions: 0
+    ...zero,
+    chat: { ...zero },
+    build: { ...zero }
   }))
   return {
     days,

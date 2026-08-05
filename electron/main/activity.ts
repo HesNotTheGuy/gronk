@@ -15,7 +15,7 @@
  */
 
 import { getTranscript, listSessions } from './store'
-import type { ActivityCalendar, DayActivity } from '../../shared/types'
+import type { ActivityCalendar, AgentSurface, DayActivity, DayCounts } from '../../shared/types'
 
 /** A year of squares, the same window GitHub shows. */
 export const DEFAULT_CALENDAR_DAYS = 365
@@ -37,6 +37,14 @@ export interface TranscriptEntry {
 /** One session's contribution to the calendar, as read off the store. */
 export interface SessionActivity {
   id: string
+  /**
+   * Which half of the app this session belongs to, for the heatmap's scope
+   * filter. Anything that is not `chat` counts as Build, including a row from
+   * an older build that never wrote the field: the store resolves a missing
+   * surface to `project` on read, and guessing Chat for an unreadable value
+   * would put work with a folder behind it in the column that means "no folder".
+   */
+  surface?: unknown
   /**
    * Newest activity on the session row. Only used when the transcript is gone —
    * see `buildActivityCalendar` for why that fallback exists.
@@ -133,6 +141,27 @@ interface DayBucket {
   userTurns: number
   messages: number
   sessions: Set<string>
+  chat: ScopeBucket
+  build: ScopeBucket
+}
+
+interface ScopeBucket {
+  userTurns: number
+  messages: number
+  sessions: Set<string>
+}
+
+function emptyScope(): ScopeBucket {
+  return { userTurns: 0, messages: 0, sessions: new Set<string>() }
+}
+
+function counts(bucket: ScopeBucket): DayCounts {
+  return { userTurns: bucket.userTurns, messages: bucket.messages, sessions: bucket.sessions.size }
+}
+
+/** Chat only when the row says so. See SessionActivity.surface for why. */
+function scopeOf(surface: unknown): 'chat' | 'build' {
+  return (surface as AgentSurface) === 'chat' ? 'chat' : 'build'
 }
 
 /**
@@ -196,12 +225,20 @@ export function buildActivityCalendar(
   const keys = dayKeyRange(now, options.days)
   const buckets = new Map<string, DayBucket>()
   for (const key of keys) {
-    buckets.set(key, { userTurns: 0, messages: 0, sessions: new Set<string>() })
+    buckets.set(key, {
+      userTurns: 0,
+      messages: 0,
+      sessions: new Set<string>(),
+      chat: emptyScope(),
+      build: emptyScope()
+    })
   }
 
   for (const session of sessions ?? []) {
     const id = typeof session?.id === 'string' ? session.id : ''
     if (!id) continue
+
+    const scope = scopeOf(session.surface)
 
     let placed = false
     for (const message of session.messages ?? []) {
@@ -211,8 +248,13 @@ export function buildActivityCalendar(
       const bucket = buckets.get(localDayKey(ts))
       if (!bucket) continue
       bucket.messages++
-      if (message?.role === 'user') bucket.userTurns++
+      bucket[scope].messages++
+      if (message?.role === 'user') {
+        bucket.userTurns++
+        bucket[scope].userTurns++
+      }
       bucket.sessions.add(id)
+      bucket[scope].sessions.add(id)
     }
     if (placed) continue
 
@@ -229,6 +271,9 @@ export function buildActivityCalendar(
     bucket.messages += rowMessages
     bucket.userTurns += rowTurns
     bucket.sessions.add(id)
+    bucket[scope].messages += rowMessages
+    bucket[scope].userTurns += rowTurns
+    bucket[scope].sessions.add(id)
   }
 
   const days: DayActivity[] = keys.map((date) => {
@@ -237,7 +282,9 @@ export function buildActivityCalendar(
       date,
       userTurns: bucket.userTurns,
       messages: bucket.messages,
-      sessions: bucket.sessions.size
+      sessions: bucket.sessions.size,
+      chat: counts(bucket.chat),
+      build: counts(bucket.build)
     }
   })
 
@@ -289,6 +336,7 @@ export function getActivityCalendar(days: unknown = DEFAULT_CALENDAR_DAYS): Acti
     }
     return {
       id: s.id,
+      surface: s.surface,
       updatedAt: s.updatedAt,
       messageCount: s.messageCount,
       userTurns: s.userTurns,
