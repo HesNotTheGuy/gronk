@@ -1,6 +1,6 @@
 {
   "name": "gronk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Desktop app for the Grok Build CLI. Runs your local grok binary over ACP.",
   "main": "out/main/index.js",
   "author": {
