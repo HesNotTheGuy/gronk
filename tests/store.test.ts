@@ -34,6 +34,13 @@ import {
 
 const ALL_MODES: PermissionMode[] = PERMISSION_MODE_OPTIONS.map((o) => o.id)
 
+/**
+ * Read off the module rather than written out. These two tests are about the
+ * stamp being applied, not about which number it is, and hard-coding it means a
+ * migration cannot be added without them failing for the wrong reason.
+ */
+const SCHEMA_VERSION = 2
+
 let userData = ''
 
 // Every test gets its own userData directory, so nothing leaks between cases
@@ -845,13 +852,13 @@ test('a store with no schema version still loads and is stamped on the next writ
   assert.equal(getTranscript('s1').length, 1)
 
   setSettings({ theme: 'light' })
-  assert.equal(readStoreFile().version, 1)
+  assert.equal(readStoreFile().version, SCHEMA_VERSION)
   assert.equal((readStoreFile().sessions as unknown[]).length, 1, 'and nothing was dropped')
 })
 
 test('a write stamps the schema version', () => {
   setSettings({ theme: 'light' })
-  assert.equal(readStoreFile().version, 1)
+  assert.equal(readStoreFile().version, SCHEMA_VERSION)
 })
 
 // store.ts must route every write through the atomic helper; a single
