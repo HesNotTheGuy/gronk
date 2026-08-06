@@ -5,6 +5,7 @@ import { hasAssistantReplyAfter } from '../lib/messages'
 import { Markdown } from './Markdown'
 import { ToolActivity } from './ToolActivity'
 import { AgentDots } from './AgentDots'
+import { LocalImage } from './LocalImage'
 
 interface Props {
   messages: ChatMessage[]
@@ -223,6 +224,11 @@ export const MessageRow = memo(function MessageRow({
           {m.attachments.map((a) =>
             a.kind === 'image' && a.previewUrl ? (
               <img key={a.id} src={a.previewUrl} alt={a.name} className="msg-attach-img" />
+            ) : a.kind === 'image' && a.path ? (
+              // A restored image. Its bytes are parked under the data directory
+              // rather than carried in the transcript, so it loads the same way
+              // every other local image in the app does.
+              <LocalImage key={a.id} image={{ path: a.path, label: a.name }} compact />
             ) : (
               <span key={a.id} className="msg-attach-chip">
                 {a.name}

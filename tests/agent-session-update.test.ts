@@ -130,13 +130,47 @@ test('assistant and thought chunks are dropped while the local transcript wins',
   }
 })
 
-test('tool calls and plans still arrive while the local transcript wins', () => {
-  // They are not echoed as chat bubbles, so suppression does not apply to them.
-  const tool = route(
+test('THE LEAK: a replayed tool call is dropped when the local transcript wins', () => {
+  /*
+   * This case used to assert the opposite, on the reasoning that tool calls are
+   * not echoed as chat bubbles so suppression did not apply to them. They are
+   * echoed: session/load replays the whole turn, tool calls included. Text and
+   * thoughts were dropped and tool calls fell through to the live routing, so
+   * every reopen appended a session's entire tool-call history to a new message.
+   * That is what took one store to 117.9 MB, of which 85.8 MB was tool calls
+   * and most of that byte-identical duplicates.
+   */
+  for (const kind of ['tool_call', 'tool_call_update']) {
+    const routed = route(
+      { sessionUpdate: kind, toolCallId: 't1', title: 'Read' },
+      REPLAY_SUPPRESSED
+    )
+    assert.equal(routed.action.type, 'ignore', `${kind} was appended during replay`)
+    assert.equal(routed.assistantScoped, false, `${kind} opened a message during replay`)
+  }
+})
+
+test('a live tool call is still routed when this is not a replay', () => {
+  // The other half, and the one that matters more: suppression is set only for
+  // the duration of session/load, so a tool card during real work must still
+  // appear. Dropping these would make the agent look like it was doing nothing.
+  for (const kind of ['tool_call', 'tool_call_update']) {
+    const routed = route({ sessionUpdate: kind, toolCallId: 't1', title: 'Read' })
+    assert.equal(routed.action.type, 'tool-call', `${kind} was dropped during live work`)
+    assert.equal(routed.assistantScoped, true)
+  }
+  // ...and during a replay that is NOT suppressed, which is how a session with
+  // no local transcript rebuilds its tool cards from the agent.
+  const replayed = route(
     { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Read' },
-    REPLAY_SUPPRESSED
+    { sessionId: 's1', replayingHistory: true, suppressHistoryReplay: false }
   )
-  assert.equal(tool.action.type, 'tool-call')
+  assert.equal(replayed.action.type, 'tool-call')
+})
+
+test('a plan still arrives while the local transcript wins', () => {
+  // Deliberately not suppressed. A plan is replaced rather than appended, so it
+  // cannot accumulate, and dropping it would lose the restored session's plan.
   assert.equal(route({ sessionUpdate: 'plan' }, REPLAY_SUPPRESSED).action.type, 'plan')
 })
 

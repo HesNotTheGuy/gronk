@@ -106,9 +106,20 @@ export function routeSessionUpdate(
     }
   }
 
+  // The local transcript is authoritative, so everything the agent echoes back
+  // during session/load is a copy of something already on screen.
+  //
+  // Tool calls belong in this list and were missing from it. Text and thoughts
+  // were dropped while the echoed tool calls fell through to the live routing
+  // fifteen lines below and were appended to a fresh message, so every reopen
+  // re-added a session's entire tool-call history. The duplicates share a
+  // toolCallId, which is what makes them removable.
   if (
     context.suppressHistoryReplay &&
-    (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk')
+    (kind === 'agent_message_chunk' ||
+      kind === 'agent_thought_chunk' ||
+      kind === 'tool_call' ||
+      kind === 'tool_call_update')
   ) {
     return { sessionId, assistantScoped: false, action: { type: 'ignore' } }
   }

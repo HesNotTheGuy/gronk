@@ -19,6 +19,7 @@ import {
   writeFileAtomicSync
 } from './data-dir'
 import { redactValue } from './redact'
+import { parkAttachmentBytes, repairTranscript, slimAttachments } from './transcript-repair'
 
 // Permission audit lives in its own file (permission-audit.ts). Re-exported so
 // callers that import from store keep working without a whole-store rewrite
@@ -39,8 +40,13 @@ type StoredSettings = Omit<AppSettings, 'alwaysApprove'>
  *
  * v1 is everything shipped so far, versioned or not: the field was added after
  * the fact, so a file without it is already v1 and is stamped on the next write.
+ *
+ * v2 repairs two things v1 wrote without bound: tool calls duplicated across
+ * messages by the history-replay routing, and image attachments held twice in
+ * full base64. See transcript-repair.ts. Nothing is truncated and no message is
+ * removed; a v1 file and its v2 form hold the same conversation.
  */
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 interface StoreData {
   version: number
@@ -214,6 +220,15 @@ function readJsonFile(file: string): ReadOutcome {
  */
 function migrate(raw: RawStore, from: number): RawStore {
   if (from === SCHEMA_VERSION) return raw
+  if (from < 2 && raw.transcripts) {
+    const repaired: Record<string, ChatMessage[]> = {}
+    for (const [sessionId, messages] of Object.entries(raw.transcripts)) {
+      repaired[sessionId] = Array.isArray(messages)
+        ? repairTranscript(messages, parkAttachmentBytes)
+        : messages
+    }
+    return { ...raw, transcripts: repaired }
+  }
   return raw
 }
 
@@ -225,8 +240,17 @@ function isPlainRecord(value: unknown): value is ProjectNotes {
   return Object.values(value as Record<string, unknown>).every((v) => typeof v === 'string')
 }
 
+/**
+ * The version stamped on a file. An unversioned file is v1: the field was added
+ * after v1 shipped, so its absence means "written before there was a version",
+ * never "current".
+ */
+function storedVersion(raw: RawStore): number {
+  return typeof raw.version === 'number' && Number.isFinite(raw.version) ? raw.version : 1
+}
+
 function fromRaw(raw: RawStore): StoreData {
-  const from = typeof raw.version === 'number' ? raw.version : SCHEMA_VERSION
+  const from = storedVersion(raw)
   const data = migrate(raw, from)
   return {
     version: SCHEMA_VERSION,
@@ -271,7 +295,12 @@ function readStore(): StoreData {
   const main = readJsonFile(file)
   if (main.kind === 'ok') {
     setHealth({ source: 'file', degraded: false })
-    return fromRaw(main.raw)
+    const data = fromRaw(main.raw)
+    // Persist a repair immediately rather than waiting for whatever writes next.
+    // Until it lands, every single read re-parses the unrepaired file and redoes
+    // the work, and the size of that file is the reason for the repair.
+    if (storedVersion(main.raw) < SCHEMA_VERSION) writeStore(data)
+    return data
   }
 
   const backupFile = backupStorePath()
@@ -749,7 +778,12 @@ export function saveTranscript(sessionId: string, messages: ChatMessage[]): void
   // their machine — do NOT redact or truncate them. Secrets still stay out of
   // tool payloads and the permission audit log. De-dupe echoed user turns
   // before persist.
-  const trimmed = dedupeTranscriptMessages(messages).slice(-200).map((m) => ({
+  // Attachment bytes are parked on disk and replaced by a path BEFORE anything
+  // else runs, so an image is written once rather than into every future save of
+  // the same conversation. An image attachment carries no path when it is
+  // created, so nothing here can be skipped as "already on disk".
+  const slimmed = slimAttachments(dedupeTranscriptMessages(messages), parkAttachmentBytes)
+  const trimmed = slimmed.slice(-200).map((m) => ({
     ...m,
     streaming: false,
     // Don't persist transient send pipeline state as "failed" forever after a good turn
