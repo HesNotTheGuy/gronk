@@ -137,6 +137,17 @@ export class AgentManager {
     return this.currentModel
   }
 
+  /**
+   * `{ sessionId }` when there is one, `{}` otherwise, for spreading into an
+   * event. Absent means "no session yet", which the renderer reads as belonging
+   * to whatever switch it is waiting on. Emitting `sessionId: undefined`
+   * explicitly would say the same thing but survives a structured clone as a
+   * present key, so the two are kept distinct.
+   */
+  private sessionTag(): { sessionId?: string } {
+    return this.sessionId ? { sessionId: this.sessionId } : {}
+  }
+
   private emit(event: MainToRendererEvent): void {
     if (this.window && !this.window.isDestroyed()) {
       this.window.webContents.send('gronk:event', event)
@@ -145,7 +156,10 @@ export class AgentManager {
 
   private setState(state: ConnectionState, error?: string): void {
     this.state = state
-    this.emit({ type: 'connection', state, error })
+    // Named whenever there is a session to name. Before one exists this is the
+    // boot window and there is nothing to attribute it to; the renderer treats
+    // an unnamed connection event as belonging to whatever it is waiting for.
+    this.emit({ type: 'connection', state, error, ...this.sessionTag() })
   }
 
   private log(...args: unknown[]): void {
@@ -526,7 +540,7 @@ export class AgentManager {
   private emitFrontPermission(): void {
     const p = this.permissions.front()
     if (!p) {
-      this.emit({ type: 'permission-request', request: null })
+      this.emit({ type: 'permission-request', request: null, ...this.sessionTag() })
       return
     }
     const request: PermissionRequest = {
@@ -537,7 +551,7 @@ export class AgentManager {
       kind: p.kind,
       rawInput: p.rawInput
     }
-    this.emit({ type: 'permission-request', request })
+    this.emit({ type: 'permission-request', request, ...this.sessionTag() })
     this.notifyIfUnfocused(
       'Permission needed',
       p.title ? `Gronk is waiting: ${p.title}` : 'Gronk is waiting for a permission decision'
@@ -682,7 +696,7 @@ export class AgentManager {
       this.recordAuditFor(p, 'cancelled')
     }
     this.permissions.clear()
-    this.emit({ type: 'permission-request', request: null })
+    this.emit({ type: 'permission-request', request: null, ...this.sessionTag() })
 
     try {
       await this.client.sessionCancel(this.sessionId)
