@@ -10,7 +10,11 @@ import {
   sweepAttachments,
   sweepPlan
 } from '../electron/main/attachment-gc'
-import { ATTACHMENT_DIR, attachmentFileName } from '../electron/main/transcript-repair'
+import {
+  ATTACHMENT_DIR,
+  OWNERSHIP_MARKER,
+  attachmentFileName
+} from '../electron/main/transcript-repair'
 import { deleteSession, saveTranscript, upsertSession } from '../electron/main/store'
 import type { ChatMessage, PromptAttachment } from '../shared/types'
 
@@ -62,11 +66,18 @@ function sessionWithImage(sessionId: string, data = PNG_B64): string {
   return expected
 }
 
-/** Backdate every parked file past the age floor, as a real one would be. */
+/**
+ * Backdate every parked file past the age floor, as a real one would be.
+ *
+ * `lutimes`, not `utimes`, and that is the whole reason the symlink test below
+ * means anything. `utimes` follows a link and stamps its TARGET, leaving the
+ * link itself freshly modified, so the age floor spared it and the test passed
+ * without the file-type guard ever being consulted.
+ */
 function ageFiles(): void {
   const old = new Date(Date.now() - MIN_AGE_MS - 60_000)
   for (const name of fs.readdirSync(attachDir())) {
-    fs.utimesSync(path.join(attachDir(), name), old, old)
+    fs.lutimesSync(path.join(attachDir(), name), old, old)
   }
 }
 
@@ -138,50 +149,49 @@ test('a malformed transcript yields fewer references, never a throw', () => {
   }
 })
 
-test('a file is removed only when it clears all three guards', () => {
+test('a file is removed only when it clears all four guards', () => {
   const now = 1_000_000_000
   const old = now - MIN_AGE_MS - 1
   const parked = `${'a'.repeat(32)}.png`
   const other = `${'b'.repeat(32)}.png`
+  const file = (name: string, mtimeMs: number, isFile = true) => ({ name, mtimeMs, isFile })
 
   assert.deepEqual(
-    sweepPlan({
-      files: [{ name: parked, mtimeMs: old }],
-      referenced: new Set(),
-      now
-    }),
+    sweepPlan({ files: [file(parked, old)], referenced: new Set(), now }),
     [parked],
-    'an old, unreferenced, app-written file should go'
+    'an old, unreferenced, app-written regular file should go'
   )
 
   assert.deepEqual(
-    sweepPlan({
-      files: [{ name: parked, mtimeMs: old }],
-      referenced: new Set([parked]),
-      now
-    }),
+    sweepPlan({ files: [file(parked, old)], referenced: new Set([parked]), now }),
     [],
     'a referenced file must stay'
   )
 
   assert.deepEqual(
-    sweepPlan({ files: [{ name: parked, mtimeMs: now }], referenced: new Set(), now }),
+    sweepPlan({ files: [file(parked, now)], referenced: new Set(), now }),
     [],
     'a file written moments ago must stay: a save may be about to reference it'
   )
 
   assert.deepEqual(
-    sweepPlan({ files: [{ name: 'holiday.png', mtimeMs: old }], referenced: new Set(), now }),
+    sweepPlan({ files: [file('holiday.png', old)], referenced: new Set(), now }),
     [],
     'a file this app did not write must stay'
   )
 
+  // The symlink and directory cases, on every platform. As a check inside the
+  // directory walk this had no coverage on Windows at all, because a symlink
+  // cannot be created there without elevation.
+  assert.deepEqual(
+    sweepPlan({ files: [file(parked, old, false)], referenced: new Set(), now }),
+    [],
+    'anything that is not a regular file must stay, whatever it is called'
+  )
+
   assert.deepEqual(
     sweepPlan({
-      files: [
-        { name: parked, mtimeMs: old },
-        { name: other, mtimeMs: old }
-      ],
+      files: [file(parked, old), file(other, old)],
       referenced: new Set([other]),
       now
     }),
@@ -283,6 +293,177 @@ test('AN UNREADABLE STORE REMOVES NOTHING: an empty reference set is not proof',
   assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
 })
 
+test('A MISSING STORE REMOVES NOTHING: absent is weaker evidence than unreadable', async () => {
+  // The dangerous sibling of the test above, and the one that was missing.
+  // An unreadable store refused; an absent one produced an empty reference set,
+  // which reads as "nothing is referenced, remove it all".
+  //
+  // Reachable while the real store is alive somewhere else: the data-directory
+  // pointer falls back to the default on a read error, and after a relocation
+  // that aims the sweep at the old folder, where the images are still sitting
+  // and the store and backup are not.
+  const name = sessionWithImage('s1')
+  ageFiles()
+  fs.rmSync(storeFile())
+  fs.rmSync(backupFile(), { force: true })
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.refused, 'store-missing')
+  assert.equal(result.removed, 0)
+  assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
+})
+
+test('a missing store refuses even when the backup is readable', async () => {
+  const name = sessionWithImage('s1')
+  fs.copyFileSync(storeFile(), backupFile())
+  ageFiles()
+  fs.rmSync(storeFile())
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.refused, 'store-missing')
+  assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
+})
+
+test('A QUARANTINED STORE STILL COUNTS: a rescue must not find the images gone', async () => {
+  // writeStore keeps an unreadable store under gronk-store.corrupt-<ts>.json so
+  // a manual rescue is possible. While the corrupt bytes sit at the live path
+  // the sweep refuses; the moment they are renamed to the quarantine name that
+  // caution used to evaporate, and everything only they referenced became
+  // collectable.
+  const name = sessionWithImage('s1')
+  const rescued = fs.readFileSync(storeFile(), 'utf8')
+  fs.writeFileSync(path.join(userData, 'gronk-store.corrupt-1754500000000.json'), rescued)
+  deleteSession('s1')
+  rollBackupForward()
+  ageFiles()
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.refused, null, 'a quarantine file must not stop collection altogether')
+  assert.equal(result.removed, 0, 'an image the quarantined store still names was deleted')
+  assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
+})
+
+test('a quarantined store is read as text, because it is corrupt by definition', async () => {
+  // The point of reading rather than parsing. JSON.parse fails on most of these
+  // files, and a parse that fails contributes no references, which is exactly
+  // the "found nothing" this module must never treat as "there is nothing".
+  const name = sessionWithImage('s1')
+  const truncated = fs.readFileSync(storeFile(), 'utf8').slice(0, -40)
+  assert.throws(() => JSON.parse(truncated), 'the fixture is not actually corrupt')
+  assert.ok(truncated.includes(name), 'the fixture lost the name before the test could use it')
+  fs.writeFileSync(path.join(userData, 'gronk-store.corrupt-1754500000001.json'), truncated)
+  deleteSession('s1')
+  rollBackupForward()
+  ageFiles()
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.removed, 0)
+  assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
+})
+
+test('a quarantined store that cannot be read refuses, like any other uncertainty', async () => {
+  const name = sessionWithImage('s1')
+  const quarantine = path.join(userData, 'gronk-store.corrupt-1754500000002.json')
+  // A directory under the quarantine name: readFile fails with EISDIR, which is
+  // "cannot tell what this referenced" rather than "it referenced nothing".
+  fs.mkdirSync(quarantine)
+  deleteSession('s1')
+  rollBackupForward()
+  ageFiles()
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.refused, 'quarantine-unreadable')
+  assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
+})
+
+test('an unrelated corrupt-looking name is not mistaken for a quarantined store', async () => {
+  sessionWithImage('s1')
+  fs.writeFileSync(path.join(userData, 'gronk-store.corrupt-notes.txt'), 'nothing')
+  deleteSession('s1')
+  rollBackupForward()
+  ageFiles()
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.refused, null)
+  assert.equal(result.removed, 1)
+})
+
+test('A FOLDER THIS APP DID NOT MAKE IS NEVER SWEPT', async () => {
+  // dataDir() can be pointed anywhere. A folder that already had an
+  // `attachments` subdirectory, holding files that happen to be 32 hex
+  // characters and an image extension, was swept because no transcript names
+  // them. The name shape is resemblance, not authorship.
+  const theirs = `${'a'.repeat(32)}.png`
+  fs.mkdirSync(attachDir(), { recursive: true })
+  fs.writeFileSync(path.join(attachDir(), theirs), 'someone else s file')
+  upsertSession({ id: 's1', cwd: '/work/alpha', title: 's1' } as never)
+  saveTranscript('s1', [msg('m1')])
+  ageFiles()
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.refused, 'not-our-directory')
+  assert.equal(fs.existsSync(path.join(attachDir(), theirs)), true)
+})
+
+test('the folder this app made carries a marker, so it is swept', async () => {
+  sessionWithImage('s1')
+  assert.equal(
+    fs.existsSync(path.join(attachDir(), OWNERSHIP_MARKER)),
+    true,
+    'parking should claim the folder it creates'
+  )
+  deleteSession('s1')
+  rollBackupForward()
+  ageFiles()
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.refused, null)
+  assert.equal(result.removed, 1)
+})
+
+test('the marker itself is never collected', async () => {
+  sessionWithImage('s1')
+  deleteSession('s1')
+  rollBackupForward()
+  ageFiles()
+
+  await sweepAttachments()
+
+  assert.equal(fs.existsSync(path.join(attachDir(), OWNERSHIP_MARKER)), true)
+})
+
+test('a folder predating the marker earns one from a file the store still names', async () => {
+  // An install whose attachments folder was created before the marker existed
+  // would otherwise never be collected from again. A file the store still
+  // references is proof of authorship, because that name is a hash of bytes
+  // this app parked.
+  const kept = sessionWithImage('s1')
+  sessionWithImage('s2', GIF_B64)
+  fs.rmSync(path.join(attachDir(), OWNERSHIP_MARKER))
+  deleteSession('s2')
+  rollBackupForward()
+  ageFiles()
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.refused, null)
+  assert.equal(result.removed, 1, 'the orphan from the deleted session should have gone')
+  assert.equal(fs.existsSync(path.join(attachDir(), kept)), true)
+  assert.equal(
+    fs.existsSync(path.join(attachDir(), OWNERSHIP_MARKER)),
+    true,
+    'having proved the folder is ours, it should say so next time'
+  )
+})
+
 test('an unreadable backup removes nothing either', async () => {
   const name = sessionWithImage('s1')
   deleteSession('s1')
@@ -334,7 +515,15 @@ test('a DIRECTORY named like a parked file is not removed', async (t) => {
   t.diagnostic(`removed ${result.removed}, kept ${result.kept}`)
 })
 
-test('a SYMLINK named like a parked file is not followed', async (t) => {
+test('a SYMLINK named like a parked file is left alone', async (t) => {
+  // The claim is narrow on purpose. `unlink` never follows a link, so the
+  // TARGET was never reachable from here and asserting it survives proves
+  // nothing about this code. What the file-type check buys is that the link
+  // itself is not removed, and that is what this asserts.
+  //
+  // An earlier version of this test could not fail: it aged the link with
+  // `utimes`, which stamps the target and leaves the link young, so the age
+  // floor spared it before the file-type check was ever reached.
   const outside = path.join(userData, 'precious.png')
   fs.writeFileSync(outside, 'do not touch')
   sessionWithImage('s1')
@@ -353,8 +542,12 @@ test('a SYMLINK named like a parked file is not followed', async (t) => {
 
   await sweepAttachments()
 
-  assert.equal(fs.existsSync(outside), true, 'the sweep reached through a link')
-  assert.equal(fs.lstatSync(link).isSymbolicLink(), true, 'the link itself was removed')
+  assert.equal(
+    fs.existsSync(link),
+    true,
+    'the link was unlinked; only the file-type check stands between it and removal'
+  )
+  assert.equal(fs.lstatSync(link).isSymbolicLink(), true)
 })
 
 test('THE SWEEP NEVER WRITES THE STORE, which is why interrupting it needs no recovery', async () => {
@@ -409,7 +602,14 @@ test('an image trimmed off the end of a long transcript is collected too', async
 })
 
 test('with no attachments directory the sweep says so rather than failing', async () => {
+  // A store has to exist for this to be the reason: an absent store refuses
+  // first, and before that check existed this test passed on a directory with
+  // nothing in it at all.
+  upsertSession({ id: 's1', cwd: '/work/alpha', title: 's1' } as never)
+  saveTranscript('s1', [msg('m1')])
+
   const result = await sweepAttachments()
+
   assert.equal(result.refused, 'no-attachment-dir')
   assert.equal(result.removed, 0)
 })
