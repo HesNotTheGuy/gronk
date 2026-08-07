@@ -77,6 +77,21 @@ function parkImage(data = PNG_B64): string {
 
 const attachmentsIn = (dir: string) => path.join(dir, ATTACHMENT_DIR)
 
+/**
+ * Canonicalised, for comparing against a path the app has already realpathed.
+ *
+ * On macOS a temp directory under `/var/folders/...` really lives at
+ * `/private/var/folders/...`, and `readLocalImageSafe` returns the resolved
+ * form. Comparing it to the raw path fails there and nowhere else.
+ */
+function realpath(target: string): string {
+  try {
+    return fs.realpathSync(target)
+  } catch {
+    return target
+  }
+}
+
 // ── The bytes have to move ──────────────────────────────────────────────────
 
 test('THE REPORTED BUG: a move carries the attachments with everything else', async () => {
@@ -210,8 +225,8 @@ test('AN IMAGE STILL RENDERS FROM THE PATH STORED BEFORE THE MOVE', async () => 
   assert.equal(result.error, undefined, `expected the image to resolve, got ${result.error}`)
   assert.match(result.dataUrl ?? '', /^data:image\/png;base64,/)
   assert.equal(
-    path.dirname(result.path ?? ''),
-    attachmentsIn(dest),
+    realpath(path.dirname(result.path ?? '')),
+    realpath(attachmentsIn(dest)),
     'it resolved to something other than the relocated attachments folder'
   )
 })
