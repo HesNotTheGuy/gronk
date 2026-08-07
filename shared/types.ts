@@ -674,6 +674,43 @@ export interface SendPromptOptions {
   attachments?: PromptAttachment[]
 }
 
+/** Working-tree change kinds, as `git status` reports them. */
+export type ChangeStatus =
+  | 'modified'
+  | 'added'
+  | 'deleted'
+  | 'untracked'
+  | 'renamed'
+  | 'conflicted'
+
+export interface ChangedFile {
+  /** Repository-relative, forward slashes. */
+  path: string
+  status: ChangeStatus
+  staged: boolean
+}
+
+/**
+ * Working-tree changes in the agent's folder. Local git only: this carries no
+ * branch, no remote and no pull-request state, because none of those is a
+ * question about what the agent just did to these files.
+ */
+export interface WorkingTreeChanges {
+  repo: boolean
+  reason?: 'no-folder' | 'not-a-repo' | 'git-failed'
+  message?: string
+  files: ChangedFile[]
+  truncated: boolean
+}
+
+export interface FileDiff {
+  path: string
+  status: ChangeStatus
+  text: string
+  truncated: boolean
+  binary: boolean
+}
+
 export interface GronkApi {
   selectFolder: () => Promise<string | null>
   selectFile: (options?: {
@@ -688,6 +725,12 @@ export interface GronkApi {
   removeRecentProject: (cwd: string) => Promise<ProjectContext[]>
   /** Pin or unpin a recent project (pinned sort first). */
   setRecentProjectPinned: (cwd: string, pinned: boolean) => Promise<ProjectContext[]>
+  /**
+   * Working-tree changes in the agent's folder. Ephemeral: the result is never
+   * persisted, and nothing calls this on a render or a keystroke.
+   */
+  getGitChanges: () => Promise<WorkingTreeChanges>
+  getGitFileDiff: (path: string) => Promise<FileDiff | { error: string }>
   /** Every project scratchpad, so the renderer can answer without a round trip. */
   getProjectNotes: () => Promise<ProjectNotes>
   /** Write one project's scratchpad. An empty note forgets it. Returns the new map. */

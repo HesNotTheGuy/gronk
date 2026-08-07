@@ -64,6 +64,16 @@ export function installFakeBridge(overrides: Record<string, unknown> = {}): Fake
     addRecentProject: async () => track('addRecentProject', []),
     removeRecentProject: async () => track('removeRecentProject', []),
     setRecentProjectPinned: async () => track('setRecentProjectPinned', []),
+    getGitChanges: async () =>
+      track('getGitChanges', { repo: false, reason: 'no-folder', files: [], truncated: false }),
+    getGitFileDiff: async () =>
+      track('getGitFileDiff', {
+        path: '',
+        status: 'modified',
+        text: '',
+        truncated: false,
+        binary: false
+      }),
     getProjectNotes: async () => track('getProjectNotes', {}),
     setProjectNote: async () => track('setProjectNote', {}),
     setChromeTheme: async () => track('setChromeTheme', undefined),

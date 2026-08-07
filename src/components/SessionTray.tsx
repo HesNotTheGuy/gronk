@@ -6,6 +6,7 @@ import type {
   ProjectNotes,
   SessionUsage
 } from '../../shared/types'
+import { ChangesPanel } from './ChangesPanel'
 import { nextRetained } from '../lib/agent-retention'
 import {
   NOTE_MAX_CHARS,
@@ -23,7 +24,7 @@ import { costNote, detailCostLabel, summaryCostLabel } from '../lib/cost'
 import { toolActivitySignature } from '../lib/tool-activity-sig'
 import { shortenForDisplay } from '../lib/tool-format'
 
-type TrayTab = 'plan' | 'agents' | 'usage' | 'notes'
+type TrayTab = 'plan' | 'agents' | 'usage' | 'notes' | 'changes'
 
 /**
  * How long typing has to stop before a note is written.
@@ -92,6 +93,8 @@ interface Props {
    * quietly stop being findable; and "notes about this folder" means nothing for
    * a folder the user never chose.
    */
+  /** Build surface only: Chat has no folder to compare. */
+  showChanges: boolean
   notesCwd: string | null
   /** Every project's note, or null until they have loaded. */
   notes: ProjectNotes | null
@@ -112,6 +115,7 @@ export function SessionTray({
   messages,
   usage,
   auth,
+  showChanges,
   notesCwd,
   notes,
   onSaveNote
@@ -237,6 +241,15 @@ export function SessionTray({
   const noteText = draft && draft.cwd === notesCwd ? draft.text : storedNote
   const noteWords = noteWordCount(noteText)
 
+  /**
+   * Bumped each time the Changes panel is opened, which is what makes it read.
+   * Reading is a subprocess, so it happens when somebody asks to look and at no
+   * other time.
+   */
+  const [changesOpened, setChangesOpened] = useState(0)
+  const [changeCount, setChangeCount] = useState<number | null>(null)
+
+  const hasChanges = showChanges
   const hasNotes = !!notesCwd
   const hasPlan = showPlan && !!plan && plan.entries.length > 0
   // Tab stays for the whole session once any agent has been seen, until ×.
@@ -273,13 +286,14 @@ export function SessionTray({
     if (tab === 'agents' && !hasAgents) setTab(null)
     if (tab === 'usage' && !hasUsage) setTab(null)
     if (tab === 'notes' && !hasNotes) setTab(null)
-  }, [tab, hasPlan, hasAgents, hasUsage, hasNotes])
+    if (tab === 'changes' && !hasChanges) setTab(null)
+  }, [tab, hasPlan, hasAgents, hasUsage, hasNotes, hasChanges])
 
   // Consequence worth knowing: in a project session the rail is now always here,
   // because Notes is the one tab that cannot wait for content to exist before it
   // appears: there would be nowhere to write the first note. Chat sessions pass
   // no cwd and are unchanged.
-  if (!hasPlan && !hasAgents && !hasUsage && !hasNotes) return null
+  if (!hasPlan && !hasAgents && !hasUsage && !hasNotes && !hasChanges) return null
 
   const planDone = hasPlan
     ? plan!.entries.filter((e) => planStatusClass(e.status) === 'done').length
@@ -293,7 +307,12 @@ export function SessionTray({
     : null
 
   const select = (next: TrayTab) => {
-    setTab((cur) => (cur === next ? null : next))
+    // The open/close decision is made here rather than inside the updater. An
+    // updater has to be pure, and React calls it twice in development, which
+    // would have started two subprocesses for one click.
+    const opening = tab !== next
+    if (opening && next === 'changes') setChangesOpened((n) => n + 1)
+    setTab(opening ? next : null)
   }
 
   const orderedAgents = orderUnitsForDisplay(units)
@@ -352,6 +371,22 @@ export function SessionTray({
             <span className="session-tray-value">
               {formatTokens(usage!.totals.totalTokens)}
               {sessionCost && costSuffix ? ` · ~${sessionCost}` : ''}
+            </span>
+          </button>
+        ) : null}
+
+        {hasChanges ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'changes'}
+            className={`session-tray-tab ${tab === 'changes' ? 'active' : ''}`}
+            onClick={() => select('changes')}
+            title="What the agent has changed in this folder"
+          >
+            <span className="session-tray-kicker">Changes</span>
+            <span className="session-tray-value">
+              {changeCount === null ? '—' : `${changeCount} ${changeCount === 1 ? 'file' : 'files'}`}
             </span>
           </button>
         ) : null}
@@ -453,6 +488,12 @@ export function SessionTray({
             ) : null}
           </div>
           <p className="session-tray-note">From Grok tool calls only. No extra model narration.</p>
+        </div>
+      ) : null}
+
+      {tab === 'changes' && hasChanges ? (
+        <div className="session-tray-body changes-body-wrap" role="tabpanel">
+          <ChangesPanel visibleKey={changesOpened} onCount={setChangeCount} />
         </div>
       ) : null}
 

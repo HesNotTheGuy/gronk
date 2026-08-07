@@ -3818,6 +3818,154 @@ html[data-theme='light'] .code-block {
   margin: 0;
 }
 
+/* Changes tab: a file list beside its diff. Taller than the other bodies
+   because a diff that shows four lines answers nothing. */
+.session-tray-body.changes-body-wrap {
+  max-height: min(360px, 48vh);
+}
+
+.changes-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.changes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.changes-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.changes-note {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  line-height: 1.5;
+  color: var(--ink-4);
+}
+
+.changes-body {
+  display: grid;
+  grid-template-columns: minmax(140px, 34%) 1fr;
+  gap: 10px;
+  min-height: 0;
+}
+
+.changes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  max-height: 280px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.changes-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 6px;
+  text-align: left;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.changes-row:hover {
+  background: var(--hover);
+}
+
+/* Same selected indicator as every other list in the app. */
+.changes-row.active {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ignite) 30%, transparent),
+    transparent 70%
+  );
+  box-shadow: inset 2px 0 0 var(--ignite);
+  color: var(--ink);
+}
+
+.changes-status {
+  flex: 0 0 auto;
+  width: 12px;
+  text-align: center;
+  font-weight: 700;
+  color: var(--ink-4);
+}
+
+.changes-status.added,
+.changes-status.untracked {
+  color: var(--signal);
+}
+
+.changes-status.deleted,
+.changes-status.conflicted {
+  color: var(--abort);
+}
+
+.changes-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changes-diff {
+  min-width: 0;
+  max-height: 280px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* Inert text. A diff is file content, so it never goes near markdown and
+   nothing in it is a link. */
+.diff-text {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre;
+  color: var(--ink-3);
+}
+
+.diff-line {
+  display: block;
+}
+
+.diff-line.add {
+  color: var(--signal);
+}
+
+.diff-line.del {
+  color: var(--abort);
+}
+
+.diff-line.hunk {
+  color: var(--ignite);
+}
+
+.diff-line.meta {
+  color: var(--ink-4);
+}
+
 /*
  * Notes tab: a scratchpad, so the box gets the whole panel and reads as text
  * rather than as a form field. Taller than the other bodies because a note is

@@ -739,6 +739,7 @@ export function App() {
                 messages={g.messages}
                 usage={g.usage}
                 auth={g.auth}
+                showChanges={inProject}
                 notesCwd={inProject ? g.cwd : null}
                 notes={g.projectNotes}
                 onSaveNote={(cwd, note) => void g.setProjectNote(cwd, note)}

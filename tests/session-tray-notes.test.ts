@@ -39,6 +39,7 @@ function tray(
     messages: [],
     usage: null,
     auth: null,
+    showChanges: false,
     notesCwd: ALPHA,
     notes: NOTES,
     onSaveNote: (cwd: string, note: string) => saves.push({ cwd, note }),

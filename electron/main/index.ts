@@ -11,6 +11,7 @@ import { registerAgentIpc } from './ipc/agent'
 import { registerDataLocationIpc } from './ipc/data-location'
 import { registerFilesIpc } from './ipc/files'
 import { registerPluginsIpc } from './ipc/plugins'
+import { registerGitIpc } from './ipc/git'
 import { registerPreviewIpc } from './ipc/preview'
 import { registerSessionsIpc } from './ipc/sessions'
 import { registerSettingsIpc } from './ipc/settings'
@@ -188,6 +189,7 @@ function registerIpc(): void {
   registerDataLocationIpc(ipcContext)
   registerPreviewIpc()
   registerPluginsIpc()
+  registerGitIpc()
 }
 
 function hardenSession(): void {
