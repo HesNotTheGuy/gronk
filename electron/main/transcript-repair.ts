@@ -28,10 +28,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { ChatMessage, PromptAttachment, ToolCallInfo } from '../../shared/types'
 import { IMAGE_EXT_SET } from './ipc-guard'
-import { dataDir } from './data-dir'
+import { ATTACHMENT_DIR, dataDir } from './data-dir'
 
-/** Where parked attachment bytes live, under the data directory. */
-export const ATTACHMENT_DIR = 'attachments'
+/**
+ * Where parked attachment bytes live, under the data directory.
+ *
+ * Defined in `data-dir` with the rest of the directory's layout, because moving
+ * the data folder has to carry this and that module cannot import this one.
+ * Re-exported so callers can keep taking it from the module that writes it.
+ */
+export { ATTACHMENT_DIR }
 
 /**
  * Drop repeated tool calls, keeping the FIRST message each one appeared in.

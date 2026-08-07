@@ -11,7 +11,7 @@ import { app, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { agentManager } from '../agent-manager'
-import { chatWorkspacePath, getDataLocation } from '../data-dir'
+import { ATTACHMENT_DIR, chatWorkspacePath, dataDir, getDataLocation } from '../data-dir'
 import {
   encodeSessionCwdKey,
   IMAGE_EXT_SET,
@@ -64,6 +64,23 @@ function resolveImageCandidates(filePath: string): string[] {
 
   if (isAbs) {
     candidates.push(path.normalize(trimmed))
+
+    // A parked attachment, looked up where the attachments folder is NOW.
+    //
+    // Stored paths are absolute and were written when the data directory was
+    // somewhere else, so after a move every one of them points at the old
+    // location. The names are content hashes, which makes the file name the
+    // identity and the directory just where it happens to live today.
+    //
+    // Chosen over rewriting the stored paths. A rewrite would have to walk every
+    // transcript and write the store to fix data that is not wrong so much as
+    // relocated, it would have to run again after every future move, and it
+    // could not reach the retained backup at all, so a recovery would land
+    // straight back on stale paths. This costs one extra candidate and fixes
+    // both copies.
+    if (path.basename(path.dirname(trimmed)) === ATTACHMENT_DIR) {
+      candidates.push(path.join(dataDir(), ATTACHMENT_DIR, path.basename(trimmed)))
+    }
     // A leading slash is also how a web page names a file relative to its server
     // root, and the agent writes those whenever it has built something served
     // over HTTP. Node reads `/x.svg` as absolute, on Windows against the current
@@ -141,7 +158,20 @@ function resolveImageCandidates(filePath: string): string[] {
 function isAllowedImagePath(resolved: string): boolean {
   // chatWorkspacePath() follows a relocated data dir; userData stays because the
   // pointer file and any pre-move leftovers still live there.
-  const roots: string[] = [grokSessionsRoot(), chatWorkspacePath(), app.getPath('userData')]
+  //
+  // The attachments directory is named exactly, never its parent. It is the one
+  // folder in the data directory this app writes prompt images into, and it is
+  // the same case chatWorkspacePath already covers: both are app-owned folders
+  // inside a data directory the user can relocate from Settings, and both stop
+  // being reachable through the userData root the moment they do. Widening to
+  // dataDir() itself would pull in the store and anything else the user keeps
+  // beside it, so it is the leaf and not the parent.
+  const roots: string[] = [
+    grokSessionsRoot(),
+    chatWorkspacePath(),
+    path.join(dataDir(), ATTACHMENT_DIR),
+    app.getPath('userData')
+  ]
   const cwd = agentManager.getCwd()
   if (cwd) roots.push(path.resolve(cwd))
   // Recent projects: allow images under any recently opened project cwd

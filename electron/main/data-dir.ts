@@ -43,6 +43,17 @@ export const BACKUP_FILE = 'gronk-store.backup.json'
 export const CHAT_WORKSPACE_DIR = 'chat-workspace'
 
 /**
+ * Where the bytes of every image attached to a prompt are kept.
+ *
+ * Declared here with the other names that make up the data directory rather
+ * than beside the code that writes it, because this module has to move it and
+ * cannot import that one: `transcript-repair` already imports `dataDir` from
+ * here, so the dependency only goes one way. `transcript-repair` re-exports
+ * this so its existing importers are unaffected.
+ */
+export const ATTACHMENT_DIR = 'attachments'
+
+/**
  * Names used before the app was renamed from Grocky to Gronk.
  *
  * An install predating the rename keeps using its own directory and file names.
@@ -530,13 +541,26 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
         'chat sandbox could overwrite files, so nothing was moved — pick an empty folder.'
     )
   }
+  // Refused rather than merged, even though the file names are content hashes so
+  // a collision would be the same bytes. The pool that is already there belongs
+  // to another install, and this one has no way to tell which of its transcripts
+  // reference which file. Merging would silently adopt them.
+  if (fs.existsSync(path.join(dest, ATTACHMENT_DIR))) {
+    return fail(
+      `${dest} already holds an ${ATTACHMENT_DIR} folder. It belongs to another Gronk ` +
+        'install and merging it with this one has no correct answer, so nothing was ' +
+        'moved. Pick an empty folder.'
+    )
+  }
 
   const sourceStore = path.join(current.dataDir, STORE_FILE)
   const sourceBackup = path.join(current.dataDir, BACKUP_FILE)
   const sourceChat = path.join(current.dataDir, CHAT_WORKSPACE_DIR)
+  const sourceAttachments = path.join(current.dataDir, ATTACHMENT_DIR)
   const hasStore = fs.existsSync(sourceStore)
   const hasBackup = fs.existsSync(sourceBackup)
   const hasChat = fs.existsSync(sourceChat)
+  const hasAttachments = fs.existsSync(sourceAttachments)
 
   // Staged inside the destination so the final step is a rename on the same
   // filesystem, and so a failed copy leaves one obvious directory to delete
@@ -550,6 +574,9 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
     if (hasBackup) await fsp.copyFile(sourceBackup, path.join(staging, BACKUP_FILE))
     if (hasChat) {
       await fsp.cp(sourceChat, path.join(staging, CHAT_WORKSPACE_DIR), { recursive: true })
+    }
+    if (hasAttachments) {
+      await fsp.cp(sourceAttachments, path.join(staging, ATTACHMENT_DIR), { recursive: true })
     }
 
     if (hasStore) {
@@ -565,8 +592,20 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
         )
       }
     }
+    if (hasAttachments) {
+      // Counted before placing, like the chat workspace. For a pasted image the
+      // parked copy is the only copy, so a short copy has to fail the move while
+      // the original is still the live one.
+      const before = await countEntries(sourceAttachments)
+      const after = await countEntries(path.join(staging, ATTACHMENT_DIR))
+      if (before !== after) {
+        throw new Error(
+          `the copied ${ATTACHMENT_DIR} has ${after} entries, the original has ${before}`
+        )
+      }
+    }
 
-    for (const name of [STORE_FILE, BACKUP_FILE, CHAT_WORKSPACE_DIR]) {
+    for (const name of [STORE_FILE, BACKUP_FILE, CHAT_WORKSPACE_DIR, ATTACHMENT_DIR]) {
       const from = path.join(staging, name)
       if (!fs.existsSync(from)) continue
       const to = path.join(dest, name)
@@ -605,7 +644,8 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
   for (const stale of [
     hasStore ? sourceStore : null,
     hasBackup ? sourceBackup : null,
-    hasChat ? sourceChat : null
+    hasChat ? sourceChat : null,
+    hasAttachments ? sourceAttachments : null
   ]) {
     if (!stale) continue
     if (!(await rmQuiet(stale))) leftovers.push(stale)
