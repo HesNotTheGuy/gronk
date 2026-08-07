@@ -581,6 +581,10 @@ const api: Record<string, unknown> = {
   // Deliberately empty: a baseline showing somebody's scratchpad text would put
   // fixture prose in every screenshot of the tray and drift the moment it is
   // edited. The tab renders its empty state instead.
+  // No repository in the fixture: the panel shows its empty state rather than
+  // fabricating somebody's working tree into a screenshot.
+  getGitChanges: async () => ({ repo: false, reason: 'not-a-repo', files: [], truncated: false }),
+  getGitFileDiff: async () => ({ error: 'not a repository' }),
   getProjectNotes: async () => ({}),
   setProjectNote: async () => ({}),
   listSessions: async () => (empty ? [] : SESSIONS),

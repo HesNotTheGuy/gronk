@@ -22,6 +22,8 @@ const api: GronkApi = {
   removeRecentProject: (cwd: string) => ipcRenderer.invoke('gronk:remove-recent-project', cwd),
   setRecentProjectPinned: (cwd: string, pinned: boolean) =>
     ipcRenderer.invoke('gronk:set-recent-project-pinned', cwd, pinned),
+  getGitChanges: () => ipcRenderer.invoke('gronk:git-changes'),
+  getGitFileDiff: (path: string) => ipcRenderer.invoke('gronk:git-file-diff', path),
   getProjectNotes: () => ipcRenderer.invoke('gronk:get-project-notes'),
   setProjectNote: (cwd: string, note: string) =>
     ipcRenderer.invoke('gronk:set-project-note', cwd, note),
