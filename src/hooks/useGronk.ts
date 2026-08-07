@@ -20,6 +20,7 @@ import {
   hasAssistantReplyAfter
 } from '../lib/messages'
 import { parsePlan } from '../lib/plan'
+import { raise, resolve, retire, type AppError, type ErrorScope } from '../lib/app-error'
 import { needsSessionReload } from '../lib/session-nav'
 import {
   cachedTranscript,
@@ -82,7 +83,14 @@ export function useGronk() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [permission, setPermission] = useState<PermissionRequest | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  /**
+   * The banner's error, tagged with what it is about. The rule for when it
+   * stops being shown lives in `src/lib/app-error.ts`; nothing here should
+   * decide that inline. Every write goes through one of the three helpers
+   * below, which is what makes the rule greppable instead of spread across the
+   * handlers.
+   */
+  const [appError, setAppError] = useState<AppError | null>(null)
   const [busy, setBusy] = useState(false)
   /**
    * True while opening a project or restoring a session: UI shows a skeleton
@@ -226,9 +234,55 @@ export function useGronk() {
   const restartAgentImpl = useRef<() => Promise<void>>(async () => {})
   const restartAgent = useCallback(() => restartAgentImpl.current(), [])
 
+  /**
+   * The three ways the banner changes. Every `setAppError` in this file goes
+   * through one of them, so "what clears this?" is answered by reading
+   * `app-error.ts` rather than by finding every call site.
+   *
+   * All three are stable: they close over nothing but the `useState` dispatch,
+   * which is why they are safe in the dependency arrays below and safe to hand
+   * to another hook.
+   */
+  /** An attempt is committing to do work. Call at the point of no return. */
+  const beginAttempt = useCallback(
+    (scope: ErrorScope) => setAppError((cur) => retire(cur, scope)),
+    []
+  )
+  /** An attempt failed. */
+  const failAttempt = useCallback(
+    (scope: ErrorScope, message: string) => setAppError(raise(scope, message)),
+    []
+  )
+  /** An attempt succeeded, which speaks only for its own scope. */
+  const resolveAttempt = useCallback(
+    (scope: ErrorScope) => setAppError((cur) => resolve(cur, scope)),
+    []
+  )
+
+  /**
+   * The banner reads a plain string, and `needsSessionReload` asks only whether
+   * one is showing, so the scope stays inside this file.
+   */
+  const error = appError?.message ?? null
+
+  /**
+   * Dismiss, from the banner's own button. A raw string is treated as an agent
+   * error because that is the only scope a caller outside this file could mean.
+   */
+  const setError = useCallback((value: string | null) => {
+    setAppError(value === null ? null : raise('agent', value))
+  }, [])
+
+  /** The `export`-scoped half of the banner, handed to useExportNotice. */
+  const beginExport = useCallback(() => beginAttempt('export'), [beginAttempt])
+  const failExport = useCallback(
+    (message: string) => failAttempt('export', message),
+    [failAttempt]
+  )
+
   const dataDir = useDataLocation(refreshMeta)
   const cliInstall = useCliInstall(refreshMeta)
-  const exportState = useExportNotice(setError)
+  const exportState = useExportNotice(beginExport, failExport)
 
   /**
    * Everything about the current conversation, gone. Only `useState` dispatches,
@@ -330,8 +384,12 @@ export function useGronk() {
       switch (event.type) {
         case 'connection':
           setConnection(event.state)
-          if (event.error) setError(event.error)
-          if (event.state === 'ready') setError(null)
+          if (event.error) failAttempt('agent', event.error)
+          // The agent coming up settles the agent's own complaint and nothing
+          // else: it is not evidence about a failed send or a failed export.
+          // `setState('ready')` is never emitted with an error, so these two
+          // cannot both fire for one event.
+          if (event.state === 'ready') resolveAttempt('agent')
           break
         case 'session':
           setSessionId(event.sessionId)
@@ -528,7 +586,7 @@ export function useGronk() {
           setUsage(event.usage)
           break
         case 'error':
-          setError(event.message)
+          failAttempt('agent', event.message)
           setBusy(false)
           break
         // 'models' is useAppSettings', 'auth' is useAuth's, and both preview
@@ -541,9 +599,19 @@ export function useGronk() {
     })
 
     return unsub
-    // paintTranscript and settledTranscript are both stable, so naming them here
-    // costs no re-subscription and keeps the handler's reads honest.
-  }, [refreshMeta, refreshSessions, refreshAudit, pinToBottom, paintTranscript, settledTranscript])
+    // paintTranscript, settledTranscript and the two error helpers are all
+    // stable, so naming them here costs no re-subscription and keeps the
+    // handler's reads honest.
+  }, [
+    refreshMeta,
+    refreshSessions,
+    refreshAudit,
+    pinToBottom,
+    paintTranscript,
+    settledTranscript,
+    failAttempt,
+    resolveAttempt
+  ])
 
   // Stick-to-bottom only while the user is actually at the end. Streaming
   // updates must not yank the viewport if they scrolled up to read earlier turns.
@@ -687,12 +755,11 @@ export function useGronk() {
 
   const openProject = useCallback(
     async (folder?: string | null, opts?: { forceNew?: boolean }) => {
-      setError(null)
-
       const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
-        setError(
+        failAttempt(
+          'agent',
           authNow.message ||
             'Sign in with your own Grok account before opening a project.'
         )
@@ -703,7 +770,12 @@ export function useGronk() {
       if (!target) {
         target = await window.gronk.selectFolder()
       }
+      // Nothing was chosen, so nothing superseded the banner. Retiring on entry
+      // instead would make cancelling this dialog quietly discard an error that
+      // is still true.
       if (!target) return
+
+      beginAttempt('agent')
 
       const sameProject =
         cwd &&
@@ -769,11 +841,11 @@ export function useGronk() {
         await refreshMeta()
         setHydrating(false)
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        failAttempt('agent', err instanceof Error ? err.message : String(err))
         setHydrating(false)
       }
     },
-    [cwd, connection, refreshMeta, agentSurface]
+    [cwd, connection, refreshMeta, agentSurface, beginAttempt, failAttempt]
   )
 
   const openProjectRef = useRef(openProject)
@@ -782,16 +854,20 @@ export function useGronk() {
   /** General Grok chat (website/X-style) via CLI, not a coding project */
   const openChat = useCallback(
     async (opts?: { forceNew?: boolean }) => {
-      setError(null)
       const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
-        setError(
+        failAttempt(
+          'agent',
           authNow.message ||
             'Sign in with your own Grok account before chatting.'
         )
         return
       }
+
+      // Nothing above this can abandon the attempt, so this is the point of no
+      // return: chat has no folder to pick.
+      beginAttempt('agent')
 
       const chatPath =
         chatWorkspacePath || (await window.gronk.getChatWorkspacePath())
@@ -833,10 +909,10 @@ export function useGronk() {
         setSessionId(id)
         await refreshMeta()
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        failAttempt('agent', err instanceof Error ? err.message : String(err))
       }
     },
-    [chatWorkspacePath, cwd, connection, refreshMeta, agentSurface]
+    [chatWorkspacePath, cwd, connection, refreshMeta, agentSurface, beginAttempt, failAttempt]
   )
 
   /**
@@ -910,16 +986,18 @@ export function useGronk() {
         settledTranscript()
       )
 
-      setError(null)
       const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
-        setError(
+        failAttempt(
+          'agent',
           authNow.message ||
             'Sign in with your own Grok account before restoring a session.'
         )
         return
       }
+
+      beginAttempt('agent')
 
       const chatPath =
         chatWorkspacePath || (await window.gronk.getChatWorkspacePath())
@@ -961,7 +1039,7 @@ export function useGronk() {
         // the event was missed (e.g. empty restore paths).
         setHydrating(false)
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        failAttempt('agent', err instanceof Error ? err.message : String(err))
         setBusy(false)
         setHydrating(false)
       }
@@ -969,7 +1047,16 @@ export function useGronk() {
     // The guard reads live state, so it has to be in the deps or a stale
     // closure would compare against whichever session was open when this
     // callback was last built.
-    [refreshMeta, chatWorkspacePath, sessionId, connection, error, hydrating]
+    [
+      refreshMeta,
+      chatWorkspacePath,
+      sessionId,
+      connection,
+      error,
+      hydrating,
+      beginAttempt,
+      failAttempt
+    ]
   )
   selectSessionRef.current = selectSession
 
@@ -982,7 +1069,8 @@ export function useGronk() {
       const trimmed = text.trim()
       if ((!trimmed && attachments.length === 0) || busy || connection !== 'ready') return
 
-      setError(null)
+      // Past the guard above, so the send is really happening.
+      beginAttempt('prompt')
       setBusy(true)
       stickToBottom.current = true
 
@@ -1031,7 +1119,7 @@ export function useGronk() {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         setBusy(false)
-        setError(message)
+        failAttempt('prompt', message)
         setMessages((prev) =>
           prev.map((m) =>
             m.id === userId
@@ -1041,7 +1129,7 @@ export function useGronk() {
         )
       }
     },
-    [busy, connection]
+    [busy, connection, beginAttempt, failAttempt]
   )
 
   /** Retry only a failed / unanswered user message without duplicating it. */
