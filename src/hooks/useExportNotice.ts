@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react'
-import type { Dispatch, SetStateAction } from 'react'
 
 /** Last transcript written to disk: drives the "saved to…" banner. */
 interface ExportNotice {
@@ -16,33 +15,42 @@ interface ExportNotice {
 /**
  * Transcript export and the banner that reports where the file went.
  *
- * `setError` is the composer's own `useState` dispatch: React guarantees a
- * stable identity for those, so it is safe in a dependency array, which is why
- * this takes the setter directly instead of wrapping a caller's arrow in a ref.
  * Failures land on the app-wide error line because that is where an export
- * failure was always reported.
+ * failure was always reported. The two callbacks are that line's `export`-scoped
+ * half, from `useGronk`: `beginExport` retires the last export failure,
+ * `failExport` posts a new one. Both must be stable: they sit in the dependency
+ * array below.
+ *
+ * Taking them rather than the raw `setError` dispatch is what stops this hook
+ * from wiping an unrelated agent error, and what makes a successful export
+ * take the previous export's failure down. Exporting one session with nothing
+ * in it and then exporting another that works used to leave both banners up,
+ * contradicting each other.
  */
-export function useExportNotice(setError: Dispatch<SetStateAction<string | null>>) {
+export function useExportNotice(beginExport: () => void, failExport: (message: string) => void) {
   const [exportNotice, setExportNotice] = useState<ExportNotice | null>(null)
 
   const exportSession = useCallback(
     async (id: string, format: 'md' | 'json' = 'md') => {
+      // A new export supersedes whatever the last one said, including the
+      // cancel path: the previous complaint was about a different attempt.
+      beginExport()
       try {
         const result = await window.gronk.exportTranscript(id, format)
         if (!result.ok) {
           // A cancel is the user's own choice, so stay silent. An empty
           // transcript is not, and would otherwise read as a dead menu item.
           if (result.reason === 'empty') {
-            setError('Nothing to export yet. This session has no saved transcript.')
+            failExport('Nothing to export yet. This session has no saved transcript.')
           }
           return
         }
         setExportNotice({ path: result.path, format })
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        failExport(err instanceof Error ? err.message : String(err))
       }
     },
-    [setError]
+    [beginExport, failExport]
   )
 
   const revealExport = useCallback(async () => {
