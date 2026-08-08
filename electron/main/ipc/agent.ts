@@ -9,12 +9,23 @@ import { getAuthStatus } from '../auth'
 import { assertTrustedSender } from '../ipc-guard'
 import { addRecentProject, getSettings, normalizeCwd } from '../store'
 import { isChatWorkspace } from '../../../shared/path'
-import { assertCliName, assertString } from './validate'
-import type {
-  PermissionDecision,
-  PromptAttachment,
-  SendPromptOptions
-} from '../../../shared/types'
+import {
+  assertCliName,
+  assertOneOf,
+  assertOptionalAttachments,
+  assertPlainObject,
+  assertRequestId,
+  assertString
+} from './validate'
+import type { PermissionDecision } from '../../../shared/types'
+
+/** The four the agent understands. Anything else cannot answer a prompt. */
+const PERMISSION_DECISIONS: readonly PermissionDecision[] = [
+  'allow-once',
+  'allow-always',
+  'allow-session',
+  'reject-once'
+]
 
 export function registerAgentIpc(): void {
   ipcMain.handle(
@@ -83,31 +94,29 @@ export function registerAgentIpc(): void {
     return agentManager.stop()
   })
 
-  ipcMain.handle(
-    'gronk:send-prompt',
-    (e, text: string, options?: SendPromptOptions) => {
-      assertTrustedSender(e)
-      if (typeof text !== 'string') throw new Error('Invalid prompt')
-      return agentManager.sendPrompt(text, options as { attachments?: PromptAttachment[] })
-    }
-  )
+  ipcMain.handle('gronk:send-prompt', (e, text: unknown, options?: unknown) => {
+    assertTrustedSender(e)
+    if (typeof text !== 'string') throw new Error('Invalid prompt')
+    // The cast this replaces proved nothing: the annotation is erased at build
+    // time, so `attachments` was whatever arrived. These bytes and paths reach
+    // the agent and the transcript.
+    const raw = options === undefined || options === null ? {} : assertPlainObject(options, 'options')
+    const attachments = assertOptionalAttachments(raw.attachments, 'attachments')
+    return agentManager.sendPrompt(text, { attachments })
+  })
 
   ipcMain.handle('gronk:cancel-prompt', async (e) => {
     assertTrustedSender(e)
     return agentManager.cancelPrompt()
   })
 
-  ipcMain.handle(
-    'gronk:respond-permission',
-    (e, requestId: number | string, decision: PermissionDecision) => {
-      assertTrustedSender(e)
-      if (requestId === undefined || requestId === null) throw new Error('Invalid requestId')
-      if (!['allow-once', 'allow-always', 'allow-session', 'reject-once'].includes(decision)) {
-        throw new Error('Invalid permission decision')
-      }
-      agentManager.respondPermission(requestId, decision)
-    }
-  )
+  ipcMain.handle('gronk:respond-permission', (e, requestId: unknown, decision: unknown) => {
+    assertTrustedSender(e)
+    agentManager.respondPermission(
+      assertRequestId(requestId, 'requestId'),
+      assertOneOf(decision, 'decision', PERMISSION_DECISIONS)
+    )
+  })
 
   ipcMain.handle('gronk:get-connection-state', (e) => {
     assertTrustedSender(e)

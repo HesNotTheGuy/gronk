@@ -23,7 +23,7 @@ import {
   setRecentProjectPinned,
   setSettings
 } from '../store'
-import { assertNoteText, assertString } from './validate'
+import { assertNoteText, assertSettingsPatch, assertString } from './validate'
 import type { AppSettings } from '../../../shared/types'
 
 export function registerSettingsIpc(): void {
@@ -32,17 +32,21 @@ export function registerSettingsIpc(): void {
     return getSettings()
   })
 
-  ipcMain.handle('gronk:set-settings', (e, partial: Partial<AppSettings>) => {
+  ipcMain.handle('gronk:set-settings', (e, partial: unknown) => {
     assertTrustedSender(e)
-    if (!partial || typeof partial !== 'object') throw new Error('Invalid settings')
+    // Rebuilt field by field rather than forwarded. The parameter's type is
+    // erased at build time, so what arrives is whatever the frame sent; the
+    // patch that reaches the store is assembled from fields that were checked
+    // for what they are.
+    const patch = assertSettingsPatch(partial) as Partial<AppSettings>
     // A different binary is a different CLI: version, models, and auth probes
     // all become claims about a file the app no longer runs.
-    if ('grokBinary' in partial) {
+    if ('grokBinary' in patch) {
       invalidateCliVersionCache()
       invalidateModelsCache()
       invalidateAuthCache()
     }
-    return setSettings(partial)
+    return setSettings(patch)
   })
 
   ipcMain.handle('gronk:get-recent-projects', (e) => {
