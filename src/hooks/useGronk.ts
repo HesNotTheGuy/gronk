@@ -1059,31 +1059,37 @@ export function useGronk() {
       }
 
       beginAttempt('agent')
-      // The clicked id is known, so the switch starts narrower than the two
-      // above. It still accepts anything until main confirms, because a load can
-      // resolve to a different id and the history events naming it arrive before
-      // that answer does.
+      // The clicked id is known, so this switch starts narrower than the ones a
+      // project or chat opens. It still accepts anything until main confirms,
+      // because a load can resolve to a different id and the history events
+      // naming it arrive before that answer does.
       focusRef.current = beginSwitch(session.id)
 
-      const chatPath =
-        chatWorkspacePath || (await window.gronk.getChatWorkspacePath())
-      const isChat = isChatWorkspace(session.cwd, chatPath)
-
-      setPermission(null)
-      setBusy(true)
-      setHydrating(true)
-      setHistorySource(null)
-      setActivePlan(null)
-      setUsage(null)
-      setSessionId(session.id)
-      setCwd(session.cwd)
-      setSurface(isChat ? 'chat' : 'project')
-      setBrowsing(false)
-      setAgentSurface(isChat ? 'chat' : 'project')
-      stickToBottom.current = true
-      await yieldPaint()
-
+      // EVERY await from here down is inside this try, and that is the point of
+      // where it starts rather than three statements lower. An open switch
+      // accepts every session's events, so a rejection that escapes without
+      // reaching the catch leaves it open for the rest of the run. Resolving the
+      // chat workspace path can reject, and it sits before any of the work this
+      // was originally wrapped around.
       try {
+        const chatPath =
+          chatWorkspacePath || (await window.gronk.getChatWorkspacePath())
+        const isChat = isChatWorkspace(session.cwd, chatPath)
+
+        setPermission(null)
+        setBusy(true)
+        setHydrating(true)
+        setHistorySource(null)
+        setActivePlan(null)
+        setUsage(null)
+        setSessionId(session.id)
+        setCwd(session.cwd)
+        setSurface(isChat ? 'chat' : 'project')
+        setBrowsing(false)
+        setAgentSurface(isChat ? 'chat' : 'project')
+        stickToBottom.current = true
+        await yieldPaint()
+
         // Paint the local transcript first so the user is reading history while
         // the agent process boots: loadSession will history-replace the same
         // data and then session/load in the background of the UI.

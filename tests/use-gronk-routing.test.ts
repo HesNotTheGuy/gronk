@@ -292,6 +292,46 @@ test('NO FAILING ENTRY POINT LEAVES THE SWITCH OPEN', async () => {
   }
 })
 
+test('AN AWAIT OUTSIDE THE TRY CANNOT LEAVE THE SWITCH OPEN', async () => {
+  // selectSession resolves the chat workspace path before the try, so a
+  // rejection there escapes to a caller that does not catch it, and the switch
+  // has to not be open yet when that happens.
+  //
+  // Narrow on purpose, and the fixture has to work for it. The lookup
+  // short-circuits once the path is in state, so the only window is the first
+  // session click after mount: the first call returns empty so nothing is
+  // cached, and the click's call is the one that throws.
+  let calls = 0
+  const h = await mountHook({
+    getChatWorkspacePath: async () => {
+      calls += 1
+      if (calls === 1) return ''
+      throw new Error('CHAT PATH FAILED')
+    }
+  })
+  try {
+    await act(async () => {
+      await h.hook().selectSession(session('s1')).catch(() => {})
+    })
+    await flush()
+    assert.ok(calls > 1, 'the fixture never reached the call that throws')
+
+    const before = transcript(h)
+    await act(async () => {
+      h.emit(chunk('some-other-session', 'SHOULD NOT APPEAR'))
+    })
+    await flush()
+    assert.equal(
+      transcript(h),
+      before,
+      'a rejection before the try left the switch accepting every session'
+    )
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
 test('A REFUSED SIGN-IN IS A FAILED ATTEMPT, NOT AN ABSENT ONE', async () => {
   // Every entry point checks the sign-in and returns before it would open a
   // switch. Doing nothing to the focus there is wrong in the quieter direction:
