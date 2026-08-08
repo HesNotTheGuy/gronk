@@ -28,10 +28,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { ChatMessage, PromptAttachment, ToolCallInfo } from '../../shared/types'
 import { IMAGE_EXT_SET } from './ipc-guard'
-import { dataDir } from './data-dir'
+import { ATTACHMENT_DIR, dataDir } from './data-dir'
 
-/** Where parked attachment bytes live, under the data directory. */
-export const ATTACHMENT_DIR = 'attachments'
+/**
+ * Where parked attachment bytes live, under the data directory.
+ *
+ * Defined in `data-dir` with the rest of the directory's layout, because moving
+ * the data folder has to carry this and that module cannot import this one.
+ * Re-exported so callers can keep taking it from the module that writes it.
+ */
+export { ATTACHMENT_DIR }
 
 /**
  * Drop repeated tool calls, keeping the FIRST message each one appeared in.
@@ -113,6 +119,26 @@ export function attachmentBase64(attachment: PromptAttachment): string {
 export function attachmentFileName(base64: string, ext: string): string {
   const digest = crypto.createHash('sha256').update(base64).digest('hex').slice(0, 32)
   return `${digest}${ext}`
+}
+
+/** Exactly what `attachmentFileName` produces: 32 hex characters and an image extension. */
+const PARKED_NAME = /^[0-9a-f]{32}(\.[a-z0-9+]+)$/
+
+/**
+ * Could this app have written a file of this name?
+ *
+ * The attachments folder sits under a data directory the user can point
+ * anywhere, so the folder existing says nothing about who filled it. Anything
+ * that reads out of it, or deletes from it, needs a fact about the file rather
+ * than about the folder, and the name is the only one available: this is the
+ * shape `attachmentFileName` produces and a hash nobody types by hand.
+ *
+ * Resemblance rather than proof, and used only to NARROW. It is never grounds
+ * for reaching outside a directory that is already allowed.
+ */
+export function isParkedAttachmentName(name: string): boolean {
+  const match = PARKED_NAME.exec(name)
+  return match !== null && IMAGE_EXT_SET.has(match[1])
 }
 
 /** Writes the bytes somewhere durable and returns the path, or null on failure. */
