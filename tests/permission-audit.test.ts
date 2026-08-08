@@ -222,6 +222,27 @@ test('audit entries are redacted and capped at 200', () => {
   assert.equal(getPermissionAudit().length, 200)
 })
 
+test('AN AUDIT FIELD NOBODY DECIDED ABOUT DOES NOT REACH THE FILE', () => {
+  // Same reason as the store: an entry is rebuilt from the fields that have a
+  // decision, so nothing is written out purely because it was on the object.
+  const smuggled = {
+    id: 'a1',
+    at: 1,
+    sessionId: 's1',
+    cwd: 'C:/work/app',
+    toolCallId: 't1',
+    title: 'Read',
+    decision: 'allow-once',
+    somethingNew: 'token: xai-abcdefgh1234567890'
+  } as unknown as Parameters<typeof appendPermissionAudit>[0]
+
+  appendPermissionAudit(smuggled)
+
+  const raw = fs.readFileSync(permissionAuditPath(), 'utf8')
+  assert.ok(!raw.includes('somethingNew'), 'an undeclared field was persisted')
+  assert.ok(!raw.includes('xai-abcdefgh1234567890'))
+})
+
 test('audit file is not the store and is not written into the store backup', () => {
   appendPermissionAudit(entry({ id: 'solo', at: 1 }))
   upsertSession({

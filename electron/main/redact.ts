@@ -69,6 +69,43 @@ export function redactValue(value: unknown, depth = 0): unknown {
   return value
 }
 
+/** What happens to one field on its way to disk. */
+export type FieldPolicy = 'keep' | 'redact'
+
+/**
+ * A decision for every field of `T`, checked by the compiler.
+ *
+ * `Record<keyof T, FieldPolicy>` is the point of the type: adding a field to `T`
+ * makes the policy object fail to typecheck until somebody says what happens to
+ * it. The alternative shape, spreading the value and naming the fields to
+ * redact, gives a new field the opposite default and nothing anywhere fails.
+ */
+export type RedactionPolicy<T> = Record<keyof T, FieldPolicy>
+
+/**
+ * Rebuild a value carrying only the fields the policy names.
+ *
+ * Two properties, and the second is easy to miss. Fields marked `redact` go
+ * through `redactValue`. Fields NOT in the policy at all are dropped, so
+ * something that arrived over IPC with extra keys cannot ride into the file on
+ * the strength of having been in the object.
+ *
+ * `undefined` fields stay absent rather than becoming present-and-undefined, so
+ * a round trip through JSON does not gain keys.
+ */
+export function applyRedactionPolicy<T extends object>(
+  value: T,
+  policy: RedactionPolicy<T>
+): T {
+  const out: Record<string, unknown> = {}
+  for (const key of Object.keys(policy) as (keyof T)[]) {
+    const current = (value as Record<string, unknown>)[key as string]
+    if (current === undefined) continue
+    out[key as string] = policy[key] === 'redact' ? redactValue(current) : current
+  }
+  return out as T
+}
+
 export function redactPreview(value: unknown, max = 500): string | undefined {
   if (value === undefined) return undefined
   const raw =

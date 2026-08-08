@@ -679,6 +679,80 @@ test('tool payloads ARE redacted on save', () => {
   assert.ok(!raw.includes('xai-abcdefgh1234567890'))
 })
 
+test("A FAILING TOOL'S MESSAGE IS REDACTED ON SAVE, like everything else it returns", () => {
+  // A tool reports why it failed, and what it was doing is in the message. The
+  // store is plaintext, is copied to a backup, and is copied again into a
+  // quarantine file that nothing removes.
+  saveTranscript('s1', [
+    msg({
+      id: 'm1',
+      role: 'assistant',
+      text: 'ran a tool',
+      toolCalls: [
+        {
+          toolCallId: 't1',
+          title: 'Bash',
+          status: 'failed',
+          error: 'curl failed: Authorization: Bearer xai-abcdefgh1234567890'
+        }
+      ]
+    })
+  ])
+  const raw = fs.readFileSync(storeFile(), 'utf8')
+  assert.ok(!raw.includes('xai-abcdefgh1234567890'), 'a failure message went to disk verbatim')
+  assert.ok(raw.includes('t1'), 'the call itself should still be recorded')
+})
+
+test('the same is true for an api_key in a query string', () => {
+  saveTranscript('s1', [
+    msg({
+      id: 'm1',
+      role: 'assistant',
+      text: 'ran a tool',
+      toolCalls: [
+        {
+          toolCallId: 't1',
+          title: 'Fetch',
+          status: 'failed',
+          error: 'GET https://example.test/v1?api_key=SUPERSECRET123 returned 401'
+        }
+      ]
+    })
+  ])
+  assert.ok(!fs.readFileSync(storeFile(), 'utf8').includes('SUPERSECRET123'))
+})
+
+test('THE USER\'S OWN WORDS ARE NOT REDACTED, in text or in thought', () => {
+  // Both directions are load-bearing and this half has regressed before:
+  // rewriting these corrupts the conversation on reload. A message that merely
+  // looks secret-shaped is still the user's, or the agent's prose.
+  saveTranscript('s1', [
+    msg({ id: 'm1', role: 'user', text: 'my api_key=SUPERSECRET123 stopped working' }),
+    msg({ id: 'm2', role: 'assistant', text: 'checking', thought: 'they said api_key=SUPERSECRET123' })
+  ])
+  const stored = getTranscript('s1')
+  assert.equal(stored[0].text, 'my api_key=SUPERSECRET123 stopped working')
+  assert.equal(stored[1].thought, 'they said api_key=SUPERSECRET123')
+})
+
+test('A FIELD NOBODY DECIDED ABOUT DOES NOT REACH THE FILE', () => {
+  // The reason the miss was possible rather than the miss itself. A tool call is
+  // rebuilt from the fields that have a decision, so something extra arriving at
+  // runtime is not carried on the strength of being on the object.
+  const smuggled = {
+    toolCallId: 't1',
+    title: 'Bash',
+    status: 'completed',
+    somethingNew: 'api_key=SUPERSECRET123'
+  } as unknown as NonNullable<ChatMessage['toolCalls']>[number]
+
+  saveTranscript('s1', [msg({ id: 'm1', role: 'assistant', text: 'ran a tool', toolCalls: [smuggled] })])
+
+  const raw = fs.readFileSync(storeFile(), 'utf8')
+  assert.ok(!raw.includes('somethingNew'), 'an undeclared field was persisted')
+  assert.ok(!raw.includes('SUPERSECRET123'))
+})
+
 test('transcripts are capped at the last 200 messages', () => {
   const many = Array.from({ length: 250 }, (_, i) =>
     msg({ id: `m${i}`, role: i % 2 ? 'assistant' : 'user', text: `line ${i}` })
