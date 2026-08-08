@@ -34,6 +34,17 @@ import { dataDir } from './data-dir'
 export const ATTACHMENT_DIR = 'attachments'
 
 /**
+ * Written beside the parked bytes to say this folder is one this app made.
+ *
+ * The data directory can be pointed anywhere, so the folder's name is not
+ * evidence of anything on its own. Anything that deletes from it needs to know
+ * the difference between this app's folder and a stranger's that happens to be
+ * called the same thing, and the moment the folder is created is the only one
+ * where that is known for certain.
+ */
+export const OWNERSHIP_MARKER = '.gronk-attachments'
+
+/**
  * Drop repeated tool calls, keeping the FIRST message each one appeared in.
  *
  * Collapsing by `toolCallId` across the whole transcript rather than within a
@@ -193,6 +204,15 @@ export function parkAttachmentBytes(attachment: PromptAttachment): string | null
     const file = path.join(dir, attachmentFileName(base64, ext))
     if (fs.existsSync(file)) return file
     fs.mkdirSync(dir, { recursive: true })
+    // Claim the folder before putting anything in it. Best effort: failing to
+    // write a marker must never cost the user an image, and a folder without one
+    // is simply never collected from.
+    try {
+      const marker = path.join(dir, OWNERSHIP_MARKER)
+      if (!fs.existsSync(marker)) fs.writeFileSync(marker, '')
+    } catch {
+      /* the bytes matter, the marker does not */
+    }
     fs.writeFileSync(file, Buffer.from(base64, 'base64'))
     return file
   } catch {
