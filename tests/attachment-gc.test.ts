@@ -7,6 +7,7 @@ import {
   MIN_AGE_MS,
   isParkedAttachmentName,
   referencedNames,
+  scanFileForNames,
   sweepAttachments,
   sweepPlan
 } from '../electron/main/attachment-gc'
@@ -379,6 +380,62 @@ test('a quarantined store that cannot be read refuses, like any other uncertaint
 
   assert.equal(result.refused, 'quarantine-unreadable')
   assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
+})
+
+test('A NAME SPLIT ACROSS A READ BOUNDARY IS STILL FOUND', async () => {
+  // The file is streamed, so a name straddling a chunk edge is the way a
+  // reference goes missing without anything erroring. A missed reference is an
+  // image deleted, so the overlap carried between chunks is load-bearing.
+  const name = sessionWithImage('s1')
+  const chunk = 1 << 20
+  const quarantine = path.join(userData, 'gronk-store.corrupt-1754500000010.json')
+  // Land the name so it begins a few bytes before the first boundary and ends
+  // after it.
+  const pad = 'x'.repeat(chunk - 8)
+  fs.writeFileSync(quarantine, `${pad}"${name}"${'y'.repeat(1024)}`)
+  deleteSession('s1')
+  rollBackupForward()
+  ageFiles()
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.refused, null)
+  assert.equal(result.removed, 0, 'a name spanning a chunk boundary was not seen')
+  assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
+})
+
+test('a quarantined store far larger than one chunk is scanned to the end', async () => {
+  const name = sessionWithImage('s1')
+  const quarantine = path.join(userData, 'gronk-store.corrupt-1754500000011.json')
+  fs.writeFileSync(quarantine, `${'x'.repeat(5 << 20)}"${name}"`)
+  deleteSession('s1')
+  rollBackupForward()
+  ageFiles()
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.removed, 0, 'the scan stopped before the end of the file')
+  assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
+})
+
+test('A FILE PAST THE SCAN CEILING REFUSES RATHER THAN SKIPPING', async () => {
+  // Skipping would contribute no references, which is indistinguishable from a
+  // file that referenced nothing. The budget is passed in so the ceiling can be
+  // reached without writing half a gigabyte.
+  const found = new Set<string>()
+  const file = path.join(userData, 'big.json')
+  fs.writeFileSync(file, 'x'.repeat(4096))
+
+  assert.equal(await scanFileForNames(file, found, 64), null, 'over budget should refuse')
+  assert.equal(typeof (await scanFileForNames(file, found, 1 << 20)), 'number')
+})
+
+test('a quarantine file that vanishes between listing and reading is not a refusal', async () => {
+  // Nothing can be referenced only by a file that is no longer there.
+  const found = new Set<string>()
+  const consumed = await scanFileForNames(path.join(userData, 'never-existed.json'), found, 4096)
+  assert.equal(consumed, 0)
+  assert.equal(found.size, 0)
 })
 
 test('an unrelated corrupt-looking name is not mistaken for a quarantined store', async () => {

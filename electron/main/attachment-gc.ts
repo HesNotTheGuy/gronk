@@ -203,6 +203,79 @@ export function scanForAttachmentNames(text: string): Set<string> {
   return found
 }
 
+/** Read size for a quarantined store. Nothing larger than this is ever held. */
+const SCAN_CHUNK_BYTES = 1 << 20
+
+/**
+ * Carried between chunks so a name split across the boundary is still seen.
+ *
+ * A parked name is 32 hex characters plus a short extension, so this only has to
+ * exceed the longest one. Generous rather than exact: too small silently loses a
+ * reference at a boundary, which costs an image, and too large costs nothing.
+ */
+const SCAN_OVERLAP = 128
+
+/**
+ * Total bytes this is willing to scan before refusing.
+ *
+ * Not a skip. Skipping a file contributes no references, which is the mistake
+ * this module exists to not make, so exceeding this refuses the whole sweep and
+ * everything stays on disk.
+ *
+ * Reachable in principle because nothing ever deletes a quarantined store: they
+ * accumulate one per corruption, and each is as large as the store was when it
+ * broke. The ceiling is high enough that a real install never meets it and low
+ * enough that the sweep cannot become the freeze it was written to prevent.
+ */
+const MAX_SCAN_BYTES = 512 * 1024 * 1024
+
+/**
+ * Scan one file for parked names without ever holding it whole.
+ *
+ * A quarantined store is a copy of a store that failed to parse, so it is as
+ * large as that store was, and the one this module exists because of reached
+ * 117.9 MB. Reading that into a string and running a regex over it on the main
+ * process is the same freeze from the other side.
+ *
+ * Returns null when the file cannot be read, and the bytes consumed otherwise.
+ */
+export async function scanFileForNames(
+  file: string,
+  into: Set<string>,
+  budget: number
+): Promise<number | null> {
+  let handle: fsp.FileHandle
+  try {
+    handle = await fsp.open(file, 'r')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return 0
+    return null
+  }
+  try {
+    const buffer = Buffer.allocUnsafe(SCAN_CHUNK_BYTES)
+    let carry = ''
+    let consumed = 0
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, SCAN_CHUNK_BYTES, null)
+      if (bytesRead === 0) break
+      consumed += bytesRead
+      if (consumed > budget) return null
+      // latin1 gives one character per byte, so the overlap below is a count of
+      // bytes and not of whatever happened to decode. A parked name is ASCII, so
+      // utf8 would find it too; this only removes the need to reason about where
+      // a multi-byte sequence falls relative to a chunk edge.
+      const text = carry + buffer.toString('latin1', 0, bytesRead)
+      for (const name of scanForAttachmentNames(text)) into.add(name)
+      carry = text.slice(-SCAN_OVERLAP)
+    }
+    return consumed
+  } catch {
+    return null
+  } finally {
+    await handle.close().catch(() => {})
+  }
+}
+
 /**
  * Every quarantined store beside the live one, as reference sources.
  *
@@ -215,8 +288,15 @@ export function scanForAttachmentNames(text: string): Set<string> {
  * nothing ever removes these files, so collection would stop permanently after
  * the first corruption.
  *
- * Returns null if one is there and cannot be read, which is the same uncertain
- * outcome as an unreadable store.
+ * Every file is streamed rather than read whole, and the total is capped. Size
+ * and count are both unbounded at the source: a quarantined store is as large as
+ * the store was when it broke, and one is added per corruption with nothing ever
+ * removing them.
+ *
+ * Returns null if one is there and cannot be read, or if the total exceeds what
+ * this is willing to scan. Both are the same uncertain outcome as an unreadable
+ * store, and neither is a skip: a file that went unscanned contributes no
+ * references, which is indistinguishable from a file that referenced nothing.
  */
 async function readQuarantinedReferences(): Promise<Set<string> | null> {
   const dir = path.dirname(storePath())
@@ -231,17 +311,13 @@ async function readQuarantinedReferences(): Promise<Set<string> | null> {
   }
 
   const referenced = new Set<string>()
+  let budget = MAX_SCAN_BYTES
   for (const name of names) {
-    let text: string
-    try {
-      text = await fsp.readFile(path.join(dir, name), 'utf8')
-    } catch (err) {
-      // Vanished between the listing and the read: nothing to salvage from it,
-      // so nothing can be referenced only by it.
-      if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') continue
-      return null
-    }
-    for (const found of scanForAttachmentNames(text)) referenced.add(found)
+    const consumed = await scanFileForNames(path.join(dir, name), referenced, budget)
+    // Unreadable, or past the ceiling. Either way this cannot say what the file
+    // referenced, so the sweep does not get to act on what it did find.
+    if (consumed === null) return null
+    budget -= consumed
   }
   return referenced
 }
