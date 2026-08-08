@@ -15,7 +15,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { PermissionAuditEntry } from '../../shared/types'
 import { dataDir, storePath, writeFileAtomicSync } from './data-dir'
-import { redactPreview, redactValue } from './redact'
+import { applyRedactionPolicy, redactPreview, redactValue, type RedactionPolicy } from './redact'
 
 export const PERMISSION_AUDIT_FILE = 'gronk-permission-audit.json'
 const AUDIT_CAP = 200
@@ -123,12 +123,36 @@ function ensureMigrated(): void {
   }
 }
 
+/**
+ * What is written for each field of an entry.
+ *
+ * The two that carry agent-supplied text are handled below rather than here,
+ * because they are truncated as well as redacted. Everything else is the app's
+ * own record of the decision.
+ *
+ * The exhaustive `Record` is the part that matters beyond today's fields: adding
+ * one to `PermissionAuditEntry` fails `npm run typecheck` here until somebody
+ * chooses what happens to it, rather than it being written out because it was on
+ * the object.
+ */
+const AUDIT_POLICY: RedactionPolicy<PermissionAuditEntry> = {
+  id: 'keep',
+  at: 'keep',
+  sessionId: 'keep',
+  cwd: 'keep',
+  toolCallId: 'keep',
+  title: 'redact',
+  kind: 'keep',
+  decision: 'keep',
+  rawInputPreview: 'redact'
+}
+
 /** Sanitize one entry the same way the store path always did. */
 function sanitize(entry: PermissionAuditEntry): PermissionAuditEntry {
-  // Spread first: any field not named below rides through raw. A new field on
-  // PermissionAuditEntry needs its own redaction line here.
+  // Built from the policy, so a field absent from it is not carried at all.
+  const safe = applyRedactionPolicy(entry, AUDIT_POLICY)
   return {
-    ...entry,
+    ...safe,
     rawInputPreview: entry.rawInputPreview
       ? redactPreview(entry.rawInputPreview, 500)
       : undefined,
