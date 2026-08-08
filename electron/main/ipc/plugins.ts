@@ -130,9 +130,19 @@ export function registerPluginsIpc(): void {
     return removeMcpServer(serverName, mcpScope)
   })
 
+  // Gated with its neighbours. It writes no config, which is what makes it look
+  // like one of the read-only handlers above, but it dials the configured
+  // servers and starts the stdio ones, so it runs third-party code the same way
+  // install and enable do.
+  //
+  // After the argument checks and before the call, the same order as the rest:
+  // validating first means a malformed request never reaches the auth probe,
+  // which spawns the CLI and hits the network on its own account.
   ipcMain.handle('gronk:mcp-doctor', async (e, name?: unknown) => {
     assertTrustedSender(e)
     const rawName = assertOptionalString(name, 'name')
-    return mcpDoctor(rawName === undefined ? undefined : assertCliName(rawName, 'name'))
+    const serverName = rawName === undefined ? undefined : assertCliName(rawName, 'name')
+    await assertAuthenticated()
+    return mcpDoctor(serverName)
   })
 }
