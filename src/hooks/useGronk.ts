@@ -20,7 +20,16 @@ import {
   hasAssistantReplyAfter
 } from '../lib/messages'
 import { parsePlan } from '../lib/plan'
+import { raise, resolve, retire, type AppError, type ErrorScope } from '../lib/app-error'
 import { needsSessionReload } from '../lib/session-nav'
+import {
+  NO_FOCUS,
+  beginSwitch,
+  belongsToFocus,
+  confirmSwitch,
+  sessionIdOf,
+  type SessionFocus
+} from '../lib/session-focus'
 import {
   cachedTranscript,
   forgetTranscript,
@@ -82,7 +91,14 @@ export function useGronk() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [permission, setPermission] = useState<PermissionRequest | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  /**
+   * The banner's error, tagged with what it is about. The rule for when it
+   * stops being shown lives in `src/lib/app-error.ts`; nothing here should
+   * decide that inline. Every write goes through one of the three helpers
+   * below, which is what makes the rule greppable instead of spread across the
+   * handlers.
+   */
+  const [appError, setAppError] = useState<AppError | null>(null)
   const [busy, setBusy] = useState(false)
   /**
    * True while opening a project or restoring a session: UI shows a skeleton
@@ -114,6 +130,17 @@ export function useGronk() {
    */
   const programmaticScroll = useRef(false)
   const messagesRef = useRef<ChatMessage[]>([])
+
+  /**
+   * The session whose events are the conversation on screen.
+   *
+   * A ref rather than state, and that is the whole point of it. Selecting a
+   * session has to change what the event handler accepts at the instant of the
+   * click; a state update is not visible until React re-renders, and the events
+   * this is meant to attribute arrive in between. The rule itself is in
+   * `src/lib/session-focus.ts`.
+   */
+  const focusRef = useRef<SessionFocus>(NO_FOCUS)
 
   /**
    * The last few transcripts this renderer already had, so going back to a
@@ -226,9 +253,55 @@ export function useGronk() {
   const restartAgentImpl = useRef<() => Promise<void>>(async () => {})
   const restartAgent = useCallback(() => restartAgentImpl.current(), [])
 
+  /**
+   * The three ways the banner changes. Every `setAppError` in this file goes
+   * through one of them, so "what clears this?" is answered by reading
+   * `app-error.ts` rather than by finding every call site.
+   *
+   * All three are stable: they close over nothing but the `useState` dispatch,
+   * which is why they are safe in the dependency arrays below and safe to hand
+   * to another hook.
+   */
+  /** An attempt is committing to do work. Call at the point of no return. */
+  const beginAttempt = useCallback(
+    (scope: ErrorScope) => setAppError((cur) => retire(cur, scope)),
+    []
+  )
+  /** An attempt failed. */
+  const failAttempt = useCallback(
+    (scope: ErrorScope, message: string) => setAppError(raise(scope, message)),
+    []
+  )
+  /** An attempt succeeded, which speaks only for its own scope. */
+  const resolveAttempt = useCallback(
+    (scope: ErrorScope) => setAppError((cur) => resolve(cur, scope)),
+    []
+  )
+
+  /**
+   * The banner reads a plain string, and `needsSessionReload` asks only whether
+   * one is showing, so the scope stays inside this file.
+   */
+  const error = appError?.message ?? null
+
+  /**
+   * Dismiss, from the banner's own button. A raw string is treated as an agent
+   * error because that is the only scope a caller outside this file could mean.
+   */
+  const setError = useCallback((value: string | null) => {
+    setAppError(value === null ? null : raise('agent', value))
+  }, [])
+
+  /** The `export`-scoped half of the banner, handed to useExportNotice. */
+  const beginExport = useCallback(() => beginAttempt('export'), [beginAttempt])
+  const failExport = useCallback(
+    (message: string) => failAttempt('export', message),
+    [failAttempt]
+  )
+
   const dataDir = useDataLocation(refreshMeta)
   const cliInstall = useCliInstall(refreshMeta)
-  const exportState = useExportNotice(setError)
+  const exportState = useExportNotice(beginExport, failExport)
 
   /**
    * Everything about the current conversation, gone. Only `useState` dispatches,
@@ -327,13 +400,28 @@ export function useGronk() {
     void window.gronk.getConnectionState().then(setConnection)
 
     const unsub = window.gronk.onEvent((event: MainToRendererEvent) => {
+      // Does this belong to the conversation on screen? Read from a ref, not
+      // from state: a switch has to take effect the instant it is requested,
+      // and a state update scheduled by the click is not visible to an event
+      // that arrives before React re-renders. Every event below this line has
+      // been attributed.
+      if (!belongsToFocus(focusRef.current, sessionIdOf(event))) return
+
       switch (event.type) {
         case 'connection':
           setConnection(event.state)
-          if (event.error) setError(event.error)
-          if (event.state === 'ready') setError(null)
+          if (event.error) failAttempt('agent', event.error)
+          // The agent coming up settles the agent's own complaint and nothing
+          // else: it is not evidence about a failed send or a failed export.
+          // `setState('ready')` is never emitted with an error, so these two
+          // cannot both fire for one event.
+          if (event.state === 'ready') resolveAttempt('agent')
           break
         case 'session':
+          // Main naming the session it is on is one of the two ways a switch
+          // stops being open-ended; the other is the value start/load returns.
+          // Whichever arrives first closes it.
+          focusRef.current = confirmSwitch(focusRef.current, event.sessionId)
           setSessionId(event.sessionId)
           setCwd(event.cwd)
           // Resuming replays this session's completed turns *before* this event
@@ -528,7 +616,7 @@ export function useGronk() {
           setUsage(event.usage)
           break
         case 'error':
-          setError(event.message)
+          failAttempt('agent', event.message)
           setBusy(false)
           break
         // 'models' is useAppSettings', 'auth' is useAuth's, and both preview
@@ -541,9 +629,19 @@ export function useGronk() {
     })
 
     return unsub
-    // paintTranscript and settledTranscript are both stable, so naming them here
-    // costs no re-subscription and keeps the handler's reads honest.
-  }, [refreshMeta, refreshSessions, refreshAudit, pinToBottom, paintTranscript, settledTranscript])
+    // paintTranscript, settledTranscript and the two error helpers are all
+    // stable, so naming them here costs no re-subscription and keeps the
+    // handler's reads honest.
+  }, [
+    refreshMeta,
+    refreshSessions,
+    refreshAudit,
+    pinToBottom,
+    paintTranscript,
+    settledTranscript,
+    failAttempt,
+    resolveAttempt
+  ])
 
   // Stick-to-bottom only while the user is actually at the end. Streaming
   // updates must not yank the viewport if they scrolled up to read earlier turns.
@@ -687,12 +785,16 @@ export function useGronk() {
 
   const openProject = useCallback(
     async (folder?: string | null, opts?: { forceNew?: boolean }) => {
-      setError(null)
-
       const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
-        setError(
+        // An attempt to change session that failed, so it settles rather than
+        // being left as though nothing was ever tried. Nothing is on screen and
+        // no id was established, so a settled focus holding none refuses every
+        // named event, which is what should happen.
+        focusRef.current = confirmSwitch(focusRef.current, null)
+        failAttempt(
+          'agent',
           authNow.message ||
             'Sign in with your own Grok account before opening a project.'
         )
@@ -703,7 +805,12 @@ export function useGronk() {
       if (!target) {
         target = await window.gronk.selectFolder()
       }
+      // Nothing was chosen, so nothing superseded the banner. Retiring on entry
+      // instead would make cancelling this dialog quietly discard an error that
+      // is still true.
       if (!target) return
+
+      beginAttempt('agent')
 
       const sameProject =
         cwd &&
@@ -712,6 +819,9 @@ export function useGronk() {
         agentSurface === 'project'
 
       if (sameProject && !opts?.forceNew) {
+        // Already here: no switch, so none is opened. Opening one before this
+        // return would leave it open with nothing coming to close it, and an
+        // open switch accepts every session's events.
         setSurface('project')
         setBrowsing(false)
         await refreshMeta()
@@ -737,6 +847,12 @@ export function useGronk() {
       // Opening a project with history should resume the latest session, not
       // dump you on the empty "What should we build?" state. New session stays
       // explicit (New session / forceNew).
+      //
+      // No switch is open across this handoff, deliberately. selectSession owns
+      // the whole thing when it takes over, and it has early returns of its own
+      // that never reach its `beginSwitch`. A switch opened here would be left
+      // open by those, with this function already returned and unable to close
+      // it, and an open switch accepts every session's events for good.
       if (!opts?.forceNew && selectSessionRef.current) {
         try {
           const sessions = await window.gronk.listSessions()
@@ -752,6 +868,10 @@ export function useGronk() {
         }
       }
 
+      // Past every route out of here: this call is starting the agent itself,
+      // so this is where the switch belongs. The id does not exist yet and
+      // comes back from the boot.
+      focusRef.current = beginSwitch(null)
       setMessages([])
       setSessionId(null)
       setBusy(false)
@@ -765,15 +885,19 @@ export function useGronk() {
           forceNew: opts?.forceNew,
           surface: 'project'
         })
+        focusRef.current = confirmSwitch(focusRef.current, id)
         setSessionId(id)
         await refreshMeta()
         setHydrating(false)
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        // Nothing is coming to name the session now, so the switch is closed
+        // here. Left open it would go on accepting every session's events.
+        focusRef.current = confirmSwitch(focusRef.current, null)
+        failAttempt('agent', err instanceof Error ? err.message : String(err))
         setHydrating(false)
       }
     },
-    [cwd, connection, refreshMeta, agentSurface]
+    [cwd, connection, refreshMeta, agentSurface, beginAttempt, failAttempt]
   )
 
   const openProjectRef = useRef(openProject)
@@ -782,16 +906,21 @@ export function useGronk() {
   /** General Grok chat (website/X-style) via CLI, not a coding project */
   const openChat = useCallback(
     async (opts?: { forceNew?: boolean }) => {
-      setError(null)
       const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
-        setError(
+        focusRef.current = confirmSwitch(focusRef.current, null)
+        failAttempt(
+          'agent',
           authNow.message ||
             'Sign in with your own Grok account before chatting.'
         )
         return
       }
+
+      // Nothing above this can abandon the attempt, so this is the point of no
+      // return: chat has no folder to pick.
+      beginAttempt('agent')
 
       const chatPath =
         chatWorkspacePath || (await window.gronk.getChatWorkspacePath())
@@ -804,12 +933,14 @@ export function useGronk() {
         agentSurface === 'chat'
 
       if (sameChat && !opts?.forceNew) {
+        // Already here: no switch, so none is opened. See openProject.
         setSurface('chat')
         setBrowsing(false)
         await refreshMeta()
         return
       }
 
+      focusRef.current = beginSwitch(null)
       setMessages([])
       setSessionId(null)
       setCwd(chatPath)
@@ -830,13 +961,15 @@ export function useGronk() {
           forceNew: opts?.forceNew,
           surface: 'chat'
         })
+        focusRef.current = confirmSwitch(focusRef.current, id)
         setSessionId(id)
         await refreshMeta()
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        focusRef.current = confirmSwitch(focusRef.current, null)
+        failAttempt('agent', err instanceof Error ? err.message : String(err))
       }
     },
-    [chatWorkspacePath, cwd, connection, refreshMeta, agentSurface]
+    [chatWorkspacePath, cwd, connection, refreshMeta, agentSurface, beginAttempt, failAttempt]
   )
 
   /**
@@ -910,36 +1043,53 @@ export function useGronk() {
         settledTranscript()
       )
 
-      setError(null)
       const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
-        setError(
+        // Reached by delegation as well as directly: opening a project resumes
+        // its latest session through here, and this return is one of the two
+        // that never gets as far as opening a switch below.
+        focusRef.current = confirmSwitch(focusRef.current, null)
+        failAttempt(
+          'agent',
           authNow.message ||
             'Sign in with your own Grok account before restoring a session.'
         )
         return
       }
 
-      const chatPath =
-        chatWorkspacePath || (await window.gronk.getChatWorkspacePath())
-      const isChat = isChatWorkspace(session.cwd, chatPath)
+      beginAttempt('agent')
+      // The clicked id is known, so this switch starts narrower than the ones a
+      // project or chat opens. It still accepts anything until main confirms,
+      // because a load can resolve to a different id and the history events
+      // naming it arrive before that answer does.
+      focusRef.current = beginSwitch(session.id)
 
-      setPermission(null)
-      setBusy(true)
-      setHydrating(true)
-      setHistorySource(null)
-      setActivePlan(null)
-      setUsage(null)
-      setSessionId(session.id)
-      setCwd(session.cwd)
-      setSurface(isChat ? 'chat' : 'project')
-      setBrowsing(false)
-      setAgentSurface(isChat ? 'chat' : 'project')
-      stickToBottom.current = true
-      await yieldPaint()
-
+      // EVERY await from here down is inside this try, and that is the point of
+      // where it starts rather than three statements lower. An open switch
+      // accepts every session's events, so a rejection that escapes without
+      // reaching the catch leaves it open for the rest of the run. Resolving the
+      // chat workspace path can reject, and it sits before any of the work this
+      // was originally wrapped around.
       try {
+        const chatPath =
+          chatWorkspacePath || (await window.gronk.getChatWorkspacePath())
+        const isChat = isChatWorkspace(session.cwd, chatPath)
+
+        setPermission(null)
+        setBusy(true)
+        setHydrating(true)
+        setHistorySource(null)
+        setActivePlan(null)
+        setUsage(null)
+        setSessionId(session.id)
+        setCwd(session.cwd)
+        setSurface(isChat ? 'chat' : 'project')
+        setBrowsing(false)
+        setAgentSurface(isChat ? 'chat' : 'project')
+        stickToBottom.current = true
+        await yieldPaint()
+
         // Paint the local transcript first so the user is reading history while
         // the agent process boots: loadSession will history-replace the same
         // data and then session/load in the background of the UI.
@@ -955,13 +1105,15 @@ export function useGronk() {
         } else setMessages([])
 
         const result = await window.gronk.loadSession(session.id)
+        focusRef.current = confirmSwitch(focusRef.current, result.sessionId)
         setSessionId(result.sessionId)
         await refreshMeta()
         // history-done also clears hydrating; keep this as a safety net if
         // the event was missed (e.g. empty restore paths).
         setHydrating(false)
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        focusRef.current = confirmSwitch(focusRef.current, null)
+        failAttempt('agent', err instanceof Error ? err.message : String(err))
         setBusy(false)
         setHydrating(false)
       }
@@ -969,7 +1121,16 @@ export function useGronk() {
     // The guard reads live state, so it has to be in the deps or a stale
     // closure would compare against whichever session was open when this
     // callback was last built.
-    [refreshMeta, chatWorkspacePath, sessionId, connection, error, hydrating]
+    [
+      refreshMeta,
+      chatWorkspacePath,
+      sessionId,
+      connection,
+      error,
+      hydrating,
+      beginAttempt,
+      failAttempt
+    ]
   )
   selectSessionRef.current = selectSession
 
@@ -982,7 +1143,8 @@ export function useGronk() {
       const trimmed = text.trim()
       if ((!trimmed && attachments.length === 0) || busy || connection !== 'ready') return
 
-      setError(null)
+      // Past the guard above, so the send is really happening.
+      beginAttempt('prompt')
       setBusy(true)
       stickToBottom.current = true
 
@@ -1031,7 +1193,7 @@ export function useGronk() {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         setBusy(false)
-        setError(message)
+        failAttempt('prompt', message)
         setMessages((prev) =>
           prev.map((m) =>
             m.id === userId
@@ -1041,7 +1203,7 @@ export function useGronk() {
         )
       }
     },
-    [busy, connection]
+    [busy, connection, beginAttempt, failAttempt]
   )
 
   /** Retry only a failed / unanswered user message without duplicating it. */

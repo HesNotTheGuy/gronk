@@ -7,7 +7,8 @@ import {
   type PermissionMode,
   type ProjectContext,
   type ProjectNotes,
-  type SessionInfo
+  type SessionInfo,
+  type ToolCallInfo
 } from '../../shared/types'
 import { isChatWorkspace, normalizePath } from '../../shared/path'
 import { normalizePermissionMode } from './agent-args'
@@ -18,7 +19,7 @@ import {
   storePath,
   writeFileAtomicSync
 } from './data-dir'
-import { redactValue } from './redact'
+import { applyRedactionPolicy, redactValue, type RedactionPolicy } from './redact'
 import { parkAttachmentBytes, repairTranscript, slimAttachments } from './transcript-repair'
 
 // Permission audit lives in its own file (permission-audit.ts). Re-exported so
@@ -772,6 +773,32 @@ export function getTranscript(sessionId: string): ChatMessage[] {
   return cleaned
 }
 
+/**
+ * What is persisted from a tool call, field by field.
+ *
+ * Everything the agent supplies is redacted; the app's own identifiers and the
+ * short human-facing label are kept. `title` comes from the CLI rather than from
+ * a tool's output and is what the transcript reads as, so it stays as it is.
+ *
+ * The exhaustive `Record` is doing real work: a field added to `ToolCallInfo`
+ * fails `npm run typecheck` here until somebody chooses. Nothing arrives at the
+ * store file because it happened to be on the object.
+ */
+const TOOL_CALL_POLICY: RedactionPolicy<ToolCallInfo> = {
+  toolCallId: 'keep',
+  title: 'keep',
+  kind: 'keep',
+  status: 'keep',
+  rawInput: 'redact',
+  content: 'redact',
+  error: 'redact'
+}
+
+/** One tool call as it should sit in the store. */
+export function redactToolCall(call: ToolCallInfo): ToolCallInfo {
+  return applyRedactionPolicy(call, TOOL_CALL_POLICY)
+}
+
 export function saveTranscript(sessionId: string, messages: ChatMessage[]): void {
   const data = readStore()
   // Cap session length. Message text/thought are the user's own conversation on
@@ -791,11 +818,7 @@ export function saveTranscript(sessionId: string, messages: ChatMessage[]): void
       m.role === 'user' && m.sendStatus === 'failed' ? ('failed' as const) : ('sent' as const),
     text: m.text,
     thought: m.thought,
-    toolCalls: m.toolCalls?.map((t) => ({
-      ...t,
-      content: redactValue(t.content),
-      rawInput: redactValue(t.rawInput)
-    }))
+    toolCalls: m.toolCalls?.map(redactToolCall)
   }))
   data.transcripts[sessionId] = trimmed
 

@@ -543,7 +543,13 @@ export const PERMISSION_MODE_OPTIONS: Array<{
 
 /** Events pushed from main → renderer */
 export type MainToRendererEvent =
-  | { type: 'connection'; state: ConnectionState; error?: string }
+  /**
+   * `sessionId` is absent only before a session exists, which is the boot
+   * window: `starting` and the failures that can happen inside it. Once there is
+   * a session, every connection change names it, so the renderer can tell a
+   * background agent's trouble from the one it is showing.
+   */
+  | { type: 'connection'; state: ConnectionState; error?: string; sessionId?: string }
   | { type: 'session'; sessionId: string; cwd: string }
   | { type: 'history-clear'; sessionId: string }
   /**
@@ -564,7 +570,12 @@ export type MainToRendererEvent =
       patch: Partial<ToolCallInfo>
     }
   | { type: 'message-done'; sessionId: string; messageId: string; stopReason?: string }
-  | { type: 'permission-request'; request: PermissionRequest | null }
+  /**
+   * `request: null` clears the prompt. It carries the session id too, so a
+   * background session clearing its own queue cannot take down the dialog the
+   * user is looking at.
+   */
+  | { type: 'permission-request'; request: PermissionRequest | null; sessionId?: string }
   | { type: 'plan'; sessionId: string; messageId: string; plan: unknown }
   | { type: 'models'; models: ModelInfo[]; current?: string }
   | { type: 'auth'; auth: AuthStatus }

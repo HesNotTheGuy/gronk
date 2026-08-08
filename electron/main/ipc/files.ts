@@ -11,7 +11,7 @@ import { listProjectFiles } from '../fs-utils'
 import { assertTrustedSender, isPathInside } from '../ipc-guard'
 import { normalizeCwd } from '../store'
 import { readLocalImageSafe, revealLocalPathSafe } from './images'
-import { assertOptionalString, assertString } from './validate'
+import { assertFileDialogOptions, assertOptionalString, assertString } from './validate'
 import type { IpcContext } from './context'
 
 /**
@@ -94,15 +94,16 @@ export function registerFilesIpc(ctx: IpcContext): void {
 
   ipcMain.handle(
     'gronk:select-file',
-    async (
-      e,
-      options?: { filters?: { name: string; extensions: string[] }[]; title?: string }
-    ) => {
+    async (e, options?: unknown) => {
       assertTrustedSender(e)
+      // Rebuilt rather than forwarded: this reaches Electron's dialog, which
+      // takes many more keys than the renderer has a reason to set, and
+      // `properties` below is the app's decision rather than the caller's.
+      const opts = assertFileDialogOptions(options, 'options')
       const result = await dialog.showOpenDialog(ctx.getMainWindow()!, {
-        title: options?.title || 'Select file',
+        title: opts.title || 'Select file',
         properties: ['openFile'],
-        filters: options?.filters
+        filters: opts.filters
       })
       if (result.canceled || !result.filePaths[0]) return null
       return result.filePaths[0]
