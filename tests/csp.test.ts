@@ -49,23 +49,21 @@ test('data: and blob: remain allowed, so local and generated images still render
   }
 })
 
-test('the renderer never emits an img element for a remote source', () => {
-  // The data: branch must come first and return, so the https branch below it
-  // cannot reach an <img>.
-  const dataBranchAt = MARKDOWN.indexOf("src.startsWith('data:')")
-  const httpBranchAt = MARKDOWN.indexOf('if (isHttpUrl(src))')
-  assert.ok(dataBranchAt > 0, 'data: branch missing')
-  assert.ok(httpBranchAt > dataBranchAt, 'remote branch must come after the data: branch')
+// What the renderer produces for a remote source is asserted by rendering it,
+// in `markdown-remote-images.test.ts`. It used to be asserted here by matching
+// text in Markdown.tsx, which could only ever describe the file as written: it
+// could not answer what a given source produces, and a remote <img> arriving by
+// a route those strings did not describe was invisible to all of them.
+//
+// The two halves stay in separate files on purpose. This one reads a policy
+// that lives in a string literal in the main process and has nothing to render;
+// that one mounts a component.
 
-  const remoteBranch = MARKDOWN.slice(httpBranchAt, httpBranchAt + 700)
-  assert.ok(!/<img/.test(remoteBranch), 'remote images must render as a link, not an <img>')
-  assert.match(remoteBranch, /md-remote-img/)
-})
-
-// Seeing the destination is the entire protection once loading is a decision.
-test('the remote-image link shows its host', () => {
-  assert.match(MARKDOWN, /md-remote-img-host/)
-  assert.match(MARKDOWN, /function hostOf/)
+test('the renderer module still exists where the policy assumes it does', () => {
+  // Cheap tripwire, and the only claim this file can honestly make about the
+  // renderer. If Markdown.tsx moves or goes away, the behavioural tests are the
+  // thing to follow, not this.
+  assert.ok(MARKDOWN.length > 0)
 })
 
 test('the preview pane is deliberately outside this policy', () => {
