@@ -541,11 +541,22 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
         'chat sandbox could overwrite files, so nothing was moved — pick an empty folder.'
     )
   }
-  // Refused rather than merged, even though the file names are content hashes so
-  // a collision would be the same bytes. The pool that is already there belongs
-  // to another install, and this one has no way to tell which of its transcripts
-  // reference which file. Merging would silently adopt them.
-  if (fs.existsSync(path.join(dest, ATTACHMENT_DIR))) {
+  // A folder the user picked is refused; this app's own default location is not.
+  //
+  // The refusal exists because a pool at a folder somebody chose belongs to
+  // another install, and nothing here can tell which of its transcripts
+  // reference which file. That reasoning does not reach the default directory:
+  // it is this install's own, and an attachments folder sitting there is this
+  // install's leftover, because a version that moved the store without the
+  // attachments is exactly what left it. Refusing there wedges Reset
+  // permanently, and Reset has a fixed target with no picker, so the message
+  // would name no action the user could take.
+  //
+  // Adopting is safe specifically here: the names are content hashes, so a
+  // collision is the same bytes, and the merge below keeps whichever copy is
+  // already in place rather than choosing between them.
+  const isDefaultTarget = pathsEqual(dest, current.defaultDir)
+  if (!isDefaultTarget && fs.existsSync(path.join(dest, ATTACHMENT_DIR))) {
     return fail(
       `${dest} already holds an ${ATTACHMENT_DIR} folder. It belongs to another Gronk ` +
         'install and merging it with this one has no correct answer, so nothing was ' +
@@ -553,8 +564,14 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
     )
   }
 
-  const sourceStore = path.join(current.dataDir, STORE_FILE)
-  const sourceBackup = path.join(current.dataDir, BACKUP_FILE)
+  // Whichever names this install actually uses. A directory predating the
+  // rename keeps the old ones, and `storePath` and `holdsStore` both honour
+  // them, so hard-coding the current names here moved a legacy directory's
+  // attachments and left its store behind.
+  const storeName = path.basename(storePath())
+  const backupName = path.basename(backupStorePath())
+  const sourceStore = path.join(current.dataDir, storeName)
+  const sourceBackup = path.join(current.dataDir, backupName)
   const sourceChat = path.join(current.dataDir, CHAT_WORKSPACE_DIR)
   const sourceAttachments = path.join(current.dataDir, ATTACHMENT_DIR)
   const hasStore = fs.existsSync(sourceStore)
@@ -570,8 +587,8 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
 
   try {
     await fsp.mkdir(staging, { recursive: true })
-    if (hasStore) await fsp.copyFile(sourceStore, path.join(staging, STORE_FILE))
-    if (hasBackup) await fsp.copyFile(sourceBackup, path.join(staging, BACKUP_FILE))
+    if (hasStore) await fsp.copyFile(sourceStore, path.join(staging, storeName))
+    if (hasBackup) await fsp.copyFile(sourceBackup, path.join(staging, backupName))
     if (hasChat) {
       await fsp.cp(sourceChat, path.join(staging, CHAT_WORKSPACE_DIR), { recursive: true })
     }
@@ -580,7 +597,7 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
     }
 
     if (hasStore) {
-      const problem = await verifyStoreCopy(sourceStore, path.join(staging, STORE_FILE))
+      const problem = await verifyStoreCopy(sourceStore, path.join(staging, storeName))
       if (problem) throw new Error(problem)
     }
     if (hasChat) {
@@ -605,10 +622,24 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
       }
     }
 
-    for (const name of [STORE_FILE, BACKUP_FILE, CHAT_WORKSPACE_DIR, ATTACHMENT_DIR]) {
+    for (const name of [storeName, backupName, CHAT_WORKSPACE_DIR, ATTACHMENT_DIR]) {
       const from = path.join(staging, name)
       if (!fs.existsSync(from)) continue
       const to = path.join(dest, name)
+      if (name === ATTACHMENT_DIR && fs.existsSync(to)) {
+        // Only reachable at the default target, per the rule above: renaming a
+        // directory onto one that exists fails, so the files move one at a time.
+        // A name already there is the same bytes by construction, so the copy in
+        // place wins and nothing is overwritten. Recorded individually, so undo
+        // removes what this move added and not the folder it merged into.
+        for (const entry of await fsp.readdir(from)) {
+          const target = path.join(to, entry)
+          if (fs.existsSync(target)) continue
+          await fsp.rename(path.join(from, entry), target)
+          placed.push(target)
+        }
+        continue
+      }
       await fsp.rename(from, to)
       placed.push(to)
     }

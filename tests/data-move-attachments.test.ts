@@ -12,7 +12,7 @@ import {
   resetDataDir
 } from '../electron/main/data-dir'
 import { parkAttachmentBytes } from '../electron/main/transcript-repair'
-import { readLocalImageSafe } from '../electron/main/ipc/images'
+import { readLocalImageSafe, revealLocalPathSafe } from '../electron/main/ipc/images'
 import type { PromptAttachment } from '../shared/types'
 
 /**
@@ -255,6 +255,174 @@ test('the fallback is scoped to attachment paths and finds nothing else', async 
   const result = readLocalImageSafe(elsewhere)
 
   assert.notEqual(result.error, undefined, 'an unrelated path resolved to a parked attachment')
+})
+
+// ── The folder is not evidence of who filled it ─────────────────────────────
+
+test("A FILE THIS APP DID NOT WRITE IS NOT READABLE JUST FOR SITTING THERE", async () => {
+  // The data directory is user-chosen, so a folder that already had an
+  // `attachments` child before it was picked says nothing about who put what in
+  // it. Containment alone would make that whole subtree readable.
+  const dest = tempDir('gronk-dest-')
+  fs.mkdirSync(attachmentsIn(dest), { recursive: true })
+  fs.writeFileSync(path.join(attachmentsIn(dest), 'holiday.png'), 'theirs')
+  fs.writeFileSync(path.join(attachmentsIn(dest), 'notes.txt'), 'theirs')
+  fs.mkdirSync(path.join(attachmentsIn(dest), 'private'), { recursive: true })
+  fs.writeFileSync(path.join(attachmentsIn(dest), 'private', 'deep.png'), 'theirs')
+  // Reached through the pointer, the way an older build would have left it: the
+  // move itself refuses this destination, and that refusal cannot reach a
+  // pointer already written.
+  fs.writeFileSync(
+    path.join(defaultDir, 'gronk-data-location.json'),
+    JSON.stringify({ version: 1, dataDir: dest })
+  )
+  assert.equal(dataDir(), dest, 'the fixture did not relocate the data directory')
+
+  for (const name of ['holiday.png', 'notes.txt', path.join('private', 'deep.png')]) {
+    const result = readLocalImageSafe(path.join(attachmentsIn(dest), name))
+    assert.notEqual(result.error, undefined, `${name} was served out of a folder we did not fill`)
+    assert.equal(result.dataUrl, undefined)
+  }
+})
+
+test('a PARKED-LOOKING name nested below the folder is still refused', async () => {
+  // Isolates the direct-child half. The test above is carried by the name check
+  // alone, because nothing in it is named the way this app names a file; a
+  // subdirectory holding one that is would pass a recursive test.
+  const dest = tempDir('gronk-dest-')
+  const nested = path.join(attachmentsIn(dest), 'nested')
+  fs.mkdirSync(nested, { recursive: true })
+  const lookalike = path.join(nested, `${'a'.repeat(32)}.png`)
+  fs.writeFileSync(lookalike, 'theirs')
+  fs.writeFileSync(
+    path.join(defaultDir, 'gronk-data-location.json'),
+    JSON.stringify({ version: 1, dataDir: dest })
+  )
+
+  const result = readLocalImageSafe(lookalike)
+
+  assert.notEqual(result.error, undefined, 'a nested lookalike was served')
+  assert.equal(result.dataUrl, undefined)
+})
+
+test('a parked name in that same folder is still readable', async () => {
+  // The other half: narrowing must not break the thing the root exists for.
+  const dest = tempDir('gronk-dest-')
+  fs.mkdirSync(attachmentsIn(dest), { recursive: true })
+  fs.writeFileSync(path.join(attachmentsIn(dest), 'holiday.png'), 'theirs')
+  fs.writeFileSync(
+    path.join(defaultDir, 'gronk-data-location.json'),
+    JSON.stringify({ version: 1, dataDir: dest })
+  )
+  const parked = parkImage()
+
+  const result = readLocalImageSafe(parked)
+
+  assert.equal(result.error, undefined, `a parked image was refused: ${result.error}`)
+  assert.match(result.dataUrl ?? '', /^data:image\/png;base64,/)
+})
+
+test('reveal is bounded by the same rule, not only by containment', async () => {
+  // revealLocalPathSafe has no extension check and does not require a file, so
+  // containment was the only thing bounding it inside this root.
+  const dest = tempDir('gronk-dest-')
+  fs.mkdirSync(path.join(attachmentsIn(dest), 'private'), { recursive: true })
+  fs.writeFileSync(path.join(attachmentsIn(dest), 'notes.txt'), 'theirs')
+  fs.writeFileSync(
+    path.join(defaultDir, 'gronk-data-location.json'),
+    JSON.stringify({ version: 1, dataDir: dest })
+  )
+
+  for (const target of [path.join(attachmentsIn(dest), 'notes.txt'), path.join(attachmentsIn(dest), 'private')]) {
+    const res = revealLocalPathSafe(target)
+    assert.equal(res.ok, false, `${target} was revealed out of a folder we did not fill`)
+  }
+})
+
+// ── Reset must not be wedged by what an older version left behind ───────────
+
+test('RESET STILL WORKS WHEN THE DEFAULT ALREADY HOLDS AN ATTACHMENTS FOLDER', async () => {
+  // A version that moved the store without the attachments left one at the
+  // default location. Refusing there makes Reset permanently dead, and Reset
+  // has a fixed target with no picker, so the message names nothing the user
+  // can do.
+  const stored = parkImage()
+  const name = path.basename(stored)
+  const dest = tempDir('gronk-dest-')
+  await moveDataDir(dest)
+  // The orphan the previous version would have left behind.
+  fs.mkdirSync(attachmentsIn(defaultDir), { recursive: true })
+  fs.writeFileSync(path.join(attachmentsIn(defaultDir), 'older-build.png'), 'left behind')
+
+  const result = await resetDataDir()
+
+  assert.equal(result.ok, true, result.message)
+  assert.equal(dataDir(), defaultDir)
+  assert.equal(
+    fs.existsSync(path.join(attachmentsIn(defaultDir), name)),
+    true,
+    'the moved image did not arrive'
+  )
+  assert.equal(
+    fs.existsSync(path.join(attachmentsIn(defaultDir), 'older-build.png')),
+    true,
+    'the folder it merged into lost a file'
+  )
+})
+
+test('merging keeps the copy already in place, since the name is the content', async () => {
+  const stored = parkImage()
+  const name = path.basename(stored)
+  const dest = tempDir('gronk-dest-')
+  await moveDataDir(dest)
+  fs.mkdirSync(attachmentsIn(defaultDir), { recursive: true })
+  fs.writeFileSync(path.join(attachmentsIn(defaultDir), name), 'ALREADY HERE')
+
+  const result = await resetDataDir()
+
+  assert.equal(result.ok, true, result.message)
+  assert.equal(fs.readFileSync(path.join(attachmentsIn(defaultDir), name), 'utf8'), 'ALREADY HERE')
+})
+
+test('a user-picked destination holding attachments is still refused', async () => {
+  // The narrowing above is for the default target only. Everywhere else the
+  // refusal stands.
+  parkImage()
+  const dest = tempDir('gronk-dest-')
+  fs.mkdirSync(attachmentsIn(dest), { recursive: true })
+
+  const result = await moveDataDir(dest)
+
+  assert.equal(result.ok, false)
+  assert.match(result.message, /already holds an attachments folder/)
+})
+
+// ── A directory predating the rename ────────────────────────────────────────
+
+test('A LEGACY-NAMED STORE MOVES WITH ITS ATTACHMENTS', async () => {
+  // holdsStore and storePath both honour the pre-rename name, so a directory on
+  // it is live. Carrying the attachments and leaving the store behind is the
+  // half of this that becomes destructive once something collects unreferenced
+  // images.
+  const stored = parkImage()
+  const name = path.basename(stored)
+  fs.writeFileSync(path.join(defaultDir, 'grocky-store.json'), '{"sessions":[],"transcripts":{}}')
+  fs.writeFileSync(path.join(defaultDir, 'grocky-store.backup.json'), '{"sessions":[]}')
+  fs.rmSync(path.join(defaultDir, 'gronk-store.json'), { force: true })
+  fs.rmSync(path.join(defaultDir, 'gronk-store.backup.json'), { force: true })
+  const dest = tempDir('gronk-dest-')
+
+  const result = await moveDataDir(dest)
+
+  assert.equal(result.ok, true, result.message)
+  assert.equal(
+    fs.existsSync(path.join(dest, 'grocky-store.json')),
+    true,
+    'the legacy store was left behind while its attachments moved'
+  )
+  assert.equal(fs.existsSync(path.join(dest, 'grocky-store.backup.json')), true)
+  assert.equal(fs.existsSync(path.join(attachmentsIn(dest), name)), true)
+  assert.equal(fs.existsSync(path.join(defaultDir, 'grocky-store.json')), false)
 })
 
 test('a parked name that was never parked is still missing after a move', async () => {

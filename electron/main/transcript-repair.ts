@@ -121,6 +121,26 @@ export function attachmentFileName(base64: string, ext: string): string {
   return `${digest}${ext}`
 }
 
+/** Exactly what `attachmentFileName` produces: 32 hex characters and an image extension. */
+const PARKED_NAME = /^[0-9a-f]{32}(\.[a-z0-9+]+)$/
+
+/**
+ * Could this app have written a file of this name?
+ *
+ * The attachments folder sits under a data directory the user can point
+ * anywhere, so the folder existing says nothing about who filled it. Anything
+ * that reads out of it, or deletes from it, needs a fact about the file rather
+ * than about the folder, and the name is the only one available: this is the
+ * shape `attachmentFileName` produces and a hash nobody types by hand.
+ *
+ * Resemblance rather than proof, and used only to NARROW. It is never grounds
+ * for reaching outside a directory that is already allowed.
+ */
+export function isParkedAttachmentName(name: string): boolean {
+  const match = PARKED_NAME.exec(name)
+  return match !== null && IMAGE_EXT_SET.has(match[1])
+}
+
 /** Writes the bytes somewhere durable and returns the path, or null on failure. */
 export type AttachmentParker = (attachment: PromptAttachment) => string | null
 

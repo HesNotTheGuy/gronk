@@ -12,6 +12,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { agentManager } from '../agent-manager'
 import { ATTACHMENT_DIR, chatWorkspacePath, dataDir, getDataLocation } from '../data-dir'
+import { isParkedAttachmentName } from '../transcript-repair'
+import { pathsEqual } from '../../../shared/path'
 import {
   encodeSessionCwdKey,
   IMAGE_EXT_SET,
@@ -155,21 +157,44 @@ function resolveImageCandidates(filePath: string): string[] {
   return candidates
 }
 
+/**
+ * A parked image in the attachments folder, wherever that folder currently is.
+ *
+ * Deliberately NOT a containment root. `isPathInside` is a recursive prefix
+ * test with no view of what put a file there, and the data directory is chosen
+ * by the user: a folder that already had an `attachments` child before it was
+ * picked would have its whole subtree readable, whatever it held.
+ *
+ * So the guarantee comes from the file rather than from the folder's history.
+ * Two facts, both required: a direct child of the folder, never nested, and a
+ * name only this app produces. Neither is enough alone, and containment is no
+ * longer the only thing standing between the renderer and someone else's files.
+ */
+function isParkedAttachment(resolved: string): boolean {
+  if (!isParkedAttachmentName(path.basename(resolved))) return false
+  const dir = path.join(dataDir(), ATTACHMENT_DIR)
+  const parent = path.dirname(resolved)
+  for (const candidate of [dir, realpathOrSelf(dir)]) {
+    try {
+      if (pathsEqual(parent, candidate)) return true
+    } catch {
+      /* ignore */
+    }
+  }
+  return false
+}
+
 function isAllowedImagePath(resolved: string): boolean {
   // chatWorkspacePath() follows a relocated data dir; userData stays because the
   // pointer file and any pre-move leftovers still live there.
   //
-  // The attachments directory is named exactly, never its parent. It is the one
-  // folder in the data directory this app writes prompt images into, and it is
-  // the same case chatWorkspacePath already covers: both are app-owned folders
-  // inside a data directory the user can relocate from Settings, and both stop
-  // being reachable through the userData root the moment they do. Widening to
-  // dataDir() itself would pull in the store and anything else the user keeps
-  // beside it, so it is the leaf and not the parent.
+  // The attachments folder is handled above rather than listed here, because
+  // being inside it is not evidence of anything: see isParkedAttachment.
+  if (isParkedAttachment(resolved)) return true
+
   const roots: string[] = [
     grokSessionsRoot(),
     chatWorkspacePath(),
-    path.join(dataDir(), ATTACHMENT_DIR),
     app.getPath('userData')
   ]
   const cwd = agentManager.getCwd()
