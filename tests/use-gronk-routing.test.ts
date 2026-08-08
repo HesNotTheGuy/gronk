@@ -187,6 +187,155 @@ test('a renderer that has selected nothing still shows a live agent', async () =
   }
 })
 
+test('THE DELEGATED OPEN DOES NOT LEAVE THE WINDOW OPEN', async () => {
+  // Opening a project with history hands off to selectSession to resume the
+  // latest one. selectSession has early returns that never reach its own
+  // beginSwitch, and openProject has already returned by then, so a switch
+  // opened before the handoff has nothing left that can close it.
+  //
+  // Driven through the auth path, because that is the one that reaches the
+  // handoff and then refuses inside it.
+  let authed = true
+  const h = await mountHook({
+    getAuthStatus: async () =>
+      authed
+        ? { state: 'authenticated', authenticated: true, method: 'session', accountLabel: 'x' }
+        : { state: 'signed-out', authenticated: false, method: 'none', message: 'SIGN IN' },
+    listSessions: async () => [session('latest')]
+  })
+  try {
+    // The sign-in goes stale between opening the project and resuming into it.
+    authed = true
+    await act(async () => {
+      const open = h.hook().openProject('/work/alpha')
+      authed = false
+      await open
+    })
+    await flush()
+    await flush()
+
+    const before = transcript(h)
+    await act(async () => {
+      h.emit(chunk('a-completely-different-session', 'SHOULD NOT APPEAR'))
+    })
+    await flush()
+
+    assert.equal(
+      transcript(h),
+      before,
+      'the delegated open left the window accepting every session'
+    )
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('a project that resumes its latest session still paints it', async () => {
+  // The other side of the same handoff: the ordinary path must keep working.
+  const h = await mountHook({ listSessions: async () => [session('latest')] })
+  try {
+    await act(async () => {
+      await h.hook().openProject('/work/alpha')
+    })
+    await flush()
+    await flush()
+    await act(async () => {
+      h.emit(chunk('latest', 'RESUMED CONVERSATION'))
+    })
+    await flush()
+    assert.match(transcript(h), /RESUMED CONVERSATION/)
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('NO FAILING ENTRY POINT LEAVES THE SWITCH OPEN', async () => {
+  // Three routes open a switch and three can throw, so each is driven rather
+  // than trusting that they look alike. While a switch is open every session's
+  // events are accepted; a failure that does not close it leaves that state in
+  // place for the rest of the run.
+  const routes: [string, (g: Hook) => Promise<unknown>][] = [
+    ['openChat', (g) => g.openChat()],
+    ['openProject', (g) => g.openProject('/work/beta')],
+    ['selectSession', (g) => g.selectSession(session('s1'))]
+  ]
+
+  for (const [name, run] of routes) {
+    const boom = async () => {
+      throw new Error('BOOM')
+    }
+    const h = await mountHook({ startAgent: boom, loadSession: boom })
+    try {
+      await act(async () => {
+        await run(h.hook())
+      })
+      await flush()
+      await flush()
+      assert.equal(h.hook().error, 'BOOM', `${name} did not fail as the fixture intended`)
+
+      const before = transcript(h)
+      await act(async () => {
+        h.emit(chunk('some-other-session', 'SHOULD NOT APPEAR'))
+      })
+      await flush()
+      assert.equal(
+        transcript(h),
+        before,
+        `after ${name} failed the switch was still accepting every session`
+      )
+    } finally {
+      h.unmount()
+      h.restore()
+    }
+  }
+})
+
+test('A REFUSED SIGN-IN IS A FAILED ATTEMPT, NOT AN ABSENT ONE', async () => {
+  // Every entry point checks the sign-in and returns before it would open a
+  // switch. Doing nothing to the focus there is wrong in the quieter direction:
+  // afterwards it reads as "nothing was ever chosen", which accepts every
+  // session's events, and something was chosen and refused.
+  const routes: [string, (g: Hook) => Promise<unknown>][] = [
+    ['openChat', (g) => g.openChat()],
+    ['openProject', (g) => g.openProject('/work/beta')],
+    ['selectSession', (g) => g.selectSession(session('s1'))]
+  ]
+
+  for (const [name, run] of routes) {
+    const h = await mountHook({
+      getAuthStatus: async () => ({
+        state: 'signed-out',
+        authenticated: false,
+        method: 'none',
+        message: 'SIGN IN'
+      })
+    })
+    try {
+      await act(async () => {
+        await run(h.hook())
+      })
+      await flush()
+      assert.equal(h.hook().error, 'SIGN IN', `${name} did not refuse as the fixture intended`)
+
+      const before = transcript(h)
+      await act(async () => {
+        h.emit(chunk('some-other-session', 'SHOULD NOT APPEAR'))
+      })
+      await flush()
+      assert.equal(
+        transcript(h),
+        before,
+        `after ${name} was refused the renderer accepted another session's stream`
+      )
+    } finally {
+      h.unmount()
+      h.restore()
+    }
+  }
+})
+
 test('A FAILED START DOES NOT LEAVE THE SWITCH OPEN FOREVER', async () => {
   // While a switch is in flight everything is accepted, because the id is not
   // known yet. If a failure left that state in place, every later session's
@@ -203,13 +352,22 @@ test('A FAILED START DOES NOT LEAVE THE SWITCH OPEN FOREVER', async () => {
     await flush()
     assert.equal(h.hook().error, 'SPAWN FAILED')
 
-    await selectInto(h, 's1')
+    // Checked here, with nothing in between. An intervening successful switch
+    // settles the focus by itself and hides whether the failure closed it.
     const before = transcript(h)
     await act(async () => {
       h.emit(chunk('some-other-session', 'SHOULD NOT APPEAR'))
     })
     await flush()
     assert.equal(transcript(h), before, 'the switch was still accepting everything')
+
+    // And the failure is not a dead end: choosing again still works.
+    await selectInto(h, 's1')
+    await act(async () => {
+      h.emit(chunk('s1', 'BACK IN BUSINESS'))
+    })
+    await flush()
+    assert.match(transcript(h), /BACK IN BUSINESS/)
   } finally {
     h.unmount()
     h.restore()

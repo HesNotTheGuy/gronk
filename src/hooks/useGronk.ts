@@ -788,6 +788,11 @@ export function useGronk() {
       const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
+        // An attempt to change session that failed, so it settles rather than
+        // being left as though nothing was ever tried. Nothing is on screen and
+        // no id was established, so a settled focus holding none refuses every
+        // named event, which is what should happen.
+        focusRef.current = confirmSwitch(focusRef.current, null)
         failAttempt(
           'agent',
           authNow.message ||
@@ -823,10 +828,6 @@ export function useGronk() {
         return
       }
 
-      // The session id does not exist yet: this starts an agent, and the id
-      // comes back from the boot. Until then the switch accepts anything.
-      focusRef.current = beginSwitch(null)
-
       // Switch chrome immediately so the skeleton has somewhere to live.
       setSurface('project')
       setBrowsing(false)
@@ -846,6 +847,12 @@ export function useGronk() {
       // Opening a project with history should resume the latest session, not
       // dump you on the empty "What should we build?" state. New session stays
       // explicit (New session / forceNew).
+      //
+      // No switch is open across this handoff, deliberately. selectSession owns
+      // the whole thing when it takes over, and it has early returns of its own
+      // that never reach its `beginSwitch`. A switch opened here would be left
+      // open by those, with this function already returned and unable to close
+      // it, and an open switch accepts every session's events for good.
       if (!opts?.forceNew && selectSessionRef.current) {
         try {
           const sessions = await window.gronk.listSessions()
@@ -861,6 +868,10 @@ export function useGronk() {
         }
       }
 
+      // Past every route out of here: this call is starting the agent itself,
+      // so this is where the switch belongs. The id does not exist yet and
+      // comes back from the boot.
+      focusRef.current = beginSwitch(null)
       setMessages([])
       setSessionId(null)
       setBusy(false)
@@ -898,6 +909,7 @@ export function useGronk() {
       const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
+        focusRef.current = confirmSwitch(focusRef.current, null)
         failAttempt(
           'agent',
           authNow.message ||
@@ -1034,6 +1046,10 @@ export function useGronk() {
       const authNow = await window.gronk.getAuthStatus()
       setAuth(authNow)
       if (!authNow.authenticated) {
+        // Reached by delegation as well as directly: opening a project resumes
+        // its latest session through here, and this return is one of the two
+        // that never gets as far as opening a switch below.
+        focusRef.current = confirmSwitch(focusRef.current, null)
         failAttempt(
           'agent',
           authNow.message ||

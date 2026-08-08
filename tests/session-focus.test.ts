@@ -64,24 +64,45 @@ test('CONFIRMING NOTHING STILL CLOSES THE WINDOW, so a failure cannot leave it o
   // A start that throws has no id coming. Left open, the switch would go on
   // accepting every session's events for the rest of the session.
   const failed = confirmSwitch(beginSwitch('a'), null)
-  assert.equal(failed.awaiting, false)
+  assert.equal(failed.state, 'settled')
   assert.equal(belongsToFocus(failed, 'a'), true, 'the requested id is still the one on screen')
   assert.equal(belongsToFocus(failed, 'b'), false)
 })
 
-test('a failed start with no requested id falls back to accepting, not rejecting', () => {
-  // Nothing was ever established, so there is no conversation on screen for a
-  // stray event to be mistaken for.
+test('A FAILED START HOLDS NO IDS AND REFUSES ANYWAY', () => {
+  // The pair below is the whole reason `settled` is a state rather than the
+  // absence of `switching`. Both focuses hold an empty id list and they get
+  // opposite answers.
+  //
+  // Opening a chat that throws leaves nothing on screen. Another session's
+  // stream arriving would paint a conversation the user never opened and make
+  // the failure look like it had worked.
   const failed = confirmSwitch(beginSwitch(null), null)
-  assert.equal(belongsToFocus(failed, 'anything'), true)
+  assert.deepEqual(failed.ids, [])
+  assert.equal(belongsToFocus(failed, 'anything'), false)
 })
 
-test('A RENDERER THAT HAS SELECTED NOTHING ACCEPTS EVERYTHING', () => {
-  // Not the same as one that has selected something else. A window recreated
-  // while main still has a live agent keeps receiving that agent's stream, and
-  // it is the only conversation there is; rejecting by default would blank it.
+test('a renderer that has never chosen holds no ids and accepts', () => {
+  // Same empty list, opposite answer. A window recreated while main still has a
+  // live agent keeps receiving that agent's stream, and it is the only
+  // conversation there is; refusing would leave the window blank beside a
+  // working agent.
+  assert.deepEqual(NO_FOCUS.ids, [])
   assert.equal(belongsToFocus(NO_FOCUS, 'a'), true)
   assert.equal(belongsToFocus(NO_FOCUS, undefined), true)
+})
+
+test('emptiness is never the thing being read', () => {
+  // Guards the shape rather than one case: if the decision ever goes back to
+  // asking whether the list is empty, these two stop disagreeing and the
+  // failed-start hole reopens silently.
+  const failed = confirmSwitch(beginSwitch(null), null)
+  assert.equal(failed.ids.length, NO_FOCUS.ids.length)
+  assert.notEqual(
+    belongsToFocus(failed, 'x'),
+    belongsToFocus(NO_FOCUS, 'x'),
+    'two focuses holding no ids were treated the same'
+  )
 })
 
 test('confirming the same id twice does not duplicate it', () => {
