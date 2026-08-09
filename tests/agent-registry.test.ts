@@ -15,12 +15,13 @@ import type {
  * This is the half of the feature a user sees, and it was the half nothing
  * could reach: a real session owns a CLI child, so no test can construct one.
  * The registry takes a factory for that reason, and what is driven here is the
- * orchestration — who is stopped, who is told what, and which events get out.
+ * orchestration: who is stopped, who is told what, and which events get out.
  */
 
 interface Fake extends ManagedSession {
   readonly id: string
   stopped: number
+  loads: number
   reemitted: number
   emit(event: MainToRendererEvent): void
   setState(state: ConnectionState): void
@@ -38,6 +39,7 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
   const self: Fake = {
     id,
     stopped: 0,
+    loads: 0,
     reemitted: 0,
     emit: (event) => sink?.(event),
     setState: (next) => {
@@ -72,6 +74,7 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
       return { sessionId: id }
     },
     loadSession: async () => {
+      self.loads += 1
       started = true
       state = 'ready'
       sink?.({ type: 'connection', state: 'ready', sessionId: id })
@@ -127,10 +130,12 @@ test('opening a session that is already live focuses it rather than reloading', 
   const { registry } = harness(a)
   await registry.start('/work/alpha', { surface: 'project' })
 
+  const before = a.loads
   const result = await registry.loadSession('a')
 
   assert.deepEqual(result, { sessionId: 'a', restored: true })
   assert.equal(a.stopped, 0)
+  assert.equal(a.loads, before, 'a live session was reloaded, losing the turn in flight')
 })
 
 test('a second start for the same folder returns to the session already running', async () => {
@@ -149,7 +154,7 @@ test('a second start for the same folder returns to the session already running'
 
 test('A BACKGROUND SESSION DOES NOT NARRATE OVER THE ONE ON SCREEN', async () => {
   // Connection events drive whether the composer is usable, and the renderer
-  // accepts an unattributed one — which is what boot produces — unconditionally.
+  // accepts an unattributed one (which is what boot produces) unconditionally.
   const a = fakeSession('a', '/work/alpha')
   const b = fakeSession('b', '/work/beta')
   const { registry, sent } = harness(a, b)
@@ -234,15 +239,26 @@ test('a stopped session is reported as no longer live', async () => {
 test('STOPPING A NAMED SESSION LEAVES THE OTHERS ALONE', async () => {
   const a = fakeSession('a', '/work/alpha')
   const b = fakeSession('b', '/work/beta')
-  const { registry } = harness(a, b)
+  const { registry, sent } = harness(a, b)
   await registry.start('/work/alpha', { surface: 'project' })
   await registry.start('/work/beta', { surface: 'project' })
   registry.focus('a')
 
+  sent.length = 0
   await registry.stop('b')
 
   assert.equal(b.stopped, 1)
   assert.equal(a.stopped, 0, 'stopping a background session took the foreground down')
+
+  // Every connection event the stop produced has to name the session it is
+  // about. An unattributed one is accepted by whatever is on screen, so it
+  // would read as the FOREGROUND going idle.
+  const unnamed = sent.filter((e) => e.type === 'connection' && !e.sessionId)
+  assert.deepEqual(unnamed, [], 'a stop emitted a connection state with nothing naming it')
+  assert.ok(
+    sent.some((e) => e.type === 'connection' && e.sessionId === 'b' && e.state === 'idle'),
+    'nothing told the renderer that b had stopped'
+  )
 })
 
 test('FOCUSING A BLOCKED SESSION PUTS ITS REQUEST BACK ON SCREEN', async () => {
@@ -278,15 +294,20 @@ test('quitting stops every session, not just the one on screen', async () => {
   assert.equal(b.stopped, 1)
 })
 
-test('a data move is refused while ANY session is live, not just the focused one', async () => {
+test('A DATA MOVE IS REFUSED WHILE ANY SESSION IS LIVE, not just the focused one', async () => {
+  // The question is whether a child process still has these files open, and a
+  // background session holds them just as firmly. Driven with the FOCUSED
+  // session idle, so answering for the focused one alone gives the wrong answer.
   const a = fakeSession('a', '/work/alpha')
   const b = fakeSession('b', '/work/beta')
   const { registry } = harness(a, b)
   await registry.start('/work/alpha', { surface: 'project' })
   await registry.start('/work/beta', { surface: 'project' })
   registry.focus('a')
+  a.setState('idle')
 
-  assert.equal(registry.isAnyBusy(), true)
+  assert.equal(registry.isAnyBusy(), true, 'a live background session was not counted')
+
   await registry.stopAll()
   assert.equal(registry.isAnyBusy(), false)
 })

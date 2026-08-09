@@ -1175,8 +1175,8 @@ export class AgentManager {
  *
  * Every no-argument reader here answers **for the focused session**, which is
  * exactly what it meant when there could only be one. That is what lets the
- * folder-scoped callers — the image roots, the git views, the project file list
- * — go on asking `getCwd()` with no argument while they are moved separately.
+ * folder-scoped callers (the image roots, the git views, the project file
+ * list) go on asking `getCwd()` with no argument while they are moved separately.
  *
  * Two rules live here because only something holding every session can apply
  * them:
@@ -1445,13 +1445,19 @@ export class AgentRegistry {
     const id = sessionId ?? this.focusedId
     const manager = id ? this.sessions.get(id) : this.focused()
     if (!manager) return
-    await manager.stop()
     const key = id ?? manager.getSessionId()
+    await manager.stop()
     if (key) {
       this.sessions.delete(key)
       if (this.liveness.delete(key)) {
         this.send({ type: 'session-liveness', sessionId: key, liveness: null })
       }
+      // Named here as well as inside the session. Teardown clears the id, so a
+      // terminal state emitted after it has nothing to attribute it to, and an
+      // unattributed connection event is taken by whatever is on screen, so
+      // stopping a background session would blank the composer of the one being
+      // watched.
+      this.send({ type: 'connection', state: 'idle', sessionId: key })
       if (this.focusedId === key) this.focusedId = null
     }
     if (this.booting === manager) this.booting = null

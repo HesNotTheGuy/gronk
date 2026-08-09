@@ -2313,7 +2313,7 @@ button {
 }
 
 /* Waiting on a person. The one state that needs somebody, so it takes the
-   abort accent and does NOT pulse — a working row and a stuck row have to be
+   abort accent and does NOT pulse: a working row and a stuck row have to be
    tellable apart at a glance, and two pulsing dots are not. */
 .session-live-blocked {
   background: var(--abort);

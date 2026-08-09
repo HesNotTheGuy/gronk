@@ -2,7 +2,7 @@
  * What a session is doing, and whose events reach the renderer.
  *
  * Both decisions live here rather than inside the registry because nothing in
- * the test suite can construct an `AgentManager` — it owns a CLI child process.
+ * the test suite can construct an `AgentManager`: it owns a CLI child process.
  * Left as methods they would be the only untested part of the feature, which is
  * how the visible half of this change could ship broken while every test passed.
  */
@@ -13,7 +13,7 @@ import type { ConnectionState, MainToRendererEvent, SessionLiveness } from '../.
  * The three answers a sidebar row can give.
  *
  * `blocked` beats `working` deliberately. A session waiting on a permission has
- * a turn open, so by the raw facts it is working — and from outside those two
+ * a turn open, so by the raw facts it is working, and from outside those two
  * look identical. Only one of them needs a person, and that is the whole reason
  * the indicator has more than one state.
  *
