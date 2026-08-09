@@ -40,6 +40,17 @@ import { ATTACHMENT_DIR, dataDir } from './data-dir'
 export { ATTACHMENT_DIR }
 
 /**
+ * Written beside the parked bytes to say this folder is one this app made.
+ *
+ * The data directory can be pointed anywhere, so the folder's name is not
+ * evidence of anything on its own. Anything that deletes from it needs to know
+ * the difference between this app's folder and a stranger's that happens to be
+ * called the same thing, and the moment the folder is created is the only one
+ * where that is known for certain.
+ */
+export const OWNERSHIP_MARKER = '.gronk-attachments'
+
+/**
  * Drop repeated tool calls, keeping the FIRST message each one appeared in.
  *
  * Collapsing by `toolCallId` across the whole transcript rather than within a
@@ -217,8 +228,33 @@ export function parkAttachmentBytes(attachment: PromptAttachment): string | null
   try {
     const dir = path.join(dataDir(), ATTACHMENT_DIR)
     const file = path.join(dir, attachmentFileName(base64, ext))
-    if (fs.existsSync(file)) return file
+    if (fs.existsSync(file)) {
+      // Same bytes, so there is nothing to write. The timestamp is still moved
+      // forward, because it is what the collector reads to decide a file is old
+      // enough that no save can be about to reference it. Attaching an image
+      // somebody else already attached is a new reference to an old file, and
+      // leaving the original time on it makes the newest reference look like
+      // the oldest. Best effort: a clock that cannot be set is a file the
+      // collector may take, and it will be re-parked from bytes still in the
+      // message rather than lost.
+      try {
+        const now = new Date()
+        fs.utimesSync(file, now, now)
+      } catch {
+        /* the reference stands whether or not the time could be refreshed */
+      }
+      return file
+    }
     fs.mkdirSync(dir, { recursive: true })
+    // Claim the folder before putting anything in it. Best effort: failing to
+    // write a marker must never cost the user an image, and a folder without one
+    // is simply never collected from.
+    try {
+      const marker = path.join(dir, OWNERSHIP_MARKER)
+      if (!fs.existsSync(marker)) fs.writeFileSync(marker, '')
+    } catch {
+      /* the bytes matter, the marker does not */
+    }
     fs.writeFileSync(file, Buffer.from(base64, 'base64'))
     return file
   } catch {

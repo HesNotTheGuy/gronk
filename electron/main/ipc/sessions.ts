@@ -7,6 +7,7 @@ import { app, dialog, ipcMain } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { agentManager } from '../agent-manager'
+import { scheduleAttachmentSweep } from '../attachment-gc'
 import { getAuthStatus } from '../auth'
 import { exportTranscriptMarkdown } from '../fs-utils'
 import { assertTrustedSender } from '../ipc-guard'
@@ -89,7 +90,18 @@ export function registerSessionsIpc(ctx: IpcContext): void {
 
   ipcMain.handle('gronk:delete-session', (e, sessionId: string) => {
     assertTrustedSender(e)
-    return deleteSession(assertString(sessionId, 'sessionId'))
+    const sessions = deleteSession(assertString(sessionId, 'sessionId'))
+    // After the store is written, never before: the sweep reads the file to
+    // work out what is still referenced. Not awaited, so a slow disk cannot
+    // hold up the reply and a failed sweep cannot fail the delete.
+    //
+    // This will usually NOT collect what was just deleted. `writeStore` rolls
+    // the previous copy into the backup first, so immediately after a delete
+    // the backup is the copy that still has the session, and a picture stays
+    // while anything can still restore it. This call collects the generation
+    // before; the sweep on launch collects the rest.
+    void scheduleAttachmentSweep()
+    return sessions
   })
 
   ipcMain.handle('gronk:rename-session', (e, sessionId: string, title: string) => {

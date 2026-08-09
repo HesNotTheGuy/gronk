@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, session, shell } from 'electron'
 import path from 'node:path'
 import { agentManager } from './agent-manager'
+import { scheduleAttachmentSweep } from './attachment-gc'
 import { getAuthStatus, invalidateAuthCache } from './auth'
 import { shouldRefreshOnFocus } from './auth-decision'
 import { invalidateCliVersionCache } from './cli-version'
@@ -321,6 +322,15 @@ app.whenReady().then(() => {
   setupApplicationMenu()
   registerIpc()
   createWindow()
+
+  // Sweep parked attachments once per launch, well behind the window.
+  //
+  // Deleting a session is not the only way a picture loses its last reference:
+  // trimming a transcript to its last 200 messages does it too, and that
+  // happens with nobody watching. A launch is also the one moment no save is
+  // in flight. Deferred so it competes with nothing the user is waiting for,
+  // and never awaited.
+  setTimeout(() => void scheduleAttachmentSweep(), 30_000).unref?.()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
