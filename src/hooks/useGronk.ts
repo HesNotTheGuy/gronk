@@ -1139,8 +1139,13 @@ export function useGronk() {
         void window.gronk.focusSession(result.sessionId)
         setSessionId(result.sessionId)
         await refreshMeta()
-        // history-done also clears hydrating; keep this as a safety net if
-        // the event was missed (e.g. empty restore paths).
+        // history-done clears both of these; keep them here as a safety net for
+        // the paths where it never arrives (e.g. an empty restore). They are set
+        // together and cleared by the same event, so they are cleared together
+        // here too. `busy` is the one that matters most: a stuck `hydrating`
+        // shows a skeleton, a stuck `busy` disables the composer for a session
+        // that is otherwise perfectly usable.
+        setBusy(false)
         setHydrating(false)
       } catch (err) {
         focusRef.current = confirmSwitch(focusRef.current, null)

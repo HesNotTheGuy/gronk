@@ -414,6 +414,29 @@ test('A FAILED START DOES NOT LEAVE THE SWITCH OPEN FOREVER', async () => {
   }
 })
 
+test('A COMPLETED SWITCH NEVER LEAVES THE COMPOSER DISABLED', async () => {
+  // `busy` is raised at the top of selectSession and lowered by exactly three
+  // events: history-done, message-done and error. Nothing on the success path
+  // lowers it, so a switch whose history-done never arrives would leave the
+  // composer disabled for a session that is otherwise perfectly usable, with no
+  // way back except switching again. `hydrating` is raised and lowered by the
+  // same event and has had a safety net here for longer; this asserts the pair
+  // stays even, because the one without the net is the one whose failure the
+  // user cannot see a cause for.
+  //
+  // The fake bridge resolves loadSession without emitting history-done, which is
+  // exactly the shape being guarded against, so this drives it by construction.
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    assert.equal(h.hook().busy, false, 'the session opened with its composer disabled')
+    assert.equal(h.hook().hydrating, false, 'the session opened stuck on its skeleton')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
 test('reselecting the session already open does not reopen the switch', async () => {
   // needsSessionReload skips the work for a healthy current session. Opening a
   // switch before that check would leave one open with nothing to close it.
