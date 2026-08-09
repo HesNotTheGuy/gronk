@@ -3,7 +3,8 @@ import type {
   AppSurface,
   ProjectContext,
   SessionInfo,
-  SessionSearchHit
+  SessionSearchHit,
+  SessionLiveness
 } from '../../shared/types'
 import { SessionRow } from './SessionRow'
 import { folderName, isChatSession } from '../../shared/path'
@@ -50,6 +51,10 @@ interface Props {
   onArchiveSession: (id: string) => void
   onExportSession: (id: string, format: 'md' | 'json') => void
   onDeleteSession: (id: string) => void
+  /** What each live session is doing, keyed by id. Absent means not running. */
+  sessionLiveness?: Record<string, SessionLiveness>
+  /** Stop a session's agent from its row, without opening it. */
+  onStopSession?: (id: string) => void
   /**
    * Still accepted so App does not fork its props shape; project pin/remove live
    * on the Build browse screen and project menus there, not on this session rail.
@@ -131,6 +136,8 @@ export function Sidebar({
   onArchiveSession,
   onExportSession,
   onDeleteSession,
+  sessionLiveness,
+  onStopSession,
   onRemoveProject: _onRemoveProject,
   onPinProject: _onPinProject,
   onOpenPlugins,
@@ -364,6 +371,8 @@ export function Sidebar({
                       onArchive={() => onArchiveSession(s.id)}
                       onExport={(f) => onExportSession(s.id, f)}
                       onDelete={() => onDeleteSession(s.id)}
+                      liveness={sessionLiveness?.[s.id] ?? null}
+                      onStop={onStopSession ? () => onStopSession(s.id) : undefined}
                     />
                   )
                 })
@@ -434,6 +443,8 @@ export function Sidebar({
                       onArchive={() => onArchiveSession(s.id)}
                       onExport={(f) => onExportSession(s.id, f)}
                       onDelete={() => onDeleteSession(s.id)}
+                      liveness={sessionLiveness?.[s.id] ?? null}
+                      onStop={onStopSession ? () => onStopSession(s.id) : undefined}
                     />
                   ))
                 )}
@@ -535,6 +546,8 @@ export function Sidebar({
                     onArchive={() => onArchiveSession(s.id)}
                     onExport={(f) => onExportSession(s.id, f)}
                     onDelete={() => onDeleteSession(s.id)}
+                      liveness={sessionLiveness?.[s.id] ?? null}
+                      onStop={onStopSession ? () => onStopSession(s.id) : undefined}
                   />
                 )
               })
@@ -559,6 +572,8 @@ export function Sidebar({
                         onArchive={() => onArchiveSession(s.id)}
                         onExport={(f) => onExportSession(s.id, f)}
                         onDelete={() => onDeleteSession(s.id)}
+                      liveness={sessionLiveness?.[s.id] ?? null}
+                      onStop={onStopSession ? () => onStopSession(s.id) : undefined}
                       />
                     )
                   })}

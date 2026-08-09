@@ -153,7 +153,7 @@ export function registerSystemIpc(ctx: IpcContext): void {
   ipcMain.handle('gronk:logout', async (e) => {
     assertTrustedSender(e)
     try {
-      await agentManager.stop()
+      await agentManager.stopAll()
     } catch {
       /* best effort */
     }

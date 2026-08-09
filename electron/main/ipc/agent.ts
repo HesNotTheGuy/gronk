@@ -13,6 +13,7 @@ import {
   assertCliName,
   assertOneOf,
   assertOptionalAttachments,
+  assertOptionalString,
   assertPlainObject,
   assertRequestId,
   assertString
@@ -73,25 +74,33 @@ export function registerAgentIpc(): void {
       // absent override against the store itself via requestedPermissionMode.
       const alwaysApprove = options?.alwaysApprove
 
-      if (
-        !options?.forceNew &&
-        agentManager.getConnectionState() === 'ready' &&
-        agentManager.getCwd() &&
-        normalizeCwd(agentManager.getCwd()!) === normalized &&
-        agentManager.getSessionId() &&
-        agentManager.getSurface() === surface &&
-        (!model || model === agentManager.getCurrentModel())
-      ) {
-        return { sessionId: agentManager.getSessionId()! }
-      }
-
-      return agentManager.start(normalized, { model, alwaysApprove, surface })
+      // Reuse now means "is a session for this folder already live", which the
+      // registry answers because it holds all of them. Nothing is stopped to
+      // make room: a session the user walked away from goes on working.
+      return agentManager.start(normalized, {
+        model,
+        alwaysApprove,
+        surface,
+        forceNew: options?.forceNew === true
+      })
     }
   )
 
-  ipcMain.handle('gronk:stop-agent', async (e) => {
+  ipcMain.handle('gronk:stop-agent', async (e, sessionId?: unknown) => {
     assertTrustedSender(e)
-    return agentManager.stop()
+    // Named to stop a session without opening it; unnamed still means the one
+    // on screen, which is what every existing caller intends.
+    return agentManager.stop(assertOptionalString(sessionId, 'sessionId') ?? null)
+  })
+
+  ipcMain.handle('gronk:focus-session', (e, sessionId?: unknown) => {
+    assertTrustedSender(e)
+    agentManager.focus(assertOptionalString(sessionId, 'sessionId') ?? null)
+  })
+
+  ipcMain.handle('gronk:get-session-liveness', (e) => {
+    assertTrustedSender(e)
+    return agentManager.getLiveness()
   })
 
   ipcMain.handle('gronk:send-prompt', (e, text: unknown, options?: unknown) => {
@@ -102,21 +111,29 @@ export function registerAgentIpc(): void {
     // the agent and the transcript.
     const raw = options === undefined || options === null ? {} : assertPlainObject(options, 'options')
     const attachments = assertOptionalAttachments(raw.attachments, 'attachments')
-    return agentManager.sendPrompt(text, { attachments })
+    const sessionId = assertOptionalString(raw.sessionId, 'sessionId')
+    return agentManager.sendPrompt(text, { attachments }, sessionId ?? null)
   })
 
-  ipcMain.handle('gronk:cancel-prompt', async (e) => {
+  ipcMain.handle('gronk:cancel-prompt', async (e, sessionId?: unknown) => {
     assertTrustedSender(e)
-    return agentManager.cancelPrompt()
+    return agentManager.cancelPrompt(assertOptionalString(sessionId, 'sessionId') ?? null)
   })
 
-  ipcMain.handle('gronk:respond-permission', (e, requestId: unknown, decision: unknown) => {
-    assertTrustedSender(e)
-    agentManager.respondPermission(
-      assertRequestId(requestId, 'requestId'),
-      assertOneOf(decision, 'decision', PERMISSION_DECISIONS)
-    )
-  })
+  ipcMain.handle(
+    'gronk:respond-permission',
+    (e, requestId: unknown, decision: unknown, sessionId?: unknown) => {
+      assertTrustedSender(e)
+      // The session is part of the address, not a hint. Request ids are chosen
+      // by each CLI child and start at one, so two live sessions use the same
+      // small integers and the id alone names two different requests.
+      agentManager.respondPermission(
+        assertRequestId(requestId, 'requestId'),
+        assertOneOf(decision, 'decision', PERMISSION_DECISIONS),
+        assertOptionalString(sessionId, 'sessionId') ?? null
+      )
+    }
+  )
 
   ipcMain.handle('gronk:get-connection-state', (e) => {
     assertTrustedSender(e)

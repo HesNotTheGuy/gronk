@@ -9,6 +9,7 @@ import type {
   PermissionRequest,
   PromptAttachment,
   SessionInfo,
+  SessionLiveness,
   SessionUsage,
   ToolCallInfo
 } from '../../shared/types'
@@ -107,6 +108,15 @@ export function useGronk() {
    */
   const [hydrating, setHydrating] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  /**
+   * What every live session is doing, keyed by id.
+   *
+   * The only thing in this hook that describes sessions other than the one on
+   * screen. Everything else here is singular on purpose: the focus gate below
+   * guarantees a background session never writes the transcript, and making
+   * those maps would multiply the surface without PR 2 needing it.
+   */
+  const [sessionLiveness, setSessionLiveness] = useState<Record<string, SessionLiveness>>({})
   const [historySource, setHistorySource] = useState<string | null>(null)
   /** Token/cost totals for the live session: null until the first turn completes. */
   const [usage, setUsage] = useState<SessionUsage | null>(null)
@@ -405,6 +415,19 @@ export function useGronk() {
       // and a state update scheduled by the click is not visible to an event
       // that arrives before React re-renders. Every event below this line has
       // been attributed.
+      // Liveness is about sessions the user is NOT looking at, so it is read
+      // before the focus gate rather than after it. Everything below that line
+      // describes the conversation on screen; this describes the sidebar.
+      if (event.type === 'session-liveness') {
+        setSessionLiveness((prev) => {
+          const next = { ...prev }
+          if (event.liveness === null) delete next[event.sessionId]
+          else next[event.sessionId] = event.liveness
+          return next
+        })
+        return
+      }
+
       if (!belongsToFocus(focusRef.current, sessionIdOf(event))) return
 
       switch (event.type) {
@@ -886,6 +909,7 @@ export function useGronk() {
           surface: 'project'
         })
         focusRef.current = confirmSwitch(focusRef.current, id)
+        void window.gronk.focusSession(id)
         setSessionId(id)
         await refreshMeta()
         setHydrating(false)
@@ -962,6 +986,7 @@ export function useGronk() {
           surface: 'chat'
         })
         focusRef.current = confirmSwitch(focusRef.current, id)
+        void window.gronk.focusSession(id)
         setSessionId(id)
         await refreshMeta()
       } catch (err) {
@@ -1106,6 +1131,7 @@ export function useGronk() {
 
         const result = await window.gronk.loadSession(session.id)
         focusRef.current = confirmSwitch(focusRef.current, result.sessionId)
+        void window.gronk.focusSession(result.sessionId)
         setSessionId(result.sessionId)
         await refreshMeta()
         // history-done also clears hydrating; keep this as a safety net if
@@ -1171,7 +1197,10 @@ export function useGronk() {
       }
 
       try {
-        const { messageId } = await window.gronk.sendPrompt(trimmed, { attachments })
+        const { messageId } = await window.gronk.sendPrompt(trimmed, {
+          attachments,
+          ...(sessionId ? { sessionId } : {})
+        })
         setMessages((prev) => {
           const next = prev.map((m) =>
             m.id === userId ? { ...m, sendStatus: 'sent' as const, error: undefined } : m
@@ -1241,14 +1270,18 @@ export function useGronk() {
   )
 
   const cancel = useCallback(async () => {
-    await window.gronk.cancelPrompt()
+    await window.gronk.cancelPrompt(sessionId ?? undefined)
     setBusy(false)
   }, [])
 
   const respondPermission = useCallback(
     async (decision: 'allow-once' | 'allow-always' | 'allow-session' | 'reject-once') => {
       if (!permission) return
-      await window.gronk.respondPermission(permission.requestId, decision)
+      await window.gronk.respondPermission(
+        permission.requestId,
+        decision,
+        permission.sessionId || undefined
+      )
       setPermission(null)
       void refreshAudit()
     },
@@ -1305,6 +1338,22 @@ export function useGronk() {
       }
     },
     [sessionId, setSessions, restartAgent]
+  )
+
+  /**
+   * Stop a session without opening it.
+   *
+   * Named explicitly rather than relying on the focused session, because the
+   * whole point is acting on a row that is not on screen. The catalog is
+   * refreshed afterwards so the row stops reading as live even if the liveness
+   * event is missed.
+   */
+  const stopSession = useCallback(
+    async (id: string) => {
+      await window.gronk.stopAgent(id)
+      await refreshSessions()
+    },
+    [refreshSessions]
   )
 
   const projectName = useMemo(() => {
@@ -1367,6 +1416,8 @@ export function useGronk() {
     deleteSession,
     archiveSession,
     setError,
+    sessionLiveness,
+    stopSession,
     refreshMeta
   }
 }

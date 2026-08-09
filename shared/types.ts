@@ -8,6 +8,16 @@ export type PermissionMode =
   | 'bypassPermissions'
   | 'plan'
 
+/**
+ * What a live session is doing, as the sidebar shows it.
+ *
+ * Three answers, and the order matters when they overlap: a session that is
+ * waiting on the user is `blocked` even though a turn is open, because that is
+ * the one the user has to act on. `working` is a turn in flight. `idle` is an
+ * agent that is up with nothing to do.
+ */
+export type SessionLiveness = 'idle' | 'working' | 'blocked'
+
 export type ConnectionState =
   | 'idle'
   | 'starting'
@@ -591,6 +601,15 @@ export type MainToRendererEvent =
     }
   | { type: 'preview-log'; text: string }
   | { type: 'usage'; sessionId: string; usage: SessionUsage }
+  /**
+   * What a live session is doing, for the sidebar.
+   *
+   * `null` means it is no longer live. Deliberately NOT a member of
+   * `ConnectionState`: that union answers "can this session be typed into",
+   * every arm of it is enumerated by hand in several places, and a session that
+   * is working is `ready` for all of them.
+   */
+  | { type: 'session-liveness'; sessionId: string; liveness: SessionLiveness | null }
 
 // ── Plugins & Skills (Grok CLI plugin system) ──────────────────────
 export type PluginStatus = 'installed' | 'available' | 'disabled'
@@ -683,6 +702,8 @@ export interface McpAddInput {
 
 export interface SendPromptOptions {
   attachments?: PromptAttachment[]
+  /** Which session to send to. Absent means the one on screen. */
+  sessionId?: string
 }
 
 /** Working-tree change kinds, as `git status` reports them. */
@@ -770,15 +791,25 @@ export interface GronkApi {
   ) => Promise<{ sessionId: string }>
   /** Dedicated sandbox folder for general chat sessions (not a user project) */
   getChatWorkspacePath: () => Promise<string>
-  stopAgent: () => Promise<void>
+  /** Named to stop a background session; unnamed stops the one on screen. */
+  stopAgent: (sessionId?: string) => Promise<void>
+  /** Which session's events are the conversation on screen. */
+  focusSession: (sessionId: string | null) => Promise<void>
+  getSessionLiveness: () => Promise<Record<string, SessionLiveness>>
   sendPrompt: (
     text: string,
     options?: SendPromptOptions
   ) => Promise<{ messageId: string }>
-  cancelPrompt: () => Promise<void>
+  cancelPrompt: (sessionId?: string) => Promise<void>
+  /**
+   * `sessionId` is part of the address rather than a hint: request ids are
+   * chosen per CLI child and start at one, so two live sessions use the same
+   * numbers for different requests.
+   */
   respondPermission: (
     requestId: number | string,
-    decision: PermissionDecision
+    decision: PermissionDecision,
+    sessionId?: string
   ) => Promise<void>
   listSessions: () => Promise<SessionInfo[]>
   loadSession: (sessionId: string) => Promise<{ sessionId: string; restored: boolean }>
