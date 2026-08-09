@@ -27,6 +27,8 @@ interface Fake extends ManagedSession {
   setState(state: ConnectionState): void
   setPending(pending: boolean): void
   setTurn(open: boolean): void
+  /** Change the turn without emitting, the way the real session clears it. */
+  setTurnSilently(open: boolean): void
 }
 
 function fakeSession(id: string, cwd = '/work/alpha'): Fake {
@@ -53,6 +55,9 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
     setTurn: (value) => {
       turn = value
       sink?.({ type: 'connection', state, sessionId: id })
+    },
+    setTurnSilently: (value) => {
+      turn = value
     },
     setWindow: () => {},
     setEmitSink: (next) => {
@@ -102,6 +107,15 @@ function harness(...sessions: Fake[]) {
   } as never)
   return { registry, sent, sessions }
 }
+
+/**
+ * Let the registry look at liveness again.
+ *
+ * It recomputes on a microtask rather than while an event is being emitted,
+ * because a session emits the end of a turn and then clears it, and reading in
+ * between sees the turn still open.
+ */
+const settle = () => Promise.resolve()
 
 const liveness = (sent: MainToRendererEvent[]) =>
   sent.filter((e): e is Extract<MainToRendererEvent, { type: 'session-liveness' }> =>
@@ -195,6 +209,7 @@ test('a session reports what it is doing, and only when it changes', async () =>
   sent.length = 0
   a.setTurn(true)
   a.setTurn(true)
+  await settle()
 
   const reports = liveness(sent)
   assert.deepEqual(
@@ -212,6 +227,7 @@ test('WAITING ON A PERSON IS NOT REPORTED AS WORKING', async () => {
   sent.length = 0
 
   a.setPending(true)
+  await settle()
 
   assert.deepEqual(
     liveness(sent).map((r) => r.liveness),
@@ -224,6 +240,7 @@ test('a stopped session is reported as no longer live', async () => {
   const { registry, sent } = harness(a)
   await registry.start('/work/alpha', { surface: 'project' })
   a.setTurn(true)
+  await settle()
   sent.length = 0
 
   await registry.stop('a')
@@ -310,6 +327,62 @@ test('A DATA MOVE IS REFUSED WHILE ANY SESSION IS LIVE, not just the focused one
 
   await registry.stopAll()
   assert.equal(registry.isAnyBusy(), false)
+})
+
+// ── The two states where "the foreground session" stops having an answer ────
+
+test('A SESSION THAT FINISHES A TURN GOES BACK TO IDLE', async () => {
+  // A session emits the end of a turn and THEN clears it, both synchronously.
+  // Reading liveness during that emit sees a turn still open, and if nothing
+  // looks again the row says working for the rest of the session's life, which
+  // leaves one of the two states unreachable and makes a blocked row impossible
+  // to pick out.
+  const a = fakeSession('a')
+  const { registry, sent } = harness(a)
+  await registry.start('/work/alpha', { surface: 'project' })
+  a.setTurn(true)
+  await settle()
+  sent.length = 0
+
+  // Exactly the order the real session uses.
+  a.emit({ type: 'message-done', sessionId: 'a', messageId: 'm1' })
+  a.setTurnSilently(false)
+  await settle()
+
+  assert.deepEqual(
+    liveness(sent).map((r) => r.liveness),
+    ['idle'],
+    'the session stayed reported as working after its turn ended'
+  )
+})
+
+test('STOPPING THE SESSION ON SCREEN DOES NOT WIDEN WHAT MAY BE LISTED', async () => {
+  // getCwd() answers "which folder is the app looking at". A null from it means
+  // "no project open" to the project-file listing, which reads that as
+  // permission to enumerate anywhere, which is right while the folder picker is
+  // choosing a project, and wrong once a session has been stopped with its
+  // project still on screen. Stopping used to be impossible, so the two states
+  // never had to be told apart.
+  const a = fakeSession('a', '/work/alpha')
+  const { registry } = harness(a)
+  await registry.start('/work/alpha', { surface: 'project' })
+  registry.focus('a')
+  assert.equal(registry.getCwd(), '/work/alpha')
+
+  await registry.stop('a')
+
+  assert.equal(
+    registry.getCwd(),
+    '/work/alpha',
+    'stopping the focused session left no folder to confine anything to'
+  )
+})
+
+test('a renderer that has opened nothing still reports no folder', async () => {
+  // The other half: the folder picker genuinely runs before any project exists,
+  // and narrowing that would break opening one at all.
+  const { registry } = harness(fakeSession('a'))
+  assert.equal(registry.getCwd(), null)
 })
 
 // ── The two pure rules ──────────────────────────────────────────────────────

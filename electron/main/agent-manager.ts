@@ -1238,6 +1238,22 @@ export class AgentRegistry {
    */
   private booting: ManagedSession | null = null
   private liveness = new Map<string, SessionLiveness>()
+  /**
+   * The folder of the last session that was on screen.
+   *
+   * Held past that session's death on purpose. `getCwd()` answers "which folder
+   * is the app looking at", and callers read a null from it as "no project is
+   * open" rather than "no session is focused". One of them, the project-file
+   * listing, treats that as permission to enumerate anywhere, which is right
+   * while the folder picker is choosing a project and wrong the moment a
+   * session has been stopped with its project still on screen.
+   *
+   * Stopping a session used to be impossible, so those two states could not be
+   * told apart and did not need to be. Keeping the folder narrows the answer to
+   * the project that was open rather than widening it: it names a root that was
+   * allowed a moment earlier, and never a new one.
+   */
+  private lastFocusedCwd: string | null = null
 
   setWindow(win: BrowserWindow | null): void {
     this.window = win
@@ -1294,7 +1310,17 @@ export class AgentRegistry {
         this.sessions.set(id, manager)
       }
       this.route(manager, event)
-      this.reportLiveness(manager)
+      // Scheduled, not immediate, and that is the whole point. A session emits
+      // `message-done` and THEN clears the turn it had open, both in one
+      // synchronous block, so reading liveness during the emit sees a turn that
+      // is about to close and nothing looks again afterwards. Every session that
+      // finished a turn would read as working for the rest of its life, which
+      // collapses the two states the sidebar exists to tell apart.
+      //
+      // A microtask runs once that block has finished, so what it reads is the
+      // state the session settled on rather than the state it was passing
+      // through.
+      this.reportLivenessSoon(manager)
     })
   }
 
@@ -1304,6 +1330,23 @@ export class AgentRegistry {
    * Derived rather than stored, so it cannot disagree with the manager. Three
    * answers: waiting on the user, working, or connected with nothing to do.
    */
+  /**
+   * Look again once the session has finished whatever it was doing.
+   *
+   * Coalesced per session: a burst of events settles on one answer, and only a
+   * change is sent, so this cannot become a stream of its own.
+   */
+  private readonly livenessPending = new Set<ManagedSession>()
+
+  private reportLivenessSoon(manager: ManagedSession): void {
+    if (this.livenessPending.has(manager)) return
+    this.livenessPending.add(manager)
+    queueMicrotask(() => {
+      this.livenessPending.delete(manager)
+      this.reportLiveness(manager)
+    })
+  }
+
   private reportLiveness(manager: ManagedSession): void {
     const id = manager.getSessionId()
     if (!id) return
@@ -1332,7 +1375,7 @@ export class AgentRegistry {
   }
 
   getCwd(): string | null {
-    return this.focused()?.getCwd() ?? null
+    return this.focused()?.getCwd() ?? this.lastFocusedCwd
   }
 
   getSurface(): 'chat' | 'project' {
@@ -1365,6 +1408,7 @@ export class AgentRegistry {
     if (!sessionId) return
     const manager = this.sessions.get(sessionId)
     if (!manager) return
+    this.lastFocusedCwd = manager.getCwd() ?? this.lastFocusedCwd
     manager.reemitFrontPermission()
     const state = manager.getConnectionState()
     this.send({ type: 'connection', state, sessionId })
