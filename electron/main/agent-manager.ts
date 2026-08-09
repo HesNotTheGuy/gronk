@@ -511,7 +511,8 @@ export class AgentManager {
           message:
             `Could not resume this conversation in the Grok agent (${message}). ` +
             `Your chat history is still shown here, but the agent may not remember prior turns — ` +
-            `new replies start with a fresh context.`
+            `new replies start with a fresh context.`,
+          ...this.sessionTag()
         })
         this.emit({
           type: 'history-done',
@@ -865,7 +866,8 @@ export class AgentManager {
     )
     this.emit({
       type: 'error',
-      message: `Agent requested unsupported client method: ${method}`
+      message: `Agent requested unsupported client method: ${method}`,
+      ...this.sessionTag()
     })
   }
 
@@ -1490,6 +1492,10 @@ export class AgentRegistry {
     const manager = id ? this.sessions.get(id) : this.focused()
     if (!manager) return
     const key = id ?? manager.getSessionId()
+    // Detached first. A session emits as it tears down, and the sink adds any
+    // session it hears from back into the map, so stopping one with the sink
+    // still attached would revive it.
+    manager.setEmitSink(null)
     await manager.stop()
     if (key) {
       this.sessions.delete(key)
@@ -1505,7 +1511,6 @@ export class AgentRegistry {
       if (this.focusedId === key) this.focusedId = null
     }
     if (this.booting === manager) this.booting = null
-    manager.setEmitSink(null)
   }
 
   /** Every session, for quit and for signing out. */
@@ -1518,8 +1523,8 @@ export class AgentRegistry {
       this.send({ type: 'session-liveness', sessionId: id, liveness: null })
     }
     this.liveness.clear()
-    await Promise.all(managers.map((m) => m.stop().catch(() => {})))
     for (const m of managers) m.setEmitSink(null)
+    await Promise.all(managers.map((m) => m.stop().catch(() => {})))
   }
 
   // ── Per-session work ──────────────────────────────────────────────────────

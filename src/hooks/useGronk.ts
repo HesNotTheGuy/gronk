@@ -408,6 +408,11 @@ export function useGronk() {
   useEffect(() => {
     void refreshMeta()
     void window.gronk.getConnectionState().then(setConnection)
+    // Which sessions are already live. A renderer can mount with agents
+    // running: the window is recreated on macOS after the last one closes, and
+    // reloading in development does the same. Without asking, the sidebar shows
+    // nothing as live and the Stop control disappears for sessions that are.
+    void window.gronk.getSessionLiveness().then(setSessionLiveness)
 
     const unsub = window.gronk.onEvent((event: MainToRendererEvent) => {
       // Does this belong to the conversation on screen? Read from a ref, not
