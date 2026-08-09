@@ -228,7 +228,23 @@ export function parkAttachmentBytes(attachment: PromptAttachment): string | null
   try {
     const dir = path.join(dataDir(), ATTACHMENT_DIR)
     const file = path.join(dir, attachmentFileName(base64, ext))
-    if (fs.existsSync(file)) return file
+    if (fs.existsSync(file)) {
+      // Same bytes, so there is nothing to write. The timestamp is still moved
+      // forward, because it is what the collector reads to decide a file is old
+      // enough that no save can be about to reference it. Attaching an image
+      // somebody else already attached is a new reference to an old file, and
+      // leaving the original time on it makes the newest reference look like
+      // the oldest. Best effort: a clock that cannot be set is a file the
+      // collector may take, and it will be re-parked from bytes still in the
+      // message rather than lost.
+      try {
+        const now = new Date()
+        fs.utimesSync(file, now, now)
+      } catch {
+        /* the reference stands whether or not the time could be refreshed */
+      }
+      return file
+    }
     fs.mkdirSync(dir, { recursive: true })
     // Claim the folder before putting anything in it. Best effort: failing to
     // write a marker must never cost the user an image, and a folder without one

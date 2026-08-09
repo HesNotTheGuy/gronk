@@ -5,7 +5,6 @@ import path from 'node:path'
 import { __freshUserData } from './stubs/electron'
 import {
   MIN_AGE_MS,
-  isParkedAttachmentName,
   referencedNames,
   scanFileForNames,
   sweepAttachments,
@@ -14,7 +13,8 @@ import {
 import {
   ATTACHMENT_DIR,
   OWNERSHIP_MARKER,
-  attachmentFileName
+  attachmentFileName,
+  isParkedAttachmentName
 } from '../electron/main/transcript-repair'
 import { deleteSession, saveTranscript, upsertSession } from '../electron/main/store'
 import type { ChatMessage, PromptAttachment } from '../shared/types'
@@ -436,6 +436,124 @@ test('a quarantine file that vanishes between listing and reading is not a refus
   const consumed = await scanFileForNames(path.join(userData, 'never-existed.json'), found, 4096)
   assert.equal(consumed, 0)
   assert.equal(found.size, 0)
+})
+
+test('ATTACHING AN IMAGE SOMEBODY ELSE ALREADY ATTACHED PROTECTS IT AGAIN', async () => {
+  // The shared-file case from the other side. Parking the same bytes twice
+  // writes nothing the second time, so without refreshing the timestamp the
+  // newest reference to a file looks like the oldest one and the age floor
+  // stops covering it. A sweep already under way would then take a picture the
+  // store started referencing seconds ago.
+  const name = sessionWithImage('s1')
+  deleteSession('s1')
+  rollBackupForward()
+  ageFiles()
+
+  // The second session attaches the same image, which re-uses the file.
+  const again = sessionWithImage('s2')
+  assert.equal(again, name, 'the fixture failed to re-use the parked file')
+
+  const stat = fs.statSync(path.join(attachDir(), name))
+  assert.ok(
+    Date.now() - stat.mtimeMs < MIN_AGE_MS,
+    'the re-used file still carries its original time, so the age floor no longer covers it'
+  )
+})
+
+test('the plan spares a file re-parked after the reference set was taken', async () => {
+  // The race itself, at the only seam where it can be driven. A sweep reads its
+  // references once and unlinks later; a save landing in between re-parks an
+  // existing file, which is unreferenced by the set already in hand. The age
+  // floor is the only thing left, so it is asked directly with the stale set.
+  const name = sessionWithImage('s1')
+  deleteSession('s1')
+  rollBackupForward()
+  ageFiles()
+
+  // The set as a sweep would have read it a moment ago: this file is in nothing.
+  const staleReferences = new Set<string>()
+  // Then the save lands.
+  sessionWithImage('s2')
+
+  const files = fs.readdirSync(attachDir()).map((entry) => {
+    const stat = fs.statSync(path.join(attachDir(), entry))
+    return { name: entry, mtimeMs: stat.mtimeMs, isFile: stat.isFile() }
+  })
+
+  const doomed = sweepPlan({ files, referenced: staleReferences, now: Date.now() })
+
+  assert.equal(
+    doomed.includes(name),
+    false,
+    'a file re-parked seconds ago was selected on a reference set taken before it'
+  )
+})
+
+test('A FOLDER IS ADOPTED ONLY ON A NAME THIS APP COULD HAVE WRITTEN', async () => {
+  // Without the marker, ownership is proved by a referenced name present in the
+  // folder. The reference set holds the basename of every attachment path, and
+  // a non-image attachment keeps the real path it came from, so ordinary names
+  // are in there. One of those colliding must not adopt a stranger's folder.
+  upsertSession({ id: 's1', cwd: '/work/alpha', title: 's1' } as never)
+  saveTranscript('s1', [
+    msg('m1', [
+      {
+        id: 'a1',
+        kind: 'file',
+        name: 'report.pdf',
+        path: 'C:/somewhere/else/report.pdf'
+      } as PromptAttachment
+    ])
+  ])
+
+  // A folder this app did not fill, holding a file of that same basename plus
+  // hash-shaped images belonging to whoever made it.
+  fs.mkdirSync(attachDir(), { recursive: true })
+  fs.writeFileSync(path.join(attachDir(), 'report.pdf'), 'theirs')
+  const theirImage = `${'c'.repeat(32)}.png`
+  fs.writeFileSync(path.join(attachDir(), theirImage), 'theirs')
+  ageFiles()
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.refused, 'not-our-directory')
+  assert.equal(fs.existsSync(path.join(attachDir(), theirImage)), true)
+  assert.equal(
+    fs.existsSync(path.join(attachDir(), OWNERSHIP_MARKER)),
+    false,
+    'a folder this app did not fill was claimed'
+  )
+})
+
+test('A STORE THAT PARSES BUT IS NOT A STORE REMOVES NOTHING', async () => {
+  // Valid JSON that is not a store yields no references, which is
+  // indistinguishable from a store that refers to nothing. The store's own
+  // reader calls these corrupt and keeps the file so a rescue is possible.
+  const name = sessionWithImage('s1')
+  ageFiles()
+
+  for (const contents of ['[]', '42', '"just a string"', 'null', '{"sessions":"not an array"}']) {
+    fs.writeFileSync(storeFile(), contents)
+    const result = await sweepAttachments()
+    assert.equal(result.refused, 'store-unreadable', `${contents} was accepted as a store`)
+    assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
+  }
+})
+
+test('a thin but genuine store is still read rather than refused', async () => {
+  // The other half: a fresh install and one predating a migration are both
+  // legitimately sparse, and refusing those would stop collection for good.
+  const name = sessionWithImage('s1')
+  deleteSession('s1')
+  rollBackupForward()
+  ageFiles()
+  fs.writeFileSync(storeFile(), '{"version":2,"sessions":[],"transcripts":{}}')
+
+  const result = await sweepAttachments()
+
+  assert.equal(result.refused, null, 'a genuine empty store was refused')
+  assert.equal(result.removed, 1)
+  assert.equal(fs.existsSync(path.join(attachDir(), name)), false)
 })
 
 test('an unrelated corrupt-looking name is not mistaken for a quarantined store', async () => {

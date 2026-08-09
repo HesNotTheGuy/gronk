@@ -27,8 +27,11 @@
 
 import fsp from 'node:fs/promises'
 import path from 'node:path'
-import { IMAGE_EXT_SET } from './ipc-guard'
-import { ATTACHMENT_DIR, OWNERSHIP_MARKER } from './transcript-repair'
+// The name predicate lives beside `attachmentFileName`, which produces the names
+// it recognises. What may be READ out of the attachments folder and what may be
+// DELETED from it are the same question about a file, so both ask one function
+// rather than each keeping a copy of the shape.
+import { ATTACHMENT_DIR, OWNERSHIP_MARKER, isParkedAttachmentName } from './transcript-repair'
 import { dataDir, backupStorePath, storePath } from './data-dir'
 
 /**
@@ -42,25 +45,6 @@ import { dataDir, backupStorePath, storePath } from './data-dir'
  * is left for the next sweep, by which time its transcript is on disk.
  */
 export const MIN_AGE_MS = 60 * 60 * 1000
-
-/** `<32 hex>.<image ext>`, which is exactly what `attachmentFileName` produces. */
-const PARKED_NAME = /^[0-9a-f]{32}(\.[a-z0-9+]+)$/
-
-/**
- * Is this a file this app parked?
- *
- * The directory sits under the data directory, and the user can point that
- * anywhere. Nothing is removed unless its name has the shape this app writes.
- *
- * That shape is not proof of authorship, only of resemblance: someone else's
- * file named with 32 hex characters and an image extension passes. It is the
- * ownership check on the directory that stops a folder this app never wrote
- * from being swept, and this narrows what is touched inside one it did.
- */
-export function isParkedAttachmentName(name: string): boolean {
-  const match = PARKED_NAME.exec(name)
-  return match !== null && IMAGE_EXT_SET.has(match[1])
-}
 
 /**
  * Every attachment file name a store-shaped object refers to.
@@ -159,9 +143,10 @@ export interface SweepResult {
  * unreadable, so a transcript that only exists there is one the user can still
  * get back, and its images have to survive with it.
  *
- * Returns null when a file exists and cannot be read or parsed. That is an
- * uncertain outcome rather than an empty one, and an empty reference set would
- * propose deleting every attachment in the directory, so it has to refuse.
+ * Returns null when a file exists and cannot be read, cannot be parsed, or
+ * parses into something that is not a store. All three are uncertain rather
+ * than empty, and an empty reference set would propose deleting every
+ * attachment in the directory, so each has to refuse.
  */
 async function readReferences(file: string): Promise<Set<string> | null | 'missing'> {
   let text: string
@@ -171,11 +156,39 @@ async function readReferences(file: string): Promise<Set<string> | null | 'missi
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return 'missing'
     return null
   }
+  let raw: unknown
   try {
-    return referencedNames(JSON.parse(text))
+    raw = JSON.parse(text)
   } catch {
     return null
   }
+  // Parsing is not the same as being a store. `[]`, `42` and any other valid
+  // JSON yield no references, which is indistinguishable from a store that
+  // genuinely refers to nothing. The store's own reader treats exactly these as
+  // corrupt and keeps the file for a manual rescue, so the collector cannot
+  // treat them as permission to delete what that rescue would need.
+  if (!isStoreShaped(raw)) return null
+  return referencedNames(raw)
+}
+
+/**
+ * Does this parse look like a store rather than merely like JSON?
+ *
+ * Deliberately loose about which keys are present: a fresh install and one
+ * predating a migration are both legitimately thin, and the store's own reader
+ * defaults a missing `transcripts` to empty. What it refuses is the shape that
+ * cannot be a store at all.
+ */
+function isStoreShaped(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+  const obj = raw as Record<string, unknown>
+  const transcriptsOk =
+    obj.transcripts === undefined ||
+    (typeof obj.transcripts === 'object' &&
+      obj.transcripts !== null &&
+      !Array.isArray(obj.transcripts))
+  if (!transcriptsOk) return false
+  return 'transcripts' in obj || Array.isArray(obj.sessions) || 'version' in obj
 }
 
 /** `gronk-store.corrupt-<ms>.json`, written by `writeStore` before replacing a
@@ -370,12 +383,21 @@ export async function sweepAttachments(now = Date.now()): Promise<SweepResult> {
   }
 
   // Is this folder one this app wrote? The marker says so outright. Failing
-  // that, a file the store still references is proof, because that name is a
-  // hash of bytes this app parked â€” and it lets an install that predates the
-  // marker earn one instead of never collecting again.
+  // that, an install predating the marker can earn one, but only from a file
+  // whose name this app could have produced.
+  //
+  // The reference set is not evidence on its own. It holds the basename of
+  // every attachment path in every transcript, and a non-image attachment keeps
+  // the real path it came from, so ordinary names like `report.pdf` are in
+  // there. One of those colliding with something in a stranger's folder would
+  // otherwise be enough to adopt it, write the marker in, and start deleting.
+  // A content-hash name is the fact; a name that merely matches is resemblance.
   const names = new Set(entries.map((entry) => entry.name))
   if (!names.has(OWNERSHIP_MARKER)) {
-    if (![...referenced].some((name) => names.has(name))) {
+    const provenByAParkedName = [...referenced].some(
+      (name) => isParkedAttachmentName(name) && names.has(name)
+    )
+    if (!provenByAParkedName) {
       return { removed: 0, kept: 0, refused: 'not-our-directory' }
     }
     try {
