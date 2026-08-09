@@ -834,6 +834,8 @@ button {
   -webkit-app-region: drag;
 }
 
+/* Controls are exempt by default rather than by name, so a control added to the
+   header is undraggable without anyone having to remember. */
 .topbar > * {
   -webkit-app-region: no-drag;
 }
@@ -852,11 +854,24 @@ button {
   padding-left: 92px;
 }
 
+/* The title block holds no controls — a kicker, a title and one line of
+   subtitle — so it moves the window like the chrome around it. Drag is granted
+   back here rather than by narrowing the rule above, which would make the
+   default "draggable" and put the burden on whoever adds the next button.
+
+   On Windows this block is most of the titlebar the user has, so without this
+   the app is hard to move at all.
+
+   Unselectable for the same reason it drags: a gesture cannot do both, and text
+   that looks selectable and then moves the window reads as broken. The cost is
+   that the project path on the Build surface can no longer be selected here. */
 .topbar-left {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  -webkit-app-region: drag;
+  user-select: none;
 }
 
 .topbar-kicker {
