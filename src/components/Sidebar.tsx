@@ -278,7 +278,12 @@ export function Sidebar({
           <BrandMark />
           <span className="brand-text">
             <span className="brand-name">Gronk</span>
-            <span className="brand-tag">Grok desktop</span>
+            {/* Relational, not a name. xAI's brand guidelines ask that the mark
+                not appear in a product name, and that nothing sit close to it in
+                a way that reads as a new combined mark — which is what a
+                subtitle in the app's own identity slot does. "For the X" cannot
+                be read as what this app is called. */}
+            <span className="brand-tag">for the Grok CLI</span>
           </span>
         </button>
 
