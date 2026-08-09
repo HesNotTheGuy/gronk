@@ -339,12 +339,12 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    void agentManager.stop().finally(() => app.quit())
+    void agentManager.stopAll().finally(() => app.quit())
   }
 })
 
 app.on('before-quit', () => {
-  void agentManager.stop()
+  void agentManager.stopAll()
 })
 
 app.on('second-instance', () => {

@@ -120,6 +120,8 @@ export function installFakeBridge(overrides: Record<string, unknown> = {}): Fake
 
     startAgent: async () => track('startAgent', { sessionId: 's1' }),
     stopAgent: async () => track('stopAgent', undefined),
+    focusSession: async () => track('focusSession', undefined),
+    getSessionLiveness: async () => track('getSessionLiveness', {}),
     sendPrompt: async () => track('sendPrompt', { messageId: 'm1' }),
     cancelPrompt: async () => track('cancelPrompt', undefined),
     respondPermission: async () => track('respondPermission', undefined),

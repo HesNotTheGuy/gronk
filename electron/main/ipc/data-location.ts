@@ -27,8 +27,10 @@ import type { MoveDataResult } from '../../../shared/types'
  * with no way to move their data back.
  */
 function dataMoveRefusal(): MoveDataResult | null {
-  const state = agentManager.getConnectionState()
-  if (state !== 'starting' && state !== 'ready' && state !== 'loading') return null
+  // Any live session, not the one on screen. The question is whether a child
+  // process still has these files open, and a session in the background holds
+  // them just as firmly as the one being watched.
+  if (!agentManager.isAnyBusy()) return null
   return {
     ok: false,
     message:

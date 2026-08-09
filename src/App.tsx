@@ -326,6 +326,8 @@ export function App() {
         onArchiveSession={(id) => void g.archiveSession(id)}
         onExportSession={(id, f) => void g.exportSession(id, f)}
         onDeleteSession={(id) => void g.deleteSession(id)}
+        sessionLiveness={g.sessionLiveness}
+        onStopSession={(id) => void g.stopSession(id)}
         onRemoveProject={(cwd) => void g.removeRecentProject(cwd)}
         onPinProject={(cwd, pinned) => void g.setRecentProjectPinned(cwd, pinned)}
         onOpenPlugins={() => setShowPlugins(true)}

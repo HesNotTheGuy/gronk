@@ -31,12 +31,18 @@ const api: GronkApi = {
   writeClipboard: (text: string) => ipcRenderer.invoke('gronk:write-clipboard', text),
   startAgent: (cwd, options) => ipcRenderer.invoke('gronk:start-agent', cwd, options),
   getChatWorkspacePath: () => ipcRenderer.invoke('gronk:get-chat-workspace'),
-  stopAgent: () => ipcRenderer.invoke('gronk:stop-agent'),
+  stopAgent: (sessionId?: string) => ipcRenderer.invoke('gronk:stop-agent', sessionId),
+  focusSession: (sessionId: string | null) =>
+    ipcRenderer.invoke('gronk:focus-session', sessionId ?? undefined),
+  getSessionLiveness: () => ipcRenderer.invoke('gronk:get-session-liveness'),
   sendPrompt: (text: string, options?: SendPromptOptions) =>
     ipcRenderer.invoke('gronk:send-prompt', text, options),
-  cancelPrompt: () => ipcRenderer.invoke('gronk:cancel-prompt'),
-  respondPermission: (requestId: number | string, decision: PermissionDecision) =>
-    ipcRenderer.invoke('gronk:respond-permission', requestId, decision),
+  cancelPrompt: (sessionId?: string) => ipcRenderer.invoke('gronk:cancel-prompt', sessionId),
+  respondPermission: (
+    requestId: number | string,
+    decision: PermissionDecision,
+    sessionId?: string
+  ) => ipcRenderer.invoke('gronk:respond-permission', requestId, decision, sessionId),
   listSessions: () => ipcRenderer.invoke('gronk:list-sessions'),
   loadSession: (sessionId: string) => ipcRenderer.invoke('gronk:load-session', sessionId),
   searchSessions: (query: string) => ipcRenderer.invoke('gronk:search-sessions', query),

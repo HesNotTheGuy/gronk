@@ -2285,6 +2285,48 @@ button {
   }
 }
 
+/* A live session, in the sidebar row's own title line.
+   Inline rather than a third column of the row, so a session starting moves
+   nothing: the rows below it stay exactly where the eye left them. */
+.session-live {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  flex: none;
+  background: var(--ink-4);
+}
+
+/* Connected with nothing to do. Static and quiet: it is a fact, not a request. */
+.session-live-idle {
+  background: var(--signal);
+  opacity: 0.75;
+}
+
+/* A turn in flight. Same pulse as the agent dots, so the two mean one thing. */
+.session-live-working {
+  background: var(--ignite);
+  opacity: 1;
+  animation: agent-dot-pulse 1.4s ease-in-out infinite;
+}
+
+/* Waiting on a person. The one state that needs somebody, so it takes the
+   abort accent and does NOT pulse: a working row and a stuck row have to be
+   tellable apart at a glance, and two pulsing dots are not. */
+.session-live-blocked {
+  background: var(--abort);
+  opacity: 1;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--abort) 25%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-live-working {
+    animation: none;
+  }
+}
+
 .tool-activity .tool-list {
   border-top: 1px solid var(--line);
   padding: 8px;

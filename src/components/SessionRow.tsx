@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { MenuButton } from './MenuButton'
 import type { MenuOption } from './MenuButton'
 import { isChatSession } from '../../shared/path'
-import type { SessionInfo } from '../../shared/types'
+import type { SessionInfo, SessionLiveness } from '../../shared/types'
 
 interface Props {
   session: SessionInfo
@@ -18,11 +18,27 @@ interface Props {
    * by a current build, and the path check covers the older entries.
    */
   chatWorkspacePath?: string | null
+  /**
+   * What this session's agent is doing, or absent when it is not running.
+   *
+   * Three answers rather than a boolean, because "busy" and "waiting for you"
+   * look identical from outside and only one of them needs a person.
+   */
+  liveness?: SessionLiveness | null
   onSelect: () => void
   onRename: (title: string) => void
   onArchive: () => void
   onExport: (format: 'md' | 'json') => void
   onDelete: () => void
+  /** Stop this session's agent without opening it. */
+  onStop?: () => void
+}
+
+/** The word under the title, and the label the dot answers to. */
+const LIVENESS_LABEL: Record<SessionLiveness, string> = {
+  working: 'Working',
+  blocked: 'Needs you',
+  idle: 'Running'
 }
 
 const COMMON_OPTIONS: MenuOption[] = [
@@ -45,6 +61,16 @@ const REVEAL_OPTION: MenuOption = {
   id: 'reveal',
   label: 'Show project folder',
   description: 'The folder this session runs in'
+}
+
+/**
+ * Stopping is offered only when there is a live agent to stop, and it sits above
+ * Delete so the destructive item stays last.
+ */
+const STOP_OPTION: MenuOption = {
+  id: 'stop',
+  label: 'Stop session',
+  description: 'End the agent, keep the transcript'
 }
 
 const DELETE_OPTION: MenuOption = {
@@ -80,11 +106,13 @@ export function SessionRow({
   meta,
   detail,
   chatWorkspacePath,
+  liveness,
   onSelect,
   onRename,
   onArchive,
   onExport,
-  onDelete
+  onDelete,
+  onStop
 }: Props) {
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState('')
@@ -100,6 +128,12 @@ export function SessionRow({
    * absent instead of disabled: there is nothing to enable.
    */
   const hasProjectFolder = !!session.cwd && !isChatSession(session, chatWorkspacePath)
+
+  const base = hasProjectFolder ? PROJECT_OPTIONS : CHAT_OPTIONS
+  // Absent rather than disabled: a session that is not running has nothing to
+  // stop, and a permanently greyed item reads as something broken.
+  const menuOptions =
+    liveness && onStop ? [...base.slice(0, -1), STOP_OPTION, base[base.length - 1]] : base
 
   useEffect(() => {
     if (renaming) inputRef.current?.select()
@@ -124,7 +158,8 @@ export function SessionRow({
       // notice surface, and the only way this fails is a folder that has since
       // been moved or removed, which the file manager not opening already says.
       void window.gronk.revealLocalPath(session.cwd).catch(() => undefined)
-    } else if (id === 'delete') setConfirmingDelete(true)
+    } else if (id === 'stop') onStop?.()
+    else if (id === 'delete') setConfirmingDelete(true)
   }
 
   if (renaming) {
@@ -179,7 +214,20 @@ export function SessionRow({
         title={session.cwd ? `${title}\n${meta}\n${session.cwd}` : `${title}\n${meta}`}
         onClick={onSelect}
       >
-        <div className="name">{title}</div>
+        <div className="name">
+          {/* Inside the existing name line rather than beside the row, so a
+              running session changes no geometry and the other rows do not
+              move when one starts. */}
+          {liveness ? (
+            <span
+              className={`session-live session-live-${liveness}`}
+              title={LIVENESS_LABEL[liveness]}
+              aria-label={LIVENESS_LABEL[liveness]}
+              role="img"
+            />
+          ) : null}
+          {title}
+        </div>
         <div className="meta">{meta}</div>
         {detail ? <div className="search-snippet">{detail}</div> : null}
       </button>
@@ -188,7 +236,7 @@ export function SessionRow({
         title={`Actions for ${title}`}
         trigger="icon"
         placement="down"
-        options={hasProjectFolder ? PROJECT_OPTIONS : CHAT_OPTIONS}
+        options={menuOptions}
         onSelect={choose}
         disabled={!authenticated}
       />

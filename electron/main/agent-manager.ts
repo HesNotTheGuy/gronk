@@ -34,6 +34,7 @@ import {
   sessionTitleFromPrompt
 } from './agent/prompt'
 import { routeSessionUpdate, upsertToolCall } from './agent/session-update'
+import { livenessOf, mayForward } from './agent/session-liveness'
 import {
   appendPermissionAudit,
   getSettings,
@@ -52,6 +53,7 @@ import { redactPreview } from './redact'
 import type {
   ChatMessage,
   ConnectionState,
+  SessionLiveness,
   MainToRendererEvent,
   ModelInfo,
   PermissionDecision,
@@ -117,6 +119,19 @@ export class AgentManager {
     this.window = win
   }
 
+  /**
+   * Where this session's events go.
+   *
+   * Set by the registry so it can see every event before the renderer does. One
+   * session's boot must not narrate itself over another's connection state, and
+   * only something holding all the sessions can know which is which.
+   */
+  setEmitSink(sink: ((event: MainToRendererEvent) => void) | null): void {
+    this.emitSink = sink
+  }
+
+  private emitSink: ((event: MainToRendererEvent) => void) | null = null
+
   getConnectionState(): ConnectionState {
     return this.state
   }
@@ -149,6 +164,15 @@ export class AgentManager {
   }
 
   private emit(event: MainToRendererEvent): void {
+    if (this.emitSink) {
+      this.emitSink(event)
+      return
+    }
+    this.sendToWindow(event)
+  }
+
+  /** The last hop, called by the registry once it has decided the event may go. */
+  sendToWindow(event: MainToRendererEvent): void {
     if (this.window && !this.window.isDestroyed()) {
       this.window.webContents.send('gronk:event', event)
     }
@@ -362,6 +386,34 @@ export class AgentManager {
   }
 
   /**
+   * What this session is doing, derived rather than stored.
+   *
+   * Nothing to disagree with: it is read off the same fields the rest of the
+   * class already keeps. Waiting on the user wins over working, because a
+   * blocked session looks busy from outside and is the one that needs a person.
+   */
+  livenessNow(): SessionLiveness | null {
+    return livenessOf({
+      state: this.state,
+      hasPendingPermission: !!this.permissions.front(),
+      hasOpenTurn: this.activeMessageId !== null
+    })
+  }
+
+  /**
+   * Put this session's pending permission back on screen.
+   *
+   * Called when a session is focused. A request raised while it was in the
+   * background was emitted and dropped, because the renderer only accepts what
+   * belongs to the conversation being shown, so opening it has to ask again.
+   * Nothing is answered on anyone's behalf: the request is still the same one,
+   * still waiting.
+   */
+  reemitFrontPermission(): void {
+    this.emitFrontPermission()
+  }
+
+  /**
    * Resume an existing Grok session: boot agent, session/load (no session/new),
    * hydrate UI from ACP replay + local transcript cache.
    */
@@ -459,7 +511,8 @@ export class AgentManager {
           message:
             `Could not resume this conversation in the Grok agent (${message}). ` +
             `Your chat history is still shown here, but the agent may not remember prior turns — ` +
-            `new replies start with a fresh context.`
+            `new replies start with a fresh context.`,
+          ...this.sessionTag()
         })
         this.emit({
           type: 'history-done',
@@ -559,10 +612,17 @@ export class AgentManager {
   }
 
   async stop(): Promise<void> {
+    // Held across the teardown. stopProcessOnly clears sessionId, so the final
+    // state would otherwise be emitted with nothing naming it, and an
+    // unattributed connection event is accepted by whichever session is on
+    // screen. Stopping one session in the background would take the composer
+    // down in another.
+    const stopping = this.sessionId
     this.setState('stopped')
     this.persistLiveTranscript()
     await this.stopProcessOnly()
-    this.setState('idle')
+    this.state = 'idle'
+    this.emit({ type: 'connection', state: 'idle', ...(stopping ? { sessionId: stopping } : {}) })
   }
 
   async sendPrompt(
@@ -806,7 +866,8 @@ export class AgentManager {
     )
     this.emit({
       type: 'error',
-      message: `Agent requested unsupported client method: ${method}`
+      message: `Agent requested unsupported client method: ${method}`,
+      ...this.sessionTag()
     })
   }
 
@@ -1106,4 +1167,406 @@ export class AgentManager {
   }
 }
 
-export const agentManager = new AgentManager()
+/**
+ * The live sessions, and which one is on screen.
+ *
+ * `AgentManager` was already a per-session object in everything but its
+ * lifetime: of its fields only the window is app-level. So this holds N of them
+ * rather than rewriting the class, and the rule it adds is about attribution
+ * rather than about agents.
+ *
+ * Every no-argument reader here answers **for the focused session**, which is
+ * exactly what it meant when there could only be one. That is what lets the
+ * folder-scoped callers (the image roots, the git views, the project file
+ * list) go on asking `getCwd()` with no argument while they are moved separately.
+ *
+ * Two rules live here because only something holding every session can apply
+ * them:
+ *
+ * - A background session's `connection` events are not forwarded. They are how
+ *   the renderer decides whether the composer is usable, and an unattributed
+ *   one (which is what boot produces, before an id exists) is accepted by
+ *   whatever is on screen. A second agent booting would otherwise disable the
+ *   composer of the session being watched.
+ * - Focusing a session re-emits its pending permission, so a request raised
+ *   while it was in the background becomes reachable the moment it is opened.
+ *   Nothing is ever answered on the user's behalf; blocking IS the behaviour,
+ *   and this is what makes it recoverable.
+ */
+/**
+ * What the registry needs from a session. Narrower than AgentManager on purpose:
+ * a real one owns a CLI child process, which is why nothing in the test suite
+ * can construct one, and the orchestration below is the half of this feature a
+ * user actually sees.
+ */
+export interface ManagedSession {
+  setWindow(win: BrowserWindow | null): void
+  setEmitSink(sink: ((event: MainToRendererEvent) => void) | null): void
+  getConnectionState(): ConnectionState
+  getSessionId(): string | null
+  getCwd(): string | null
+  getSurface(): 'chat' | 'project'
+  getCurrentModel(): string | undefined
+  livenessNow(): SessionLiveness | null
+  reemitFrontPermission(): void
+  start(
+    cwd: string,
+    options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project' }
+  ): Promise<{ sessionId: string }>
+  loadSession(sessionId: string, cwd?: string): Promise<{ sessionId: string; restored: boolean }>
+  stop(): Promise<void>
+  sendPrompt(text: string, options?: unknown): Promise<{ messageId: string }>
+  cancelPrompt(): Promise<void>
+  respondPermission(requestId: number | string, decision: PermissionDecision): void
+}
+
+export class AgentRegistry {
+  private readonly createSession: () => ManagedSession
+
+  constructor(createSession: () => ManagedSession = () => new AgentManager()) {
+    this.createSession = createSession
+  }
+
+  private readonly sessions = new Map<string, ManagedSession>()
+  private window: BrowserWindow | null = null
+  /** The session whose events reach the renderer as the conversation on screen. */
+  private focusedId: string | null = null
+  /**
+   * The manager that is booting and has no id yet.
+   *
+   * A session id only exists after the agent has started, so between `start()`
+   * and that answer there is nothing to key on. It is held here so its boot
+   * narration still reaches the renderer, which is waiting for exactly that.
+   */
+  private booting: ManagedSession | null = null
+  private liveness = new Map<string, SessionLiveness>()
+  /**
+   * The folder of the last session that was on screen.
+   *
+   * Held past that session's death on purpose. `getCwd()` answers "which folder
+   * is the app looking at", and callers read a null from it as "no project is
+   * open" rather than "no session is focused". One of them, the project-file
+   * listing, treats that as permission to enumerate anywhere, which is right
+   * while the folder picker is choosing a project and wrong the moment a
+   * session has been stopped with its project still on screen.
+   *
+   * Stopping a session used to be impossible, so those two states could not be
+   * told apart and did not need to be. Keeping the folder narrows the answer to
+   * the project that was open rather than widening it: it names a root that was
+   * allowed a moment earlier, and never a new one.
+   */
+  private lastFocusedCwd: string | null = null
+
+  setWindow(win: BrowserWindow | null): void {
+    this.window = win
+    for (const manager of this.sessions.values()) manager.setWindow(win)
+    this.booting?.setWindow(win)
+  }
+
+  /** Every live session, newest last. */
+  private all(): ManagedSession[] {
+    const out = [...this.sessions.values()]
+    if (this.booting && !out.includes(this.booting)) out.push(this.booting)
+    return out
+  }
+
+  private focused(): ManagedSession | null {
+    if (this.focusedId) {
+      const found = this.sessions.get(this.focusedId)
+      if (found) return found
+    }
+    return this.booting
+  }
+
+  private send(event: MainToRendererEvent): void {
+    if (this.window && !this.window.isDestroyed()) {
+      this.window.webContents.send('gronk:event', event)
+    }
+  }
+
+  /**
+   * One session's event, on its way out.
+   *
+   * Everything except `connection` is already attributed and the renderer drops
+   * what is not its own, so it is forwarded and the renderer decides.
+   * `connection` is the exception: it is the one event that can arrive
+   * unattributed, and an unattributed one is always accepted.
+   */
+  private route(manager: ManagedSession, event: MainToRendererEvent): void {
+    if (!mayForward(event, manager === this.focused())) return
+    this.send(event)
+  }
+
+  private adopt(manager: ManagedSession): void {
+    manager.setWindow(this.window)
+    manager.setEmitSink((event) => {
+      const id = manager.getSessionId()
+      // The id appears partway through boot. Move it out of the booting slot the
+      // first time it is known, so later events are addressed rather than
+      // treated as the foreground's by default.
+      if (id && this.booting === manager) {
+        this.sessions.set(id, manager)
+        this.booting = null
+        if (!this.focusedId) this.focusedId = id
+      } else if (id && !this.sessions.has(id)) {
+        this.sessions.set(id, manager)
+      }
+      this.route(manager, event)
+      // Scheduled, not immediate, and that is the whole point. A session emits
+      // `message-done` and THEN clears the turn it had open, both in one
+      // synchronous block, so reading liveness during the emit sees a turn that
+      // is about to close and nothing looks again afterwards. Every session that
+      // finished a turn would read as working for the rest of its life, which
+      // collapses the two states the sidebar exists to tell apart.
+      //
+      // A microtask runs once that block has finished, so what it reads is the
+      // state the session settled on rather than the state it was passing
+      // through.
+      this.reportLivenessSoon(manager)
+    })
+  }
+
+  /**
+   * Tell the renderer what this session is doing, when it changes.
+   *
+   * Derived rather than stored, so it cannot disagree with the manager. Three
+   * answers: waiting on the user, working, or connected with nothing to do.
+   */
+  /**
+   * Look again once the session has finished whatever it was doing.
+   *
+   * Coalesced per session: a burst of events settles on one answer, and only a
+   * change is sent, so this cannot become a stream of its own.
+   */
+  private readonly livenessPending = new Set<ManagedSession>()
+
+  private reportLivenessSoon(manager: ManagedSession): void {
+    if (this.livenessPending.has(manager)) return
+    this.livenessPending.add(manager)
+    queueMicrotask(() => {
+      this.livenessPending.delete(manager)
+      this.reportLiveness(manager)
+    })
+  }
+
+  private reportLiveness(manager: ManagedSession): void {
+    const id = manager.getSessionId()
+    if (!id) return
+    const next = manager.livenessNow()
+    if (this.liveness.get(id) === next) return
+    if (next === null) this.liveness.delete(id)
+    else this.liveness.set(id, next)
+    this.send({ type: 'session-liveness', sessionId: id, liveness: next })
+  }
+
+  /** Which sessions are live, for a renderer that has just mounted. */
+  getLiveness(): Record<string, SessionLiveness> {
+    const out: Record<string, SessionLiveness> = {}
+    for (const [id, value] of this.liveness) out[id] = value
+    return out
+  }
+
+  // ── Readers, all about the focused session ────────────────────────────────
+
+  getConnectionState(): ConnectionState {
+    return this.focused()?.getConnectionState() ?? 'idle'
+  }
+
+  getSessionId(): string | null {
+    return this.focused()?.getSessionId() ?? null
+  }
+
+  getCwd(): string | null {
+    return this.focused()?.getCwd() ?? this.lastFocusedCwd
+  }
+
+  getSurface(): 'chat' | 'project' {
+    return this.focused()?.getSurface() ?? 'project'
+  }
+
+  getCurrentModel(): string | undefined {
+    return this.focused()?.getCurrentModel()
+  }
+
+  /** Is any session in a state that a data-directory move must not interrupt? */
+  isAnyBusy(): boolean {
+    return this.all().some((m) => {
+      const state = m.getConnectionState()
+      return state === 'starting' || state === 'ready' || state === 'loading'
+    })
+  }
+
+  // ── Focus ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Put a session on screen.
+   *
+   * Re-emitting the pending permission is the whole reason this is more than a
+   * variable assignment: a background session that blocked has a dialog nobody
+   * can reach until its own session is the one being shown.
+   */
+  focus(sessionId: string | null): void {
+    this.focusedId = sessionId
+    if (!sessionId) return
+    const manager = this.sessions.get(sessionId)
+    if (!manager) return
+    this.lastFocusedCwd = manager.getCwd() ?? this.lastFocusedCwd
+    manager.reemitFrontPermission()
+    const state = manager.getConnectionState()
+    this.send({ type: 'connection', state, sessionId })
+  }
+
+  /** A live session for this request, if one is already running. */
+  private findReusable(cwd: string, surface: 'chat' | 'project', model?: string): ManagedSession | null {
+    for (const manager of this.sessions.values()) {
+      if (manager.getConnectionState() !== 'ready') continue
+      if (!manager.getSessionId()) continue
+      const managerCwd = manager.getCwd()
+      if (!managerCwd || normalizeCwd(managerCwd) !== normalizeCwd(cwd)) continue
+      if (manager.getSurface() !== surface) continue
+      if (model && model !== manager.getCurrentModel()) continue
+      return manager
+    }
+    return null
+  }
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+  /**
+   * Start a session, or return to one already running for the same folder.
+   *
+   * Nothing is stopped here. That is the change this whole branch is for: a
+   * session the user walks away from goes on working, and only an explicit stop
+   * or quitting ends it.
+   */
+  async start(
+    cwd: string,
+    options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project'; forceNew?: boolean }
+  ): Promise<{ sessionId: string }> {
+    const surface = options?.surface ?? 'project'
+    if (!options?.forceNew) {
+      const existing = this.findReusable(cwd, surface, options?.model)
+      const existingId = existing?.getSessionId()
+      if (existing && existingId) {
+        this.focus(existingId)
+        return { sessionId: existingId }
+      }
+    }
+
+    const manager = this.createSession()
+    this.adopt(manager)
+    this.booting = manager
+    const result = await manager.start(cwd, options)
+    this.sessions.set(result.sessionId, manager)
+    if (this.booting === manager) this.booting = null
+    this.focus(result.sessionId)
+    return result
+  }
+
+  /**
+   * Open a stored session. One already live is focused rather than reloaded,
+   * because reloading it would tear down the work this branch exists to keep.
+   */
+  async loadSession(sessionId: string, cwd?: string): Promise<{ sessionId: string; restored: boolean }> {
+    const live = this.sessions.get(sessionId)
+    if (live && live.getConnectionState() === 'ready') {
+      this.focus(sessionId)
+      return { sessionId, restored: true }
+    }
+
+    const manager = live ?? this.createSession()
+    if (!live) {
+      this.adopt(manager)
+      this.booting = manager
+    }
+    const result = await manager.loadSession(sessionId, cwd)
+    this.sessions.set(result.sessionId, manager)
+    if (this.booting === manager) this.booting = null
+    this.focus(result.sessionId)
+    return result
+  }
+
+  /** Stop one session, or the focused one when none is named. */
+  async stop(sessionId?: string | null): Promise<void> {
+    const id = sessionId ?? this.focusedId
+    const manager = id ? this.sessions.get(id) : this.focused()
+    if (!manager) return
+    const key = id ?? manager.getSessionId()
+    // Detached first. A session emits as it tears down, and the sink adds any
+    // session it hears from back into the map, so stopping one with the sink
+    // still attached would revive it.
+    manager.setEmitSink(null)
+    await manager.stop()
+    if (key) {
+      this.sessions.delete(key)
+      if (this.liveness.delete(key)) {
+        this.send({ type: 'session-liveness', sessionId: key, liveness: null })
+      }
+      // Named here as well as inside the session. Teardown clears the id, so a
+      // terminal state emitted after it has nothing to attribute it to, and an
+      // unattributed connection event is taken by whatever is on screen, so
+      // stopping a background session would blank the composer of the one being
+      // watched.
+      this.send({ type: 'connection', state: 'idle', sessionId: key })
+      if (this.focusedId === key) this.focusedId = null
+    }
+    if (this.booting === manager) this.booting = null
+  }
+
+  /** Every session, for quit and for signing out. */
+  async stopAll(): Promise<void> {
+    const managers = this.all()
+    this.sessions.clear()
+    this.booting = null
+    this.focusedId = null
+    for (const [id] of this.liveness) {
+      this.send({ type: 'session-liveness', sessionId: id, liveness: null })
+    }
+    this.liveness.clear()
+    for (const m of managers) m.setEmitSink(null)
+    await Promise.all(managers.map((m) => m.stop().catch(() => {})))
+  }
+
+  // ── Per-session work ──────────────────────────────────────────────────────
+
+  private require(sessionId?: string | null): ManagedSession {
+    const manager = sessionId ? this.sessions.get(sessionId) : this.focused()
+    if (!manager) throw new Error('Agent is not running')
+    return manager
+  }
+
+  async sendPrompt(
+    text: string,
+    options?: Parameters<ManagedSession['sendPrompt']>[1],
+    sessionId?: string | null
+  ): Promise<{ messageId: string }> {
+    return this.require(sessionId).sendPrompt(text, options)
+  }
+
+  async cancelPrompt(sessionId?: string | null): Promise<void> {
+    const manager = sessionId ? this.sessions.get(sessionId) : this.focused()
+    await manager?.cancelPrompt()
+  }
+
+  /**
+   * Answer a permission request.
+   *
+   * The session is named by the caller and is not optional in practice: request
+   * ids are chosen per child process and start at 1, so two sessions collide on
+   * them. Falling back to the focused session is only for a renderer that has
+   * not been updated, and it answers the session the user is looking at, which
+   * is the one whose dialog they can see.
+   */
+  respondPermission(
+    requestId: number | string,
+    decision: PermissionDecision,
+    sessionId?: string | null
+  ): void {
+    const manager = sessionId ? this.sessions.get(sessionId) : this.focused()
+    if (!manager) return
+    manager.respondPermission(requestId, decision)
+    this.reportLiveness(manager)
+  }
+}
+
+export const agentManager = new AgentRegistry()

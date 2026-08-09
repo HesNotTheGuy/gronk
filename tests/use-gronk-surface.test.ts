@@ -114,6 +114,8 @@ const EXPECTED_MEMBERS: string[] = [
   "selectSession",
   "sendPrompt",
   "sessionId",
+  // Two live sessions: what each one is doing, and stopping one without opening it.
+  "sessionLiveness",
   "sessions",
   "setCliInstallResult",
   "setError",
@@ -133,6 +135,7 @@ const EXPECTED_MEMBERS: string[] = [
   "skills",
   "startPreview",
   "stopPreview",
+  "stopSession",
   "storeHealth",
   "surface",
   "togglePreview",
