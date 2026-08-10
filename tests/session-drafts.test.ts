@@ -37,6 +37,10 @@ const props = (over: Record<string, unknown> = {}) =>
     onCancel: () => {},
     onDraftChange: () => {},
     onDraftSent: () => {},
+    onQueue: () => {},
+    queued: [],
+    queueHeld: false,
+    onRemoveQueued: () => {},
     ...over
   }) as never
 

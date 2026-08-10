@@ -758,6 +758,10 @@ export function App() {
               draftKey={g.draftKey}
               onDraftChange={g.setDraft}
               onDraftSent={g.clearDraft}
+              onQueue={g.enqueue}
+              queued={g.queued}
+              queueHeld={g.queueHeld}
+              onRemoveQueued={g.removeQueued}
               busy={g.busy || g.connection === 'loading'}
               cwd={inChat ? null : g.cwd}
               models={g.models}

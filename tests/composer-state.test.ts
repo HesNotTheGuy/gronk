@@ -16,7 +16,13 @@ import type { ConnectionState } from '../shared/types'
  * is what the code looked like before and reads as tidier.
  */
 
-const base = { connection: 'ready' as ConnectionState, hydrating: false, busy: false, hasContent: true }
+const base = {
+  connection: 'ready' as ConnectionState,
+  hydrating: false,
+  busy: false,
+  hasContent: true,
+  queueFull: false
+}
 const at = (over: Partial<typeof base> = {}) => composerPermissions({ ...base, ...over })
 
 const RESTORING: ConnectionState[] = ['starting', 'loading']
@@ -67,7 +73,15 @@ test('attach and the agent settings stay gated with send, not with typing', () =
 
 test('when ready, everything is on', () => {
   const p = at()
-  assert.deepEqual(p, { canType: true, canSend: true, canAttach: true, canChangeAgentSettings: true })
+  // canQueue is false here because there is nothing to queue behind: no turn is
+  // running. It is the one permission that needs `busy` to be TRUE.
+  assert.deepEqual(p, {
+    canType: true,
+    canSend: true,
+    canQueue: false,
+    canAttach: true,
+    canChangeAgentSettings: true
+  })
 })
 
 test('send still respects busy and an empty box', () => {
@@ -103,4 +117,39 @@ test('the ready placeholder still names the surface', () => {
   const ready = composerPermissions(base)
   assert.match(composerPlaceholder(ready, { hydrating: false, cwd: '/p' }), /project agent/i)
   assert.match(composerPlaceholder(ready, { hydrating: false, cwd: null }), /Message Grok/i)
+})
+
+// ── Queueing rather than refusing ───────────────────────────────────────────
+
+test('A RUNNING TURN TURNS SEND INTO QUEUE, AND ONLY THEN', () => {
+  // The whole point: with a turn running, a finished message is held instead of
+  // refused. It must not be offered when there is nothing to wait behind, or Enter
+  // would queue a message that could simply have been sent.
+  const running = at({ busy: true })
+  assert.equal(running.canSend, false, 'a second turn cannot start on top of one')
+  assert.equal(running.canQueue, true)
+
+  const idle = at({ busy: false })
+  assert.equal(idle.canSend, true)
+  assert.equal(idle.canQueue, false, 'queued a message that could have gone straight out')
+})
+
+test('AN EMPTY BOX QUEUES NOTHING', () => {
+  assert.equal(at({ busy: true, hasContent: false }).canQueue, false)
+})
+
+test('A FULL QUEUE STOPS ACCEPTING, VISIBLY', () => {
+  // Refusing at the cap is the point of surfacing it: Enter stops doing anything,
+  // so the composer has to be able to say why.
+  assert.equal(at({ busy: true, queueFull: true }).canQueue, false)
+  assert.equal(at({ busy: true, queueFull: false }).canQueue, true)
+})
+
+test('A SESSION THAT IS NOT READY QUEUES NOTHING', () => {
+  // Nowhere for it to go, and a queue that drains into a booting agent would send
+  // into whatever the session turns out to be.
+  for (const connection of ['idle', 'starting', 'loading'] as const) {
+    assert.equal(at({ connection, busy: true }).canQueue, false, `${connection} allowed a queue`)
+  }
+  assert.equal(at({ hydrating: true, busy: true }).canQueue, false, 'restoring allowed a queue')
 })

@@ -40,6 +40,8 @@ export interface ComposerPermissions {
   canType: boolean
   /** The Send button, and the submit path behind it. */
   canSend: boolean
+  /** A turn is running, so Enter holds the message instead of refusing it. */
+  canQueue: boolean
   /** Attach: reads files off disk for a prompt that cannot go yet. */
   canAttach: boolean
   /** Model and permission mode: agent boot arguments, not preferences. */
@@ -54,13 +56,16 @@ export interface ComposerStateInput {
   busy: boolean
   /** Is there anything to send. */
   hasContent: boolean
+  /** This conversation is already holding as many queued messages as it may. */
+  queueFull?: boolean
 }
 
 export function composerPermissions({
   connection,
   hydrating,
   busy,
-  hasContent
+  hasContent,
+  queueFull
 }: ComposerStateInput): ComposerPermissions {
   // `hydrating` counts as somewhere to type even if the connection has not
   // moved off idle yet: restore sets it before the agent starts booting, and
@@ -71,6 +76,10 @@ export function composerPermissions({
   return {
     canType: haveSomewhereToType,
     canSend: agentReady && !busy && hasContent,
+    // Everything a send needs except a free agent. The message is held rather than
+    // refused, which is the whole point: the end of a turn is not something the
+    // person typing can see coming.
+    canQueue: agentReady && busy && hasContent && !queueFull,
     canAttach: agentReady,
     canChangeAgentSettings: agentReady
   }
