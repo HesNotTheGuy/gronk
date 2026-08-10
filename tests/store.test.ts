@@ -679,6 +679,33 @@ test('tool payloads ARE redacted on save', () => {
   assert.ok(!raw.includes('xai-abcdefgh1234567890'))
 })
 
+/** The one conversation written to disk, read back. Names are hashed, so this
+ *  reads the directory rather than reconstructing a filename. */
+function persistedTranscript(): unknown[] {
+  const dir = path.join(userData, 'transcripts')
+  const names = fs.readdirSync(dir).filter((n) => n.endsWith('.json'))
+  assert.equal(names.length, 1, `expected one transcript file, found ${names.length}`)
+  return JSON.parse(fs.readFileSync(path.join(dir, names[0]), 'utf8'))
+}
+
+/**
+ * Everything this app has actually written, as one string.
+ *
+ * Transcripts live in their own files now, so "is this secret on disk" is a
+ * question about a directory rather than a file. Reading only the store would
+ * make these assertions pass by looking in the wrong place.
+ */
+function persistedBytes(): string {
+  const parts = [fs.readFileSync(storeFile(), 'utf8')]
+  const dir = path.join(userData, 'transcripts')
+  if (fs.existsSync(dir)) {
+    for (const name of fs.readdirSync(dir)) {
+      parts.push(fs.readFileSync(path.join(dir, name), 'utf8'))
+    }
+  }
+  return parts.join('\n')
+}
+
 test("A FAILING TOOL'S MESSAGE IS REDACTED ON SAVE, like everything else it returns", () => {
   // A tool reports why it failed, and what it was doing is in the message. The
   // store is plaintext, is copied to a backup, and is copied again into a
@@ -698,7 +725,7 @@ test("A FAILING TOOL'S MESSAGE IS REDACTED ON SAVE, like everything else it retu
       ]
     })
   ])
-  const raw = fs.readFileSync(storeFile(), 'utf8')
+  const raw = persistedBytes()
   assert.ok(!raw.includes('xai-abcdefgh1234567890'), 'a failure message went to disk verbatim')
   assert.ok(raw.includes('t1'), 'the call itself should still be recorded')
 })
@@ -719,7 +746,7 @@ test('the same is true for an api_key in a query string', () => {
       ]
     })
   ])
-  assert.ok(!fs.readFileSync(storeFile(), 'utf8').includes('SUPERSECRET123'))
+  assert.ok(!persistedBytes().includes('SUPERSECRET123'))
 })
 
 test('THE USER\'S OWN WORDS ARE NOT REDACTED, in text or in thought', () => {
@@ -806,7 +833,7 @@ test('a store that already holds duplicated turns heals itself on read', () => {
   )
   assert.equal(getTranscript('s1').length, 2)
   // Healed in place, not just filtered on the way out.
-  assert.equal(JSON.parse(fs.readFileSync(storeFile(), 'utf8')).transcripts.s1.length, 2)
+  assert.equal(persistedTranscript().length, 2)
 })
 
 // Permission audit lives in gronk-permission-audit.json now — see

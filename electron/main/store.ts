@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import {
@@ -234,6 +235,11 @@ function migrate(raw: RawStore, from: number): RawStore {
 }
 
 /** A `{ key: string }` map and nothing else: not an array, not a prototype trick. */
+/**
+ * A map of string to string — project notes, specifically. The name undersells the
+ * constraint: every value must be a string, so this answers false for any other
+ * record shape. Do not reach for it as a general "is this a plain object".
+ */
 function isPlainRecord(value: unknown): value is ProjectNotes {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const proto = Object.getPrototypeOf(value)
@@ -265,6 +271,94 @@ function fromRaw(raw: RawStore): StoreData {
     // permission-audit.ts and dropped from disk on this next writeStore.
     projectNotes: isPlainRecord(data.projectNotes) ? data.projectNotes : {}
   }
+}
+
+/**
+ * Where one conversation lives on disk.
+ *
+ * Transcripts used to be a map inside the store file, so saving one turn meant
+ * serialising and writing every conversation the user had ever had. Measured on a
+ * 7.5 MB store: 16.3 ms to stringify it, 15.6 ms to write and fsync it, per turn,
+ * growing with the total rather than with what changed.
+ *
+ * One file each means a turn costs its own conversation. The rest of the store —
+ * sessions, settings, recent projects, notes — is kilobytes and changes together,
+ * so it stays in one file and its write stays cheap.
+ */
+const TRANSCRIPT_DIR = 'transcripts'
+
+function transcriptDir(): string {
+  return path.join(path.dirname(storePath()), TRANSCRIPT_DIR)
+}
+
+/** Session ids come from the CLI, so the name is derived rather than trusted. */
+function transcriptFile(sessionId: string): string {
+  const safe = crypto.createHash('sha256').update(sessionId).digest('hex').slice(0, 32)
+  return path.join(transcriptDir(), `${safe}.json`)
+}
+
+function readTranscriptFile(sessionId: string): ChatMessage[] | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(transcriptFile(sessionId), 'utf8')) as unknown
+    return Array.isArray(raw) ? (raw as ChatMessage[]) : null
+  } catch {
+    // Missing is the ordinary case for a session that has never been saved.
+    return null
+  }
+}
+
+function writeTranscriptFile(sessionId: string, messages: ChatMessage[]): void {
+  fs.mkdirSync(transcriptDir(), { recursive: true })
+  writeFileAtomicSync(transcriptFile(sessionId), JSON.stringify(messages))
+}
+
+/**
+ * Remove one conversation from disk.
+ *
+ * Deleting a session used to leave its conversation in the store's backup for a
+ * generation, and #44's collector leaned on that: a picture stayed "while
+ * anything can still restore the conversation that used it". One file per
+ * conversation means nothing can restore it — the file is the only copy — so the
+ * reason for the delay is gone and the picture goes with the conversation.
+ *
+ * That is a change in timing, not in the rule. The rule was never "wait a
+ * generation"; it was "do not collect a picture something can still restore".
+ *
+ * Two other designs were tried and are recorded on #64: leaving the file for the
+ * prune makes a deleted session's pictures uncollectable forever, which is the bug
+ * #40 was filed for; and retiring it aside for one launch reproduces the old grace
+ * but gives the collector a fourth reference source, which moved ground its
+ * ownership and quarantine checks stand on.
+ */
+function removeTranscriptFile(sessionId: string): void {
+  try {
+    fs.rmSync(transcriptFile(sessionId), { force: true })
+  } catch {
+    /* nothing to remove */
+  }
+}
+
+/**
+ * Move a store that still carries its transcripts inline out into files.
+ *
+ * Order matters and is the whole safety of it: every file is written and counted
+ * first, and only then is the store rewritten without them. A crash before that
+ * last write leaves the transcripts in BOTH places, which reads correctly and
+ * migrates again next launch. A crash after it leaves them only in the files,
+ * which is the destination.
+ */
+function splitTranscriptsToFiles(data: StoreData): boolean {
+  const ids = Object.keys(data.transcripts)
+  if (!ids.length) return false
+  let written = 0
+  for (const id of ids) {
+    writeTranscriptFile(id, data.transcripts[id])
+    written += 1
+  }
+  if (written !== ids.length) {
+    throw new Error(`transcript split wrote ${written} of ${ids.length}`)
+  }
+  return true
 }
 
 let health: StoreHealth = { source: 'fresh', degraded: false, schemaVersion: SCHEMA_VERSION }
@@ -348,6 +442,15 @@ function hold(file: string, data: StoreData): void {
  */
 let repairNeeded = false
 
+/**
+ * Did the file that was read still carry its transcripts inline?
+ *
+ * Read off the disk read rather than off `data.transcripts`, which is a cache of
+ * whatever has been asked for since — so checking that would make every startup
+ * look like it needed splitting again.
+ */
+let splitNeeded = false
+
 function readStore(): StoreData {
   const file = storePath()
   if (heldCopyIsCurrent(file)) return cached!.data
@@ -379,9 +482,16 @@ function readStore(): StoreData {
  */
 export function repairStoreOnStartup(): void {
   const data = readStore()
-  if (!repairNeeded) return
+  // A store written by an earlier build carries its transcripts inline. Splitting
+  // them out is what makes a save cost one conversation instead of all of them.
+  // The files are written and counted BEFORE the store is rewritten without them,
+  // so a crash in between leaves them in both places — which reads correctly and
+  // simply migrates again next launch.
+  if (splitNeeded) splitTranscriptsToFiles(data)
+  if (!repairNeeded && !splitNeeded) return
   writeStore(data)
   repairNeeded = false
+  splitNeeded = false
 }
 
 function readStoreFromDisk(file: string): { data: StoreData; fromFile: boolean } {
@@ -390,6 +500,16 @@ function readStoreFromDisk(file: string): { data: StoreData; fromFile: boolean }
     setHealth({ source: 'file', degraded: false })
     const data = fromRaw(main.raw)
     repairNeeded = storedVersion(main.raw) < SCHEMA_VERSION
+    // Checked directly rather than through `isPlainRecord`, whose contract is
+    // narrower than its name: it also requires every value to be a string,
+    // because it exists for project notes. Transcript values are arrays, so it
+    // answers false and the split silently never happened.
+    const inline = (main.raw as { transcripts?: unknown }).transcripts
+    splitNeeded =
+      !!inline &&
+      typeof inline === 'object' &&
+      !Array.isArray(inline) &&
+      Object.keys(inline as Record<string, unknown>).length > 0
     return { data, fromFile: true }
   }
 
@@ -511,9 +631,12 @@ function writeStore(data: StoreData): void {
     quarantineUnreadable(file)
   }
 
+  // Transcripts are not in here. Each lives in its own file, written only when it
+  // changes, which is what stops one turn costing a pass over every conversation.
+  const { transcripts: _held, ...rest } = data
   writeFileAtomicSync(
     file,
-    JSON.stringify({ ...data, version: SCHEMA_VERSION }, null, 2),
+    JSON.stringify({ ...rest, version: SCHEMA_VERSION }, null, 2),
     // Not before the write: rotating first would mean a failed write leaves no
     // store at all, and the app reporting a recovery the user did not need. The
     // quarantine branch above deliberately does not rotate — it keeps the
@@ -817,6 +940,7 @@ export function deleteSession(sessionId: string): SessionInfo[] {
   const data = readStore()
   data.sessions = data.sessions.filter((s) => s.id !== sessionId)
   delete data.transcripts[sessionId]
+  removeTranscriptFile(sessionId)
   writeStore(data)
   return listSessions()
 }
@@ -891,11 +1015,21 @@ export function dedupeTranscriptMessages(messages: ChatMessage[]): ChatMessage[]
 
 export function getTranscript(sessionId: string): ChatMessage[] {
   const data = readStore()
+  // Read from its own file the first time and hold it: `data.transcripts` is a
+  // cache of what has been asked for, not the whole set.
+  if (!data.transcripts[sessionId]) {
+    const fromFile = readTranscriptFile(sessionId)
+    if (fromFile) data.transcripts[sessionId] = fromFile
+  }
   const raw = data.transcripts[sessionId] ?? []
   const cleaned = dedupeTranscriptMessages(raw)
   // Heal store once if old dups were present
   if (cleaned.length !== raw.length) {
     data.transcripts[sessionId] = cleaned
+    // The conversation itself, not just the counts. `writeStore` no longer
+    // persists transcripts, so healing without this would clean it on every read
+    // and never keep the result.
+    writeTranscriptFile(sessionId, cleaned)
     const idx = data.sessions.findIndex((s) => s.id === sessionId)
     if (idx >= 0) {
       data.sessions[idx] = {
@@ -1016,7 +1150,10 @@ export function saveTranscript(sessionId: string, messages: ChatMessage[]): void
     thought: m.thought,
     toolCalls: m.toolCalls?.map(redactToolCall)
   }))
-  data.transcripts[sessionId] = keepHistory(data.transcripts[sessionId] ?? [], trimmed)
+  const stored = data.transcripts[sessionId] ?? readTranscriptFile(sessionId) ?? []
+  const next = keepHistory(stored, trimmed)
+  data.transcripts[sessionId] = next
+  writeTranscriptFile(sessionId, next)
 
   // Activity counters for home / browse frequency UI
   const idx = data.sessions.findIndex((s) => s.id === sessionId)
@@ -1029,12 +1166,15 @@ export function saveTranscript(sessionId: string, messages: ChatMessage[]): void
     }
   }
 
-  // Cap number of stored transcripts
-  const ids = Object.keys(data.transcripts)
-  if (ids.length > 40) {
-    const keep = new Set(listSessions().map((s) => s.id))
-    for (const id of ids) {
-      if (!keep.has(id)) delete data.transcripts[id]
+  // Cap how many conversations are kept. The list to prune is now the directory
+  // rather than a map in memory, because that map only holds what has been read.
+  const keep = new Set(listSessions().map((s) => s.id))
+  if (keep.size > 40) {
+    for (const id of Object.keys(data.transcripts)) {
+      if (!keep.has(id)) {
+        delete data.transcripts[id]
+        removeTranscriptFile(id)
+      }
     }
   }
 
@@ -1063,6 +1203,7 @@ export function listSessionsWithTranscripts(): Array<{
     .filter((s) => !s.archived)
     .map((session) => ({
       session,
-      messages: dedupeTranscriptMessages(data.transcripts[session.id] ?? [])
+      // Read per session: `data.transcripts` only holds what has been asked for.
+      messages: dedupeTranscriptMessages(getTranscript(session.id))
     }))
 }

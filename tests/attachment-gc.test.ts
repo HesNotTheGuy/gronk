@@ -216,22 +216,22 @@ test('THE REPORTED BUG: deleting a session removes the picture it parked', async
   assert.equal(fs.existsSync(path.join(attachDir(), name)), false)
 })
 
-test('A DELETED SESSION KEEPS ITS PICTURES WHILE THE BACKUP STILL HAS IT', async () => {
-  // The lag, pinned on purpose so shortening it is a decision rather than an
-  // accident. Straight after a delete the retained backup is the copy that
-  // still contains the session, and recovering from it has to bring the images
-  // back too.
+test('A DELETED SESSION TAKES ITS PICTURES WITH IT', async () => {
+  // This used to wait a generation, because the store's backup still held the
+  // conversation and recovering from it had to bring the images back. Conversations
+  // are one file each now and the file is the only copy, so a deleted session is
+  // not recoverable and nothing is waiting for.
+  //
+  // The rule has not changed — it was never "wait a generation", it was "do not
+  // collect a picture something can still restore". What changed is that after a
+  // delete, nothing can.
   const name = sessionWithImage('s1')
   deleteSession('s1')
   ageFiles()
 
-  const straightAway = await sweepAttachments()
-  assert.equal(straightAway.removed, 0, 'collected while the backup could still restore it')
-  assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
-
-  rollBackupForward()
-  const later = await sweepAttachments()
-  assert.equal(later.removed, 1, 'the backup rolled forward and the file still stayed')
+  const result = await sweepAttachments()
+  assert.equal(result.removed, 1, 'nothing can restore that conversation, so the picture should go')
+  assert.equal(fs.existsSync(path.join(attachDir(), name)), false)
 })
 
 test('TWO SESSIONS SHARING ONE FILE: deleting either must not take the other picture', async () => {
@@ -265,18 +265,19 @@ test('a session that is merely archived keeps its pictures', async () => {
   assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
 })
 
-test('a picture only the backup still refers to survives', async () => {
-  // readStore falls back to the backup when the main file cannot be read, so a
-  // transcript that exists only there is one the user can still get back. Its
-  // images have to come back with it.
+test('A CORRUPT STORE DOES NOT COST YOU A CONVERSATION OR ITS PICTURES', async () => {
+  // The backup used to be where a conversation survived a corrupt store, which is
+  // why a picture referenced only there had to survive too. Conversations are
+  // their own files now, so they do not depend on the store's health at all —
+  // which is stronger, not weaker: a corrupt store loses sessions and settings and
+  // leaves every conversation intact.
   const name = sessionWithImage('s1')
-  fs.copyFileSync(storeFile(), backupFile())
-  deleteSession('s1')
+  fs.writeFileSync(storeFile(), '{ not json', 'utf8')
   ageFiles()
 
   const result = await sweepAttachments()
 
-  assert.equal(result.removed, 0, 'the backup still refers to this picture')
+  assert.equal(result.removed, 0, 'an unreadable store must never authorise deleting')
   assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
 })
 
@@ -327,6 +328,42 @@ test('a missing store refuses even when the backup is readable', async () => {
   assert.equal(fs.existsSync(path.join(attachDir(), name)), true)
 })
 
+/**
+ * A quarantine file in the shape an older build left behind: the store with its
+ * transcripts inline.
+ *
+ * Conversations are their own files now, so a quarantine copy taken today carries
+ * no transcripts and names no images. A copy taken before the split does, and it
+ * is exactly the file a manual rescue would reach for — so it is still a reference
+ * source, and that is what these two tests are about.
+ */
+function legacyQuarantine(stamp: string, sessionId: string, imageName: string): string {
+  const file = path.join(userData, `gronk-store.corrupt-${stamp}.json`)
+  const store = JSON.parse(fs.readFileSync(storeFile(), 'utf8')) as Record<string, unknown>
+  // Transcripts first, so a test that truncates the tail still has the name to
+  // look for. The previous ordering put the attachment path in the last handful
+  // of characters and the truncation removed it — caught by the fixture's own
+  // guard, which is why that guard is there.
+  const text = JSON.stringify({
+    transcripts: {
+      [sessionId]: [
+        {
+          id: `${sessionId}-m1`,
+          role: 'user',
+          text: 'here is a picture',
+          createdAt: 1,
+          attachments: [
+            { id: 'a1', kind: 'image', name: 'paste.png', path: path.join(attachDir(), imageName) }
+          ]
+        }
+      ]
+    },
+    ...store
+  })
+  fs.writeFileSync(file, text)
+  return text
+}
+
 test('A QUARANTINED STORE STILL COUNTS: a rescue must not find the images gone', async () => {
   // writeStore keeps an unreadable store under gronk-store.corrupt-<ts>.json so
   // a manual rescue is possible. While the corrupt bytes sit at the live path
@@ -334,8 +371,7 @@ test('A QUARANTINED STORE STILL COUNTS: a rescue must not find the images gone',
   // caution used to evaporate, and everything only they referenced became
   // collectable.
   const name = sessionWithImage('s1')
-  const rescued = fs.readFileSync(storeFile(), 'utf8')
-  fs.writeFileSync(path.join(userData, 'gronk-store.corrupt-1754500000000.json'), rescued)
+  legacyQuarantine('1754500000000', 's1', name)
   deleteSession('s1')
   rollBackupForward()
   ageFiles()
@@ -352,7 +388,8 @@ test('a quarantined store is read as text, because it is corrupt by definition',
   // files, and a parse that fails contributes no references, which is exactly
   // the "found nothing" this module must never treat as "there is nothing".
   const name = sessionWithImage('s1')
-  const truncated = fs.readFileSync(storeFile(), 'utf8').slice(0, -40)
+  const whole = legacyQuarantine('1754500000001', 's1', name)
+  const truncated = whole.slice(0, -40)
   assert.throws(() => JSON.parse(truncated), 'the fixture is not actually corrupt')
   assert.ok(truncated.includes(name), 'the fixture lost the name before the test could use it')
   fs.writeFileSync(path.join(userData, 'gronk-store.corrupt-1754500000001.json'), truncated)

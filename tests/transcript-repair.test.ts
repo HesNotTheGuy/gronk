@@ -336,11 +336,16 @@ test('a new save parks its attachments instead of writing base64 again', () => {
   upsertSession({ id: 's1', cwd: 'C:/work/app', createdAt: 1, updatedAt: 1 })
   saveTranscript('s1', [msg('m1', undefined, [image('a')])])
 
-  const onDisk = JSON.parse(fs.readFileSync(storeFile(), 'utf8'))
-  const attachment = onDisk.transcripts.s1[0].attachments[0]
+  // Transcripts are one file each now, and the name is a hash, so read the
+  // directory rather than rebuilding the path.
+  const dir = path.join(path.dirname(storeFile()), 'transcripts')
+  const names = fs.readdirSync(dir).filter((n) => n.endsWith('.json'))
+  assert.equal(names.length, 1)
+  const onDisk = JSON.parse(fs.readFileSync(path.join(dir, names[0]), 'utf8'))
+  const attachment = onDisk[0].attachments[0]
   assert.equal(attachment.data, undefined)
   assert.equal(attachment.previewUrl, undefined)
   assert.ok(attachment.path, 'the image was not parked')
   assert.equal(attachment.name, 'paste.png')
-  assert.equal(fs.readFileSync(storeFile(), 'utf8').includes(PNG_B64), false)
+  assert.equal(fs.readFileSync(path.join(dir, names[0]), 'utf8').includes(PNG_B64), false)
 })
