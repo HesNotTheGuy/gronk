@@ -354,7 +354,10 @@ export function App() {
                     ? 'Your projects'
                     : g.projectName || 'Project'}
             </div>
-            <div className="topbar-sub">
+            {/* Titled because the header no longer allows a selection: a long
+                project path ellipsizes here and this is the only way left to
+                read the whole of it. */}
+            <div className="topbar-sub" title={surface === 'project' && !g.browsing ? g.cwd || undefined : undefined}>
               {/*
                 One vocabulary everywhere. This line previously said "app-wide"
                 while three other screens said "app-level", "general Grok" and
