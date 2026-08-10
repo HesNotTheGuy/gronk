@@ -4,6 +4,7 @@ import { agentManager } from './agent-manager'
 import { scheduleAttachmentSweep } from './attachment-gc'
 import { getAuthStatus, invalidateAuthCache } from './auth'
 import { shouldRefreshOnFocus } from './auth-decision'
+import { repairStoreOnStartup } from './store'
 import { invalidateCliVersionCache } from './cli-version'
 import { installContextMenu } from './context-menu'
 import { isAllowedExternalUrl, isAppUrl } from './ipc-guard'
@@ -320,6 +321,13 @@ function setupApplicationMenu(): void {
 app.whenReady().then(() => {
   hardenSession()
   setupApplicationMenu()
+
+  // Before the window, deliberately. Bringing an older store up to the current
+  // schema is one large write on a large store, and doing it here means it
+  // cannot land in the middle of something the user is waiting on. It was
+  // previously done inside every read, which made a read cost a write.
+  repairStoreOnStartup()
+
   registerIpc()
   createWindow()
 

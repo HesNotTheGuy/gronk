@@ -14,7 +14,13 @@ import {
   parkAttachmentBytes,
   ATTACHMENT_DIR
 } from '../electron/main/transcript-repair'
-import { getTranscript, listSessions, saveTranscript, upsertSession } from '../electron/main/store'
+import {
+  getTranscript,
+  listSessions,
+  repairStoreOnStartup,
+  saveTranscript,
+  upsertSession
+} from '../electron/main/store'
 import type { ChatMessage, PromptAttachment, ToolCallInfo } from '../shared/types'
 
 /**
@@ -271,13 +277,17 @@ function writeLegacyStore(transcripts: Record<string, ChatMessage[]>): void {
   )
 }
 
-test('MIGRATION: a v1 store on disk is repaired on the first read', () => {
+test('MIGRATION: a v1 store on disk is repaired at startup', () => {
   const duplicated = Array.from({ length: 6 }, (_, i) =>
     msg(`m${i}`, [call('t1'), call('t2'), call('t3')], i === 0 ? [image('a')] : undefined)
   )
   writeLegacyStore({ s1: duplicated })
   const before = fs.statSync(storeFile()).size
 
+  // The repair used to happen inside every read, which made a read cost a full
+  // write of the file being repaired. It is a startup step now, so this names it
+  // rather than relying on a read to trigger it.
+  repairStoreOnStartup()
   const restored = getTranscript('s1')
 
   assert.equal(restored.length, 6, 'the conversation lost a message')
@@ -289,8 +299,8 @@ test('MIGRATION: a v1 store on disk is repaired on the first read', () => {
   assert.equal(restored[0].attachments?.[0].data, undefined, 'attachment bytes survived the repair')
   assert.ok(restored[0].attachments?.[0].path, 'the image was not parked anywhere')
 
-  // The repair is persisted rather than redone on every read: the file on disk
-  // is now smaller and stamped, and the parsed size is the whole problem.
+  // Persisted rather than redone: the file on disk is now smaller and stamped,
+  // and its size was the whole problem.
   const after = fs.statSync(storeFile()).size
   assert.ok(after < before, `expected the file to shrink, ${before} -> ${after}`)
   assert.equal(JSON.parse(fs.readFileSync(storeFile(), 'utf8')).version, 2)
@@ -298,10 +308,12 @@ test('MIGRATION: a v1 store on disk is repaired on the first read', () => {
 
 test('a second startup neither re-runs the repair nor strips anything twice', () => {
   writeLegacyStore({ s1: [msg('m1', [call('t1'), call('t1')], [image('a')])] })
+  repairStoreOnStartup()
   getTranscript('s1')
   const afterFirst = fs.readFileSync(storeFile(), 'utf8')
 
-  // Same file, read again: already v2, so migrate returns it untouched.
+  // Already at this version, so a second startup has nothing to do.
+  repairStoreOnStartup()
   const second = getTranscript('s1')
   assert.equal(fs.readFileSync(storeFile(), 'utf8'), afterFirst, 'the store was rewritten again')
   assert.equal(second.length, 1)
