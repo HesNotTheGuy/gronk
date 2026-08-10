@@ -911,6 +911,66 @@ export function redactToolCall(call: ToolCallInfo): ToolCallInfo {
   return applyRedactionPolicy(call, TOOL_CALL_POLICY)
 }
 
+/**
+ * Reconcile a save against what is already stored, so a save can never be a
+ * replacement.
+ *
+ * The write used to be `data.transcripts[id] = incoming`, which made every
+ * caller's array the whole truth. That is how three of the maintainer's
+ * conversations were replaced by a single message each: `persistLiveTranscript`
+ * writes `liveMessages`, which starts empty on a boot, so resuming a session and
+ * completing one turn wrote a one-message transcript over the stored one. The
+ * ids had no overlap at all — it was not a trim, it was a different, shorter
+ * conversation landing on top.
+ *
+ * This class of bug has been fixed here before, path by path, and there are
+ * tests named for it ("a turn completing mid-restore saves the whole transcript,
+ * not the tail"). It came back through a path nobody had pinned. So the rule is
+ * enforced at the single write instead: history is not something callers
+ * remember to preserve, it is something they cannot drop.
+ *
+ * What is allowed, and why each is not this bug:
+ *
+ * - Growing. The ordinary case.
+ * - The 200-message cap. It shortens the INCOMING array while the stored one is
+ *   already capped, so the lengths come out equal rather than shorter.
+ * - Removing duplicates. Loses stored ids and introduces none, which is the same
+ *   conversation with less repetition in it.
+ *
+ * What is refused: an empty save over a stored conversation, and a save that both
+ * drops stored messages AND brings new ones while ending up shorter. That is not this conversation continuing. Rather than
+ * discard the caller's messages too, the stored history is kept and anything
+ * genuinely new is appended — so neither side of the disagreement loses anything.
+ *
+ * Deleting a conversation and archiving it are separate, named, and unaffected.
+ */
+export function keepHistory(stored: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  if (!stored.length) return incoming
+
+  // Nothing offered over something stored. A degenerate subset, so the rule
+  // below would wave it through on the grounds that it introduces no new
+  // messages — and it is the worst shape of all. No caller has a reason to empty
+  // a conversation: clearing one is `deleteSession`, which is named for it.
+  if (!incoming.length) {
+    console.error(`[store] refused an empty save over ${stored.length} stored messages`)
+    return stored
+  }
+
+  const incomingIds = new Set(incoming.map((m) => m.id))
+  const storedIds = new Set(stored.map((m) => m.id))
+  const drops = stored.some((m) => !incomingIds.has(m.id))
+  const adds = incoming.some((m) => !storedIds.has(m.id))
+
+  if (!(drops && adds && incoming.length < stored.length)) return incoming
+
+  const appended = incoming.filter((m) => !storedIds.has(m.id))
+  console.error(
+    `[store] refused to shrink transcript: ${stored.length} stored, ${incoming.length} offered; ` +
+      `kept history and appended ${appended.length}`
+  )
+  return [...stored, ...appended].slice(-200)
+}
+
 export function saveTranscript(sessionId: string, messages: ChatMessage[]): void {
   const data = readStore()
   // Cap session length. Message text/thought are the user's own conversation on
@@ -932,7 +992,7 @@ export function saveTranscript(sessionId: string, messages: ChatMessage[]): void
     thought: m.thought,
     toolCalls: m.toolCalls?.map(redactToolCall)
   }))
-  data.transcripts[sessionId] = trimmed
+  data.transcripts[sessionId] = keepHistory(data.transcripts[sessionId] ?? [], trimmed)
 
   // Activity counters for home / browse frequency UI
   const idx = data.sessions.findIndex((s) => s.id === sessionId)
