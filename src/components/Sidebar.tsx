@@ -356,10 +356,12 @@ export function Sidebar({
           "saved in the app · no project" caption above a full-width button.
           Three of those restated what the switcher directly above already says.
           The collapse is why this is more than tidying: it persisted, so one
-          click left Chat as a search box and a triangle — no visible way to
-          start a chat — on that launch and every launch after. Build has no
-          wrapper to collapse, which is why adopting its shape fixes that instead
-          of papering over it.
+          click hid the whole list and the only way to start a chat behind a
+          "Chats" expander, on that launch and every launch after. The expander
+          was labelled and one click away, so nothing was unreachable — it just
+          did not look like where a new chat lives. Build has no wrapper to
+          collapse, which is why adopting its shape removes the state rather than
+          fixing what it did.
         */}
         {showChatRail ? (
           <div className="session-nav">
