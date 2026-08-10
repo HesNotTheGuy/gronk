@@ -291,17 +291,106 @@ function setHealth(next: Omit<StoreHealth, 'schemaVersion'>): void {
  * file is never overwritten here: destroying it would take the evidence and the
  * last chance of a manual rescue with it.
  */
+/**
+ * The store, held between calls, keyed by the path it was read from.
+ *
+ * `readStore` used to read and parse the file on every call, at eighteen call
+ * sites, and that is what made the store's size everybody's problem: a 120 MB
+ * file was re-read and re-parsed for a question as small as "what is the
+ * theme". Keying on the path means relocating the data directory misses the
+ * cache and re-reads, so there is nothing to invalidate by hand.
+ *
+ * The object is shared, not copied. Every mutating function in this file reads,
+ * mutates and then writes, and `tests/store-cache.test.ts` pins that so a new
+ * one cannot quietly mutate the cache and skip the write. A copy per read would
+ * cost most of what the cache saves.
+ *
+ * Held with the file's size and modified time, and checked against them on every
+ * read. See `heldCopyIsCurrent` for why that is not paranoia.
+ */
+let cached: { file: string; data: StoreData; mtimeMs: number; size: number } | null = null
+
+/**
+ * Is the held copy still what is on disk?
+ *
+ * A stat rather than an assumption. Nothing but this process writes the store,
+ * so in ordinary use the answer is always yes — but "ordinary" is doing a lot of
+ * work in that sentence: a torn write from a crash, a sync client, a second
+ * instance, or someone editing the file by hand all leave the file saying
+ * something the held copy does not. Reading a stale store is the failure this
+ * whole change must not introduce, and a stat is a rounding error against the
+ * read and parse it replaces.
+ */
+function heldCopyIsCurrent(file: string): boolean {
+  if (!cached || cached.file !== file) return false
+  try {
+    const stat = fs.statSync(file)
+    return stat.mtimeMs === cached.mtimeMs && stat.size === cached.size
+  } catch {
+    // Gone, or unreadable. Either way the held copy no longer describes it.
+    return false
+  }
+}
+
+function hold(file: string, data: StoreData): void {
+  try {
+    const stat = fs.statSync(file)
+    cached = { file, data, mtimeMs: stat.mtimeMs, size: stat.size }
+  } catch {
+    // No file to compare against later, so do not claim to have one.
+    cached = null
+  }
+}
+
+/**
+ * Set when the file on disk is an older schema than this build writes, so the
+ * repair can happen once, deliberately, instead of inside every read.
+ */
+let repairNeeded = false
+
 function readStore(): StoreData {
   const file = storePath()
+  if (heldCopyIsCurrent(file)) return cached!.data
+  const read = readStoreFromDisk(file)
+  // Only a copy that came from the file is held. A fallback — the backup, or an
+  // empty store — would otherwise be pinned against the stat of the file it
+  // failed to read, so one transient failure (a scanner's lock, a cloud
+  // placeholder that would not hydrate) would latch older or empty data for the
+  // rest of the process and the next write would put it on disk over the real
+  // thing. Re-reading costs a parse; getting this wrong costs the conversations.
+  if (read.fromFile) hold(file, read.data)
+  else cached = null
+  return read.data
+}
+
+/**
+ * Bring the file on disk up to the current schema, once.
+ *
+ * This used to run inside `readStore`, which meant an unrepaired store did a
+ * full write on every read — and a write is the file copied to the backup, then
+ * written to a temp file, fsynced and renamed, so on a large store it is several
+ * hundred megabytes of disk work for a read. Repeating that is what put the
+ * rename in the way of whatever scanner or indexer had one of those files open,
+ * and the write that kept failing was the repair itself, so the version on disk
+ * never advanced and the next read tried again.
+ *
+ * Call once at startup, before the window can ask for anything. Safe to call
+ * again: it is a no-op once the file matches.
+ */
+export function repairStoreOnStartup(): void {
+  const data = readStore()
+  if (!repairNeeded) return
+  writeStore(data)
+  repairNeeded = false
+}
+
+function readStoreFromDisk(file: string): { data: StoreData; fromFile: boolean } {
   const main = readJsonFile(file)
   if (main.kind === 'ok') {
     setHealth({ source: 'file', degraded: false })
     const data = fromRaw(main.raw)
-    // Persist a repair immediately rather than waiting for whatever writes next.
-    // Until it lands, every single read re-parses the unrepaired file and redoes
-    // the work, and the size of that file is the reason for the repair.
-    if (storedVersion(main.raw) < SCHEMA_VERSION) writeStore(data)
-    return data
+    repairNeeded = storedVersion(main.raw) < SCHEMA_VERSION
+    return { data, fromFile: true }
   }
 
   const backupFile = backupStorePath()
@@ -318,12 +407,12 @@ function readStore(): StoreData {
           : `${STORE_FILE} was missing. Recovered the previous copy from ${BACKUP_FILE}.`,
       ...(main.kind === 'bad' ? { corruptPath: file } : {})
     })
-    return fromRaw(backup.raw)
+    return { data: fromRaw(backup.raw), fromFile: false }
   }
 
   if (main.kind === 'missing' && backup.kind === 'missing') {
     setHealth({ source: 'fresh', degraded: false })
-    return emptyStore()
+    return { data: emptyStore(), fromFile: false }
   }
 
   setHealth({
@@ -337,7 +426,7 @@ function readStore(): StoreData {
       '. Starting empty — the unreadable files were left in place.',
     corruptPath: main.kind === 'bad' ? file : backupFile
   })
-  return emptyStore()
+  return { data: emptyStore(), fromFile: false }
 }
 
 /**
@@ -382,8 +471,18 @@ function quarantineUnreadable(file: string): void {
  */
 function writeStore(data: StoreData): void {
   const file = storePath()
+  // The held copy IS the object the caller just mutated, so it already describes
+  // something that is not on disk. Dropping it here means a write that throws
+  // leaves the next read to go and find out what is actually there, rather than
+  // serving the change as though it had been saved. Restored at the end on
+  // success.
+  cached = null
+
+  // Read, not consumed: clearing it here lost it when the write threw, and the
+  // next successful write would then take the `refreshBackup` branch and copy the
+  // still-unreadable store over the one good backup — the copy the user's whole
+  // history had just been recovered from. Cleared after the write lands.
   const corrupt = quarantineOnNextWrite
-  quarantineOnNextWrite = null
 
   // `corrupt !== file` means the data directory moved since that read; the flag
   // belongs to a store we are no longer writing.
@@ -398,6 +497,15 @@ function writeStore(data: StoreData): void {
   }
 
   writeFileAtomicSync(file, JSON.stringify({ ...data, version: SCHEMA_VERSION }, null, 2))
+  // On disk now, and at this version, so a later read need not go looking.
+  hold(file, data)
+  repairNeeded = false
+  quarantineOnNextWrite = null
+  // Health used to be re-derived by the next read, which re-read the file and so
+  // noticed that it had become good. A held copy means no such read happens, and
+  // without this the app would go on reporting a store that was missing or
+  // recovered from backup after it had been written successfully.
+  setHealth({ source: 'file', degraded: false })
 }
 
 /** Keep one row per session id; prefer newest updatedAt. */
@@ -582,7 +690,7 @@ export function setRecentProjectPinned(cwd: string, pinned: boolean): ProjectCon
   const data = readStore()
   const normalized = normalizeCwd(cwd)
   let found = false
-  data.recentProjects = sortRecentProjects(
+  const next = sortRecentProjects(
     filterOutChatProjects(
       data.recentProjects.map((p) => {
         if (normalizeCwd(p.cwd) !== normalized) return p
@@ -591,7 +699,11 @@ export function setRecentProjectPinned(cwd: string, pinned: boolean): ProjectCon
       })
     )
   )
+  // Assigned only on the path that goes on to write. The store object is shared
+  // with every other reader, so mutating it and then returning early left the app
+  // holding a list that was never saved.
   if (!found) return getRecentProjects()
+  data.recentProjects = next
   writeStore(data)
   return data.recentProjects
 }

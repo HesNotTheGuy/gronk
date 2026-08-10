@@ -4,6 +4,7 @@ import { agentManager } from './agent-manager'
 import { scheduleAttachmentSweep } from './attachment-gc'
 import { getAuthStatus, invalidateAuthCache } from './auth'
 import { shouldRefreshOnFocus } from './auth-decision'
+import { repairStoreOnStartup } from './store'
 import { invalidateCliVersionCache } from './cli-version'
 import { installContextMenu } from './context-menu'
 import { isAllowedExternalUrl, isAppUrl } from './ipc-guard'
@@ -320,6 +321,24 @@ function setupApplicationMenu(): void {
 app.whenReady().then(() => {
   hardenSession()
   setupApplicationMenu()
+
+  // Before the window, deliberately: bringing an older store up to the current
+  // schema is one large write, and doing it here means it cannot land in the
+  // middle of something the user is waiting on.
+  //
+  // Caught, absolutely. This write is the one that fails — a rename losing to a
+  // scanner is the whole reason the repair exists — and an uncaught throw here
+  // takes registerIpc, createWindow and the 'activate' binding with it. The
+  // single-instance lock is already held with no window, so every relaunch would
+  // be a silent no-op: an app that cannot be started, caused by the code meant to
+  // stop it failing. A store that is merely unrepaired still opens and still
+  // works.
+  try {
+    repairStoreOnStartup()
+  } catch (err) {
+    console.error('[store] repair at startup failed; continuing unrepaired', err)
+  }
+
   registerIpc()
   createWindow()
 
