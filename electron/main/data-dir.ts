@@ -169,7 +169,21 @@ function fsyncDirSync(dir: string): void {
  * The temp file is removed on any failure, so a crashed write leaves at most one
  * stray dotfile and never a corrupt store.
  */
-export function writeFileAtomicSync(filePath: string, contents: string): void {
+export function writeFileAtomicSync(
+  filePath: string,
+  contents: string,
+  /**
+   * Run once the new bytes are on disk and durable, immediately before they
+   * become `filePath`.
+   *
+   * This is where the store rotates its previous version into the backup. Doing
+   * it here rather than before the write is what makes a failed write harmless:
+   * nothing has moved yet, so the file and its backup are both still whatever
+   * they were. A throw from this hook aborts the commit and takes the temp file
+   * with it.
+   */
+  beforeCommit?: () => void
+): void {
   const dir = path.dirname(filePath)
   fs.mkdirSync(dir, { recursive: true })
   // Same directory on purpose: rename() is only atomic within one filesystem,
@@ -185,6 +199,7 @@ export function writeFileAtomicSync(filePath: string, contents: string): void {
     fs.fsyncSync(fd)
     fs.closeSync(fd)
     fd = undefined
+    beforeCommit?.()
     renameWithRetry(tmp, filePath)
     fsyncDirSync(dir)
   } catch (err) {

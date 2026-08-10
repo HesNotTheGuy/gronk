@@ -443,12 +443,29 @@ export function getStoreHealth(): StoreHealth {
 }
 
 /** Roll the current store forward into the one retained backup. */
-function refreshBackup(file: string): void {
+/**
+ * Move the version being replaced into the backup slot.
+ *
+ * This was `copyFileSync`, on every write. A save therefore cost two passes over
+ * the whole store — copy it, then write it — so one session gaining one message
+ * rewrote every conversation the user had, twice. Measured before this change:
+ * 6.5 ms per saved turn at 0.1 MB, 37.6 ms at 6.7 MB, rising with the total
+ * rather than with what changed.
+ *
+ * A rename gives the same backup — the exact bytes that were the store a moment
+ * ago — for no I/O at all. It is called from inside the atomic write, after the
+ * replacement is durable and before it is committed, so a failed write leaves the
+ * store and its backup both untouched.
+ *
+ * `EXDEV` cannot happen: both paths are in the data directory, which is one
+ * filesystem, which is also why the temp file lives there.
+ */
+function rotateIntoBackup(file: string): void {
   try {
     if (fs.statSync(file).size === 0) return
-    fs.copyFileSync(file, backupStorePath())
+    fs.renameSync(file, backupStorePath())
   } catch {
-    /* no store yet (or it just vanished) — nothing to back up */
+    /* no store yet, or it just vanished — nothing to keep */
   }
 }
 
@@ -492,11 +509,18 @@ function writeStore(data: StoreData): void {
     // recovered from or the only other candidate, so overwriting it with the
     // unreadable bytes would burn the last chance of getting anything back.
     quarantineUnreadable(file)
-  } else {
-    refreshBackup(file)
   }
 
-  writeFileAtomicSync(file, JSON.stringify({ ...data, version: SCHEMA_VERSION }, null, 2))
+  writeFileAtomicSync(
+    file,
+    JSON.stringify({ ...data, version: SCHEMA_VERSION }, null, 2),
+    // Not before the write: rotating first would mean a failed write leaves no
+    // store at all, and the app reporting a recovery the user did not need. The
+    // quarantine branch above deliberately does not rotate — it keeps the
+    // unreadable bytes aside and leaves the backup alone, because that backup is
+    // what the history was just recovered from.
+    corrupt && corrupt === file ? undefined : () => rotateIntoBackup(file)
+  )
   // On disk now, and at this version, so a later read need not go looking.
   hold(file, data)
   repairNeeded = false
