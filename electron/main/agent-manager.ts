@@ -114,6 +114,12 @@ export class AgentManager {
   private bootAlwaysApprove = false
   /** Running token/cost totals for the live session (in memory only, never persisted). */
   private usage = new SessionUsageTracker()
+  /**
+   * The plan last emitted, kept only so focusing this session can put it back on
+   * screen. Cleared wherever the usage totals are, which is every point a session
+   * becomes a different conversation.
+   */
+  private lastPlan: { messageId: string; plan: unknown } | null = null
 
   setWindow(win: BrowserWindow | null): void {
     this.window = win
@@ -414,6 +420,32 @@ export class AgentManager {
   }
 
   /**
+   * Re-send this session's messages, for the same reason the permission above is
+   * re-sent: while the session was in the background the renderer dropped its
+   * events, correctly, because they did not belong to the conversation on screen.
+   *
+   * Without this, coming back to a session showed whatever was half-painted at
+   * the moment of the switch — an assistant bubble with nothing in it, which never
+   * filled. The reply was never lost; it was in here, and reopening the app showed
+   * it. Only the live view was stale.
+   *
+   * `liveMessages` is sent as-is, and `session-resync` exists rather than reusing
+   * `history-replace` for the same reason: that path stamps `streaming: false`. A
+   * turn still running has to arrive still streaming, or the chunks that follow it
+   * append to a message the renderer has already drawn as finished.
+   */
+  reemitViewState(): void {
+    if (!this.sessionId) return
+    this.emit({
+      type: 'session-resync',
+      sessionId: this.sessionId,
+      messages: this.liveMessages,
+      usage: this.usage.snapshot(),
+      plan: this.lastPlan
+    })
+  }
+
+  /**
    * Resume an existing Grok session: boot agent, session/load (no session/new),
    * hydrate UI from ACP replay + local transcript cache.
    */
@@ -483,6 +515,7 @@ export class AgentManager {
       // process), so without this an earlier session's totals would carry over.
       // Replayed turn_completed updates then rebuild this session's real total.
       this.usage.reset()
+      this.lastPlan = null
       // If we already have a local transcript, do not rebuild messages from ACP echo
       this.suppressHistoryReplay = plan.suppressHistoryReplay
       this.historyAssistantId = null
@@ -572,6 +605,7 @@ export class AgentManager {
 
     // Totals belong to one live session; a new process starts a new accounting run.
     this.usage.reset()
+    this.lastPlan = null
     this.permissions.clear()
     this.sessionAllowKinds.clear()
     if (this.client) {
@@ -1146,6 +1180,7 @@ export class AgentManager {
       }
 
       case 'plan':
+        this.lastPlan = { messageId, plan: action.plan }
         this.emit({ type: 'plan', sessionId, messageId, plan: action.plan })
         return
 
@@ -1222,6 +1257,7 @@ export interface ManagedSession {
   getCurrentModel(): string | undefined
   livenessNow(): SessionLiveness | null
   reemitFrontPermission(): void
+  reemitViewState(): void
   start(
     cwd: string,
     options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project' }
@@ -1424,6 +1460,9 @@ export class AgentRegistry {
     const manager = this.sessions.get(sessionId)
     if (!manager) return
     this.lastFocusedCwd = manager.getCwd() ?? this.lastFocusedCwd
+    // The conversation first: a permission modal over a stale transcript is worse
+    // than one over a correct transcript, and this is the bigger repaint.
+    manager.reemitViewState()
     manager.reemitFrontPermission()
     const state = manager.getConnectionState()
     this.send({ type: 'connection', state, sessionId })

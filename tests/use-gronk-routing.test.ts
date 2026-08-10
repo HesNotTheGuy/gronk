@@ -522,3 +522,93 @@ test("a background session's permission prompt does not appear over this one", a
     h.restore()
   }
 })
+
+// ── #66: what a resync hands over, and what it must not undo ────────────────
+
+const resync = (
+  sessionId: string,
+  messages: ChatMessage[],
+  extra: Partial<Extract<MainToRendererEvent, { type: 'session-resync' }>> = {}
+): MainToRendererEvent => ({
+  type: 'session-resync',
+  sessionId,
+  messages,
+  usage: null,
+  plan: null,
+  ...extra
+})
+
+const streaming = (id: string, text: string): ChatMessage =>
+  ({ id, role: 'assistant', text, createdAt: 0, streaming: true }) as ChatMessage
+
+test('A RESYNC PAINTS WHAT THE SESSION HOLDS', async () => {
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    await act(async () => {
+      h.emit(resync('s1', [streaming('m1', 'the reply that arrived while you were away')]))
+    })
+    await flush()
+    assert.match(transcript(h), /arrived while you were away/)
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A TURN STILL RUNNING SURVIVES THE RESYNC AND KEEPS STREAMING INTO THE SAME MESSAGE', async () => {
+  // The trap in this fix. `history-replace` stamps every message finished, which
+  // is right for a conversation restored from disk and wrong here: the chunks
+  // still to come would append to a message the UI has already drawn as done,
+  // so the text would keep growing with no sign it was still being written.
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    await act(async () => {
+      h.emit(resync('s1', [streaming('m1', 'half a ')]))
+    })
+    await flush()
+
+    const mid = (h.hook().messages as ChatMessage[]).find((m) => m.id === 'm1')
+    assert.equal(mid?.streaming, true, 'still streaming after the resync')
+
+    await act(async () => {
+      h.emit(chunk('s1', 'thought', 'm1'))
+    })
+    await flush()
+
+    const after = h.hook().messages as ChatMessage[]
+    assert.equal(after.length, 1, 'the chunk continued the message rather than starting a new one')
+    assert.equal(after[0].text, 'half a thought')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A RESYNC REPLACES THE TOKEN COUNT AND PLAN, IT DOES NOT CLEAR THEM', async () => {
+  // Half of this bug is a correct transcript sitting next to the previous
+  // conversation's numbers. Clearing them instead would swap one wrong answer
+  // for a blank one, so the resync carries all three or it has not finished.
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    await act(async () => {
+      h.emit(
+        resync('s1', [streaming('m1', 'hello')], {
+          usage: { sessionId: 's1', turns: 3, totals: { inputTokens: 12, outputTokens: 34 } } as never,
+          plan: { messageId: 'm1', plan: { entries: [{ content: 'ship it', status: 'in_progress' }] } }
+        })
+      )
+    })
+    await flush()
+
+    assert.equal((h.hook().usage as { turns: number } | null)?.turns, 3)
+    const plan = h.hook().activePlan as { sessionId: string; entries: unknown[] } | null
+    assert.equal(plan?.sessionId, 's1')
+    assert.ok(plan && plan.entries.length > 0, 'the plan came back with the conversation')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})

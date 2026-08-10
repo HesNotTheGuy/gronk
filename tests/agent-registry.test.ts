@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { AgentRegistry, type ManagedSession } from '../electron/main/agent-manager'
 import { livenessOf, mayForward } from '../electron/main/agent/session-liveness'
 import type {
+  ChatMessage,
   ConnectionState,
   MainToRendererEvent,
   PermissionDecision,
@@ -23,7 +24,11 @@ interface Fake extends ManagedSession {
   stopped: number
   loads: number
   reemitted: number
+  /** What this session holds, the way the real one holds `liveMessages`. */
+  messages: ChatMessage[]
   emit(event: MainToRendererEvent): void
+  /** Append a message and emit it, the way a streaming reply arrives. */
+  say(text: string): void
   setState(state: ConnectionState): void
   setPending(pending: boolean): void
   setTurn(open: boolean): void
@@ -43,7 +48,13 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
     stopped: 0,
     loads: 0,
     reemitted: 0,
+    messages: [],
     emit: (event) => sink?.(event),
+    say: (text) => {
+      const messageId = `${id}-${self.messages.length}`
+      self.messages.push({ id: messageId, role: 'assistant', text, createdAt: self.messages.length })
+      sink?.({ type: 'message-chunk', sessionId: id, messageId, text })
+    },
     setState: (next) => {
       state = next
       sink?.({ type: 'connection', state: next, ...(started ? { sessionId: id } : {}) })
@@ -71,6 +82,15 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
     livenessNow: () => livenessOf({ state, hasPendingPermission: pending, hasOpenTurn: turn }),
     reemitFrontPermission: () => {
       self.reemitted += 1
+    },
+    reemitViewState: () => {
+      sink?.({
+        type: 'session-resync',
+        sessionId: id,
+        messages: self.messages,
+        usage: null,
+        plan: null
+      })
     },
     start: async () => {
       started = true
@@ -431,3 +451,54 @@ test('only connection events are withheld from a background session', () => {
 
 const _decision: PermissionDecision = 'allow-once'
 void _decision
+
+// ── #66: coming back to a session shows what it says ────────────────────────
+
+test('RETURNING TO A BACKGROUND SESSION SHOWS ITS REPLY, NOT WHAT WAS ON SCREEN WHEN YOU LEFT', async () => {
+  // The bug: the renderer drops events for a session it is not showing, which is
+  // right, and focus() re-sent the connection state and any pending permission
+  // but never the messages. So a reply that arrived while you were in another tab
+  // was on disk and in memory and simply not on screen — an empty assistant
+  // bubble that never filled until the app was restarted.
+  const a = fakeSession('a', '/work/alpha')
+  const b = fakeSession('b', '/work/beta')
+  const { registry, sent } = harness(a, b)
+
+  await registry.start('/work/alpha', { surface: 'project' })
+  a.say('half a thought')
+
+  await registry.start('/work/beta', { surface: 'project' })
+  b.say('something else entirely')
+
+  // Back to A. Its reply finished while B was in front.
+  a.say('half a thought, finished')
+  sent.length = 0
+  await registry.loadSession('a', '/work/alpha')
+
+  const replaced = sent.filter(
+    (e): e is Extract<MainToRendererEvent, { type: 'session-resync' }> =>
+      e.type === 'session-resync'
+  )
+  assert.equal(replaced.length, 1, 'focusing a live session re-sends its transcript')
+  assert.equal(replaced[0].sessionId, 'a')
+  assert.deepEqual(
+    replaced[0].messages.map((m) => m.text),
+    ['half a thought', 'half a thought, finished'],
+    "A's transcript, not B's, and not the half-painted version from the moment of the switch"
+  )
+})
+
+test('THE SESSION IS NOT RESTARTED TO RESYNC IT', async () => {
+  // Tearing it down and loading it again would also fix the screen, and would
+  // throw away the running turn that is the entire point of background sessions.
+  const a = fakeSession('a', '/work/alpha')
+  const b = fakeSession('b', '/work/beta')
+  const { registry } = harness(a, b)
+
+  await registry.start('/work/alpha', { surface: 'project' })
+  await registry.start('/work/beta', { surface: 'project' })
+  await registry.loadSession('a', '/work/alpha')
+
+  assert.equal(a.stopped, 0, 'A was never stopped')
+  assert.equal(a.loads, 0, 'A was never re-loaded over ACP')
+})

@@ -462,6 +462,32 @@ export function useGronk() {
           setActivePlan(null)
           setUsage(null)
           break
+        case 'session-resync':
+          // Focusing a session that has been running in the background. The
+          // renderer dropped its events while it was showing something else, so
+          // the session hands over what it holds now.
+          //
+          // Messages are painted as they arrive, NOT through `restored()`: a turn
+          // still streaming has to stay streaming, or the chunks still to come
+          // would land in a message already drawn as finished. Plan and usage are
+          // assigned rather than cleared, for the same reason — they belong to this
+          // conversation, and the ones on screen belong to the one being left.
+          paintTranscript(event.messages)
+          setHistorySource('local')
+          setUsage(event.usage)
+          setActivePlan(() => {
+            if (!event.plan) return null
+            const entries = parsePlan(event.plan.plan)
+            if (!entries.length) return null
+            return {
+              sessionId: event.sessionId,
+              messageId: event.plan.messageId,
+              entries,
+              updatedAt: Date.now()
+            }
+          })
+          stickToBottom.current = true
+          break
         case 'history-replace':
           // Bulk restore from local cache: one paint, no clear/rebuild thrash.
           //
