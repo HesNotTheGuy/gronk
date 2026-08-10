@@ -61,7 +61,12 @@ export const MIN_AGE_MS = 60 * 60 * 1000
  */
 export function referencedNames(raw: unknown): Set<string> {
   const names = new Set<string>()
-  const transcripts = (raw as { transcripts?: unknown })?.transcripts
+  // Two shapes, because transcripts moved out of the store into a file each: a
+  // store carrying them inline (older builds, and the retained backup for a
+  // while yet), or one conversation on its own.
+  const transcripts = Array.isArray(raw)
+    ? { one: raw }
+    : (raw as { transcripts?: unknown })?.transcripts
   if (!transcripts || typeof transcripts !== 'object') return names
 
   for (const messages of Object.values(transcripts as Record<string, unknown>)) {
@@ -123,6 +128,8 @@ export type SweepRefusal =
   | 'store-unreadable'
   | 'backup-unreadable'
   | 'quarantine-unreadable'
+  /** A conversation file exists and could not be read, so its images are unknown. */
+  | 'transcripts-unreadable'
   | 'no-attachment-dir'
   | 'unreadable-directory'
   /** Nothing shows this folder was written by this app. */
@@ -134,6 +141,48 @@ export interface SweepResult {
   kept: number
   /** Set when nothing was removed because the sweep could not be sure. */
   refused: SweepRefusal | null
+}
+
+/**
+ * Names referenced by the per-conversation transcript files.
+ *
+ * Transcripts used to live inside the store, so the two files this collector read
+ * were the whole picture. They are one file each now, and a reference the
+ * collector cannot see is an image it will delete — so a directory it cannot read
+ * has to refuse, exactly like an unreadable store.
+ */
+async function readTranscriptReferences(): Promise<Set<string> | null> {
+  const dir = path.join(path.dirname(storePath()), 'transcripts')
+  let names: string[]
+  try {
+    names = await fsp.readdir(dir)
+  } catch (err) {
+    // No directory yet is not uncertainty: nothing has been split out.
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return new Set()
+    return null
+  }
+  const referenced = new Set<string>()
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue
+    let text: string
+    try {
+      text = await fsp.readFile(path.join(dir, name), 'utf8')
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') continue
+      return null
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      // Unreadable conversation. Its images are exactly the ones a rescue would
+      // want, so scan the raw text for names rather than contributing none.
+      for (const found of scanForAttachmentNames(text)) referenced.add(found)
+      continue
+    }
+    for (const found of referencedNames(parsed)) referenced.add(found)
+  }
+  return referenced
 }
 
 /**
@@ -368,9 +417,13 @@ export async function sweepAttachments(now = Date.now()): Promise<SweepResult> {
   const quarantined = await readQuarantinedReferences()
   if (quarantined === null) return { removed: 0, kept: 0, refused: 'quarantine-unreadable' }
 
+  const perFile = await readTranscriptReferences()
+  if (perFile === null) return { removed: 0, kept: 0, refused: 'transcripts-unreadable' }
+
   const referenced = new Set<string>(stored)
   if (backed !== 'missing') for (const name of backed) referenced.add(name)
   for (const name of quarantined) referenced.add(name)
+  for (const name of perFile) referenced.add(name)
 
   let entries
   try {

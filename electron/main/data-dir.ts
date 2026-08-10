@@ -54,6 +54,13 @@ export const CHAT_WORKSPACE_DIR = 'chat-workspace'
 export const ATTACHMENT_DIR = 'attachments'
 
 /**
+ * One file per conversation, so a turn does not rewrite every conversation. Moved
+ * with the rest for the same reason attachments are: leaving it behind would take
+ * every transcript with it.
+ */
+export const TRANSCRIPT_DIR = 'transcripts'
+
+/**
  * Names used before the app was renamed from Grocky to Gronk.
  *
  * An install predating the rename keeps using its own directory and file names.
@@ -169,7 +176,21 @@ function fsyncDirSync(dir: string): void {
  * The temp file is removed on any failure, so a crashed write leaves at most one
  * stray dotfile and never a corrupt store.
  */
-export function writeFileAtomicSync(filePath: string, contents: string): void {
+export function writeFileAtomicSync(
+  filePath: string,
+  contents: string,
+  /**
+   * Run once the new bytes are on disk and durable, immediately before they
+   * become `filePath`.
+   *
+   * This is where the store rotates its previous version into the backup. Doing
+   * it here rather than before the write is what makes a failed write harmless:
+   * nothing has moved yet, so the file and its backup are both still whatever
+   * they were. A throw from this hook aborts the commit and takes the temp file
+   * with it.
+   */
+  beforeCommit?: () => void
+): void {
   const dir = path.dirname(filePath)
   fs.mkdirSync(dir, { recursive: true })
   // Same directory on purpose: rename() is only atomic within one filesystem,
@@ -185,6 +206,7 @@ export function writeFileAtomicSync(filePath: string, contents: string): void {
     fs.fsyncSync(fd)
     fs.closeSync(fd)
     fd = undefined
+    beforeCommit?.()
     renameWithRetry(tmp, filePath)
     fsyncDirSync(dir)
   } catch (err) {
@@ -441,6 +463,9 @@ async function verifyStoreCopy(source: string, copy: string): Promise<string | n
   if (copySessions !== sourceSessions) {
     return `the copy has ${copySessions} sessions, the original has ${sourceSessions}`
   }
+  // Transcripts are their own files now, so an older store still carries them
+  // inline and a current one does not. Both read as zero here, and the directory
+  // is counted separately below.
   const copyTranscripts = Object.keys(parsedCopy.transcripts ?? {}).length
   const sourceTranscripts = Object.keys(parsedSource.transcripts ?? {}).length
   if (copyTranscripts !== sourceTranscripts) {
@@ -574,10 +599,12 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
   const sourceBackup = path.join(current.dataDir, backupName)
   const sourceChat = path.join(current.dataDir, CHAT_WORKSPACE_DIR)
   const sourceAttachments = path.join(current.dataDir, ATTACHMENT_DIR)
+  const sourceTranscriptDir = path.join(current.dataDir, TRANSCRIPT_DIR)
   const hasStore = fs.existsSync(sourceStore)
   const hasBackup = fs.existsSync(sourceBackup)
   const hasChat = fs.existsSync(sourceChat)
   const hasAttachments = fs.existsSync(sourceAttachments)
+  const hasTranscriptDir = fs.existsSync(sourceTranscriptDir)
 
   // Staged inside the destination so the final step is a rename on the same
   // filesystem, and so a failed copy leaves one obvious directory to delete
@@ -594,6 +621,9 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
     }
     if (hasAttachments) {
       await fsp.cp(sourceAttachments, path.join(staging, ATTACHMENT_DIR), { recursive: true })
+    }
+    if (hasTranscriptDir) {
+      await fsp.cp(sourceTranscriptDir, path.join(staging, TRANSCRIPT_DIR), { recursive: true })
     }
 
     if (hasStore) {
@@ -622,7 +652,7 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
       }
     }
 
-    for (const name of [storeName, backupName, CHAT_WORKSPACE_DIR, ATTACHMENT_DIR]) {
+    for (const name of [storeName, backupName, CHAT_WORKSPACE_DIR, ATTACHMENT_DIR, TRANSCRIPT_DIR]) {
       const from = path.join(staging, name)
       if (!fs.existsSync(from)) continue
       const to = path.join(dest, name)
@@ -676,7 +706,8 @@ export async function moveDataDir(target: string): Promise<MoveDataResult> {
     hasStore ? sourceStore : null,
     hasBackup ? sourceBackup : null,
     hasChat ? sourceChat : null,
-    hasAttachments ? sourceAttachments : null
+    hasAttachments ? sourceAttachments : null,
+    hasTranscriptDir ? sourceTranscriptDir : null
   ]) {
     if (!stale) continue
     if (!(await rmQuiet(stale))) leftovers.push(stale)

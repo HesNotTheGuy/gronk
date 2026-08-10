@@ -86,6 +86,16 @@ export function Composer({
   onChangeMode,
   showMode
 }: Props) {
+  /**
+   * A turn is really running, as opposed to a session being read off disk.
+   *
+   * `busy` is set by both, which is why the hint and the Abort button used to
+   * appear during a restore. Restoring wins when both are set: at that moment the
+   * app has not yet learned whether a turn is open, and offering Abort for a
+   * prompt nobody sent is the worse of the two mistakes.
+   */
+  const working = busy && !hydrating
+
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<PromptAttachment[]>([])
   const [mentionOpen, setMentionOpen] = useState(false)
@@ -415,12 +425,18 @@ export function Composer({
             >
               Attach
             </button>
-            <span className={`composer-hint ${busy ? 'busy' : ''}`}>
-              {busy ? 'Agent executing' : 'ACP'}
+            {/* Restoring is not executing. `busy` is set both by a real send and
+                by opening a session, and this line used to read the same for
+                both — so every restore claimed an agent was working, for as long
+                as the read took. On a large store that was about a minute. */}
+            <span className={`composer-hint ${working ? 'busy' : ''}`}>
+              {working ? 'Agent executing' : hydrating ? 'Restoring' : 'ACP'}
             </span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            {busy ? (
+            {/* Nothing to abort during a restore: `onCancel` cancels a prompt,
+                and opening a session has not sent one. */}
+            {working ? (
               <button type="button" className="btn btn-danger" onClick={onCancel}>
                 Abort
               </button>

@@ -462,6 +462,19 @@ export class AgentManager {
           model: settings.model,
           surface: isChatPadCwd(targetCwd) ? 'chat' : 'project'
         })
+        // Put the history back. `bootAgent` empties `liveMessages` — correctly,
+        // because the session it opens is a new one — and it runs AFTER this
+        // function has already filled it from the store. Without this the
+        // session carries a real session id and an empty transcript, and the
+        // first `persistLiveTranscript` writes that emptiness over the stored
+        // conversation. Three of the maintainer's sessions were reduced to a
+        // single message each exactly this way: same id, new message, no overlap.
+        //
+        // Restoring here rather than moving the reset out of `bootAgent` keeps
+        // that function's own contract intact — it opens a session and owns its
+        // state — and puts the correction where the knowledge is, which is that
+        // this caller had a transcript before it booted.
+        this.liveMessages = plan.messages
       }
       if (!this.client) throw new Error('Agent not running')
 

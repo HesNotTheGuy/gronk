@@ -16,6 +16,7 @@
  */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { App } from './App'
 import './styles.css'
 
@@ -578,6 +579,17 @@ const api: Record<string, unknown> = {
   setSettings: async (partial: object) => ({ ...settings, ...partial }),
   getRecentProjects: async () => (empty ? [] : PROJECTS),
   addRecentProject: async () => PROJECTS,
+  removeRecentProject: async () => PROJECTS,
+  setRecentProjectPinned: async () => PROJECTS,
+  // Chrome theme and clipboard are main-process side effects with nothing to
+  // render. They exist so calling them is not a crash.
+  setChromeTheme: async () => undefined,
+  writeClipboard: async () => ({ ok: true }),
+  // Multi-session: which session is in front, and what each live one is doing.
+  // Nothing is live in the fixture, so the sidebar shows its resting state rather
+  // than putting an indicator into every baseline.
+  focusSession: async () => undefined,
+  getSessionLiveness: async () => ({}),
   // Deliberately empty: a baseline showing somebody's scratchpad text would put
   // fixture prose in every screenshot of the tray and drift the moment it is
   // edited. The tab renders its empty state instead.
@@ -823,9 +835,14 @@ globals.__emit = (event: unknown) => {
 }
 globals.__scenario = SCENARIO
 
+// The same boundary main.tsx uses. Without it a fake missing one method renders
+// a blank page with nothing to read, which is exactly how six of them
+// accumulated here unnoticed.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>
 )
 
