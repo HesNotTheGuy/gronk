@@ -351,9 +351,16 @@ let repairNeeded = false
 function readStore(): StoreData {
   const file = storePath()
   if (heldCopyIsCurrent(file)) return cached!.data
-  const data = readStoreFromDisk(file)
-  hold(file, data)
-  return data
+  const read = readStoreFromDisk(file)
+  // Only a copy that came from the file is held. A fallback — the backup, or an
+  // empty store — would otherwise be pinned against the stat of the file it
+  // failed to read, so one transient failure (a scanner's lock, a cloud
+  // placeholder that would not hydrate) would latch older or empty data for the
+  // rest of the process and the next write would put it on disk over the real
+  // thing. Re-reading costs a parse; getting this wrong costs the conversations.
+  if (read.fromFile) hold(file, read.data)
+  else cached = null
+  return read.data
 }
 
 /**
@@ -377,13 +384,13 @@ export function repairStoreOnStartup(): void {
   repairNeeded = false
 }
 
-function readStoreFromDisk(file: string): StoreData {
+function readStoreFromDisk(file: string): { data: StoreData; fromFile: boolean } {
   const main = readJsonFile(file)
   if (main.kind === 'ok') {
     setHealth({ source: 'file', degraded: false })
     const data = fromRaw(main.raw)
     repairNeeded = storedVersion(main.raw) < SCHEMA_VERSION
-    return data
+    return { data, fromFile: true }
   }
 
   const backupFile = backupStorePath()
@@ -400,12 +407,12 @@ function readStoreFromDisk(file: string): StoreData {
           : `${STORE_FILE} was missing. Recovered the previous copy from ${BACKUP_FILE}.`,
       ...(main.kind === 'bad' ? { corruptPath: file } : {})
     })
-    return fromRaw(backup.raw)
+    return { data: fromRaw(backup.raw), fromFile: false }
   }
 
   if (main.kind === 'missing' && backup.kind === 'missing') {
     setHealth({ source: 'fresh', degraded: false })
-    return emptyStore()
+    return { data: emptyStore(), fromFile: false }
   }
 
   setHealth({
@@ -419,7 +426,7 @@ function readStoreFromDisk(file: string): StoreData {
       '. Starting empty — the unreadable files were left in place.',
     corruptPath: main.kind === 'bad' ? file : backupFile
   })
-  return emptyStore()
+  return { data: emptyStore(), fromFile: false }
 }
 
 /**
@@ -464,11 +471,18 @@ function quarantineUnreadable(file: string): void {
  */
 function writeStore(data: StoreData): void {
   const file = storePath()
-  // The cache is updated at the END of this function, never here: a write that
-  // throws must leave the cache describing what is still on disk.
+  // The held copy IS the object the caller just mutated, so it already describes
+  // something that is not on disk. Dropping it here means a write that throws
+  // leaves the next read to go and find out what is actually there, rather than
+  // serving the change as though it had been saved. Restored at the end on
+  // success.
+  cached = null
 
+  // Read, not consumed: clearing it here lost it when the write threw, and the
+  // next successful write would then take the `refreshBackup` branch and copy the
+  // still-unreadable store over the one good backup — the copy the user's whole
+  // history had just been recovered from. Cleared after the write lands.
   const corrupt = quarantineOnNextWrite
-  quarantineOnNextWrite = null
 
   // `corrupt !== file` means the data directory moved since that read; the flag
   // belongs to a store we are no longer writing.
@@ -486,6 +500,7 @@ function writeStore(data: StoreData): void {
   // On disk now, and at this version, so a later read need not go looking.
   hold(file, data)
   repairNeeded = false
+  quarantineOnNextWrite = null
   // Health used to be re-derived by the next read, which re-read the file and so
   // noticed that it had become good. A held copy means no such read happens, and
   // without this the app would go on reporting a store that was missing or
@@ -675,7 +690,7 @@ export function setRecentProjectPinned(cwd: string, pinned: boolean): ProjectCon
   const data = readStore()
   const normalized = normalizeCwd(cwd)
   let found = false
-  data.recentProjects = sortRecentProjects(
+  const next = sortRecentProjects(
     filterOutChatProjects(
       data.recentProjects.map((p) => {
         if (normalizeCwd(p.cwd) !== normalized) return p
@@ -684,7 +699,11 @@ export function setRecentProjectPinned(cwd: string, pinned: boolean): ProjectCon
       })
     )
   )
+  // Assigned only on the path that goes on to write. The store object is shared
+  // with every other reader, so mutating it and then returning early left the app
+  // holding a list that was never saved.
   if (!found) return getRecentProjects()
+  data.recentProjects = next
   writeStore(data)
   return data.recentProjects
 }
