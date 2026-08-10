@@ -514,6 +514,18 @@ test('THE RESYNC REPORTS A TURN ONLY WHILE A PROMPT IS ACTUALLY OUTSTANDING', as
   assert.match(resyncBody, /hasOpenTurn: this\.promptInFlight/)
   assert.doesNotMatch(resyncBody, /hasOpenTurn: this\.activeMessageId/)
 
+  // Every field comes off the session. The fake in this file supplies its own
+  // reemitViewState, so the assertions elsewhere prove the registry CALLS this and
+  // nothing about what it sends; reading the body is the only check there is.
+  for (const field of [
+    /messages: this\.liveMessages/,
+    /usage: this\.usage\.snapshot\(\)/,
+    /plan: this\.lastPlan/,
+    /source: this\.lastHistorySource/
+  ]) {
+    assert.match(resyncBody, field)
+  }
+
   // Set with the prompt, cleared on both the way a turn ends and the way it fails,
   // and again wherever the process is torn down. Four, or one of them strands it.
   assert.equal((source.match(/this\.promptInFlight = false/g) ?? []).length, 4)
@@ -547,4 +559,24 @@ test('STARTING AND RESUMING BOTH HAND THE RENDERER THE SESSION THEY RESOLVED', a
     sent.some((e) => e.type === 'session-resync' && e.sessionId === 'b'),
     'resuming focused the session it resolved'
   )
+})
+
+test('A FAILED RESUME PUTS THE CONVERSATION BACK BEFORE ANYTHING READS IT', async () => {
+  // When session/load fails, the fallback restarts the agent so the session stays
+  // usable — and `start` empties the in-memory transcript. Without putting it back,
+  // the resync on focus hands the renderer an empty conversation under a banner
+  // promising the history is still there, and every re-click empties it again.
+  //
+  // Read rather than driven: nothing in the suite constructs an AgentManager, so
+  // this pins the line's presence and its position relative to the banner it makes
+  // true. Deleting it leaves every other test in the suite green.
+  const source = readFileSync(new URL('../electron/main/agent-manager.ts', import.meta.url), 'utf8')
+  const fallback = source.slice(source.indexOf('// Fall back: start new live session'))
+  const body = fallback.slice(0, fallback.indexOf('} catch (err2)'))
+
+  const restore = body.indexOf('this.liveMessages = plan.messages')
+  const banner = body.indexOf('Your chat history is still shown here')
+  assert.notEqual(restore, -1, 'the fallback restores the cached conversation')
+  assert.notEqual(banner, -1, 'the banner this makes true is still here')
+  assert.ok(restore < banner, 'and the restore happens before it')
 })

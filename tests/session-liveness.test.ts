@@ -337,3 +337,52 @@ test('delete stays the last item once stop is added', async () => {
     view.unmount()
   }
 })
+
+test('A SWITCH STILL IN FLIGHT IS NOT RE-FOCUSED ON ITS BEHALF', async () => {
+  // The abandoned switch puts main back on the session being shown, but only once
+  // the newer switch has settled. One still in flight focuses main itself when it
+  // lands, so asking on its behalf only repaints a transcript it is about to paint.
+  const focused: unknown[] = []
+  const held: Record<string, () => void> = {}
+  const announce: Record<string, () => void> = {}
+  const parked: Record<string, Promise<void>> = {}
+  for (const id of ['slow', 'alsoSlow']) {
+    parked[id] = new Promise<void>((r) => (announce[id] = r))
+  }
+  const h = await mountHook({
+    focusSession: async (id: unknown) => {
+      focused.push(id)
+    },
+    loadSession: async (id?: unknown) => {
+      const sid = (id as string) ?? 's1'
+      if (sid in parked) {
+        await new Promise<void>((r) => {
+          held[sid] = r
+          announce[sid]()
+        })
+      }
+      return { sessionId: sid, restored: true }
+    }
+  })
+  try {
+    await act(async () => {
+      const first = h.hook().selectSession(session('slow'))
+      await parked.slow
+      const second = h.hook().selectSession(session('alsoSlow'))
+      await parked.alsoSlow
+
+      // The abandoned one finishes while the newer switch is STILL open.
+      held.slow()
+      await first
+      assert.deepEqual(focused, [], 'the switch in flight was left to focus itself')
+
+      held.alsoSlow()
+      await second
+    })
+    await flush()
+    await flush()
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
