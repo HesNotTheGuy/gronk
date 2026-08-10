@@ -85,6 +85,19 @@ export class AgentManager {
   private cwd: string | null = null
   private state: ConnectionState = 'idle'
   private activeMessageId: string | null = null
+  /**
+   * Whether a prompt of ours is still outstanding.
+   *
+   * Deliberately not `activeMessageId`, which answers a looser question: any
+   * chunk arriving with no message id of its own adopts it, so a trailing chunk
+   * after a turn has settled leaves it set with nothing left to clear it. That is
+   * harmless for the sidebar's working dot — briefly wrong, corrected by the next
+   * turn — and not harmless for the composer, which the resync locks from this:
+   * a composer disabled with no turn coming stays disabled until the app
+   * restarts. `livenessNow` keeps the looser signal on purpose; this one is for
+   * anything a person cannot recover from.
+   */
+  private promptInFlight = false
   private window: BrowserWindow | null = null
   /** One pending permission per request id (queue display FIFO). */
   private permissions = new PermissionQueue()
@@ -308,6 +321,7 @@ export class AgentManager {
     this.replayingHistory = false
     this.historyAssistantId = null
     this.activeMessageId = null
+    this.promptInFlight = false
     this.permissions.clear()
 
     this.client.on('stderr', (line) => this.log('stderr', line))
@@ -445,7 +459,7 @@ export class AgentManager {
       usage: this.usage.snapshot(),
       plan: this.lastPlan,
       source: this.lastHistorySource,
-      hasOpenTurn: this.activeMessageId !== null
+      hasOpenTurn: this.promptInFlight
     })
   }
 
@@ -628,6 +642,7 @@ export class AgentManager {
     }
     this.sessionId = null
     this.activeMessageId = null
+    this.promptInFlight = false
   }
 
   private notifyIfUnfocused(title: string, body: string): void {
@@ -715,6 +730,7 @@ export class AgentManager {
 
     const messageId = randomUUID()
     this.activeMessageId = messageId
+    this.promptInFlight = true
 
     const { user, assistant } = buildTurnMessages({
       userId: randomUUID(),
@@ -757,6 +773,7 @@ export class AgentManager {
           stopReason
         })
         this.activeMessageId = null
+        this.promptInFlight = false
         this.persistLiveTranscript()
         this.notifyIfUnfocused(
           'Gronk',
@@ -787,6 +804,7 @@ export class AgentManager {
           stopReason: 'error'
         })
         this.activeMessageId = null
+        this.promptInFlight = false
         this.persistLiveTranscript()
         this.notifyIfUnfocused('Gronk', 'Agent turn failed')
       })

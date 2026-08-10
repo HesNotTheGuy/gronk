@@ -27,6 +27,7 @@ import {
   NO_FOCUS,
   beginSwitch,
   belongsToFocus,
+  mayNameSwitch,
   ownsSession,
   confirmSwitch,
   sessionIdOf,
@@ -500,6 +501,12 @@ export function useGronk() {
           // Main naming the session it is on is one of the two ways a switch
           // stops being open-ended; the other is the value start/load returns.
           // Whichever arrives first closes it.
+          //
+          // Only for a switch that has no name yet, or one this already is. A
+          // session booting while a later switch is open would otherwise announce
+          // itself into that switch and move `sessionId` and the folder to a
+          // conversation the user had already left.
+          if (!mayNameSwitch(focusRef.current, event.sessionId)) break
           focusRef.current = confirmSwitch(focusRef.current, event.sessionId)
           setSessionId(event.sessionId)
           setCwd(event.cwd)

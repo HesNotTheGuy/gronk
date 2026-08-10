@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { AgentRegistry, type ManagedSession } from '../electron/main/agent-manager'
 import { livenessOf, mayForward } from '../electron/main/agent/session-liveness'
 import type {
@@ -494,3 +495,27 @@ test('RETURNING TO A BACKGROUND SESSION SHOWS ITS REPLY, NOT WHAT WAS ON SCREEN 
 // return that guarantees it is already covered by 'opening a session that is
 // already live focuses it rather than reloading' above, and a second copy of that
 // assertion would only look like extra coverage.
+
+// ── A composer lock a person cannot undo ────────────────────────────────────
+
+test('THE RESYNC REPORTS A TURN ONLY WHILE A PROMPT IS ACTUALLY OUTSTANDING', async () => {
+  // `hasOpenTurn` came from `activeMessageId`, which answers a looser question:
+  // any chunk with no message id of its own adopts it, so a chunk arriving after
+  // a turn has settled leaves it set with nothing left to clear it. The sidebar's
+  // working dot recovers on the next turn. The composer does not: the resync turns
+  // that flag straight into a disabled Send with no turn coming to re-enable it.
+  //
+  // This pins the field the two now read, not the wiring — nothing in the suite
+  // constructs an AgentManager, so the wiring is checked by reading it.
+  const source = readFileSync(new URL('../electron/main/agent-manager.ts', import.meta.url), 'utf8')
+
+  const resync = source.slice(source.indexOf('reemitViewState()'))
+  const resyncBody = resync.slice(0, resync.indexOf('\n  }'))
+  assert.match(resyncBody, /hasOpenTurn: this\.promptInFlight/)
+  assert.doesNotMatch(resyncBody, /hasOpenTurn: this\.activeMessageId/)
+
+  // Set with the prompt, cleared on both the way a turn ends and the way it fails,
+  // and again wherever the process is torn down. Four, or one of them strands it.
+  assert.equal((source.match(/this\.promptInFlight = false/g) ?? []).length, 4)
+  assert.equal((source.match(/this\.promptInFlight = true/g) ?? []).length, 1)
+})

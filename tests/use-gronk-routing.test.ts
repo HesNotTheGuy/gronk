@@ -864,3 +864,149 @@ test('A RESYNC FOR ANOTHER SESSION IS REFUSED WHILE A SWITCH IS STILL OPEN', asy
     h.restore()
   }
 })
+
+test('A SESSION BOOTING LATE DOES NOT RENAME THE CONVERSATION ON SCREEN', async () => {
+  // Main announces a session id with a `session` event, and that is how opening a
+  // project learns its id — a switch with no name has to accept one from anyone.
+  // A switch that already has a name does not: a session booting while a later
+  // switch is open used to announce itself into it, moving the id and the folder
+  // to a conversation the user had walked away from.
+  // Both loads are held, because the window that matters is the one where the
+  // SECOND switch is still open. Once it has settled the ordinary focus filter
+  // already refuses the first session's events, and nothing is being tested.
+  const held: Record<string, () => void> = {}
+  const parked: Record<string, Promise<void>> = {}
+  const announce: Record<string, () => void> = {}
+  for (const id of ['slow', 'quick']) {
+    parked[id] = new Promise<void>((r) => (announce[id] = r))
+  }
+  const h = await mountHook({
+    loadSession: async (id?: unknown) => {
+      const sid = (id as string) ?? 's1'
+      if (sid in parked) {
+        await new Promise<void>((r) => {
+          held[sid] = r
+          announce[sid]()
+        })
+      }
+      return { sessionId: sid, restored: true }
+    }
+  })
+  try {
+    await act(async () => {
+      const first = h.hook().selectSession(session('slow'))
+      await parked.slow
+      const second = h.hook().selectSession(session('quick'))
+      await parked.quick
+
+      // 'quick' is still switching. 'slow' finishes booting and announces itself.
+      h.emit({ type: 'session', sessionId: 'slow', cwd: '/work/abandoned' } as MainToRendererEvent)
+      await flush()
+
+      held.slow()
+      held.quick()
+      await first
+      await second
+    })
+    await flush()
+    await flush()
+
+    assert.equal(h.hook().sessionId, 'quick')
+    assert.notEqual(h.hook().cwd, '/work/abandoned', 'the folder stayed with the session on screen')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('OPENING A PROJECT STILL LEARNS ITS SESSION ID FROM MAIN', async () => {
+  // The other side of the same rule, and the one it could break: a project opens a
+  // switch with no id at all, because the id does not exist until the agent boots.
+  // If an unnamed switch stopped accepting a name, opening a project would never
+  // learn which session it is on.
+  // Main announces it DURING the boot, before startAgent returns — which is the
+  // window where the switch still has no name.
+  const bus: { emit: Harness['emit'] } = { emit: () => {} }
+  const h = await mountHook({
+    startAgent: async (cwd?: unknown) => {
+      bus.emit({
+        type: 'session',
+        sessionId: 'booted',
+        cwd: (cwd as string) ?? '/work/fresh'
+      } as MainToRendererEvent)
+      return { sessionId: 'booted' }
+    }
+  })
+  bus.emit = h.emit
+  try {
+    await act(async () => {
+      await h.hook().openProject('/work/fresh', { forceNew: true })
+    })
+    await flush()
+    await flush()
+    assert.equal(h.hook().sessionId, 'booted')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A RESYNC CARRIES THE SOURCE THE LOAD REPORTED, NOT A CLAIM OF LOCAL CACHE', async () => {
+  // Hardcoding 'local' put "restored from cache" over sessions that came back from
+  // the agent and over empty new ones.
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    await act(async () => {
+      h.emit(resync('s1', [streaming('m1', 'from the agent')], { source: 'acp' }))
+    })
+    await flush()
+    assert.equal(h.hook().historySource, 'acp')
+
+    await act(async () => {
+      h.emit(resync('s1', [], { source: 'empty' }))
+    })
+    await flush()
+    assert.equal(h.hook().historySource, 'empty', 'and an empty session claims no restore')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('AN ABANDONED PROJECT OPEN COMMITS NOTHING EITHER', async () => {
+  // openProject and openChat have the same guard as selectSession and neither was
+  // pinned: deleting either left every test green.
+  let releaseStart = (): void => {}
+  let announceParked = (): void => {}
+  const parked = new Promise<void>((r) => (announceParked = r))
+  const h = await mountHook({
+    startAgent: async (cwd?: unknown) => {
+      if (cwd === '/work/slow') {
+        await new Promise<void>((r) => {
+          releaseStart = r
+          announceParked()
+        })
+        return { sessionId: 'slow-project' }
+      }
+      return { sessionId: 'quick-project' }
+    }
+  })
+  try {
+    await act(async () => {
+      const pending = h.hook().openProject('/work/slow', { forceNew: true })
+      await parked
+      await h.hook().openProject('/work/quick', { forceNew: true })
+      await flush()
+      releaseStart()
+      await pending
+    })
+    await flush()
+    await flush()
+
+    assert.equal(h.hook().sessionId, 'quick-project', 'the abandoned open did not take over')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})

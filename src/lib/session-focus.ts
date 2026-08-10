@@ -128,6 +128,23 @@ export function ownsSession(focus: SessionFocus, sessionId: string | undefined):
   return focus.ids.includes(sessionId)
 }
 
+/**
+ * May this session put its name to the switch in progress?
+ *
+ * Opening a project or a chat starts a switch with no id at all, because the id
+ * only exists once the agent has booted, and main announcing it is how the
+ * renderer finds out. So an unnamed switch has to accept a name from anyone.
+ *
+ * A switch that already has one does not. Clicking a session that has to boot and
+ * then clicking another left the first one's announcement to arrive mid-switch and
+ * rename the conversation on screen — moving `sessionId` and the folder to a
+ * session the user had walked away from. Naming an unclaimed switch is how the
+ * renderer learns; renaming a claimed one is a different act.
+ */
+export function mayNameSwitch(focus: SessionFocus, sessionId: string): boolean {
+  return focus.ids.length === 0 || focus.ids.includes(sessionId)
+}
+
 /** Does this event belong to the conversation on screen? */
 export function belongsToFocus(focus: SessionFocus, sessionId: string | undefined): boolean {
   // No session named: agent boot, or an event about the app rather than a
