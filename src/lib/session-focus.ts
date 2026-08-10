@@ -112,6 +112,22 @@ export function confirmSwitch(focus: SessionFocus, id: string | null): SessionFo
   }
 }
 
+/**
+ * Is this session one the renderer has actually named?
+ *
+ * Stricter than `belongsToFocus`, which accepts any named event while a switch is
+ * open because a load can resolve to an id the renderer has not heard yet. That
+ * latitude is safe for an event that ADDS to a conversation and unsafe for one
+ * that REPLACES it: a whole-view event accepted for the wrong session repaints the
+ * conversation being read as a different one, and the save timer then writes those
+ * messages to disk under the id the renderer believes is on screen. Use this for
+ * anything that replaces rather than appends.
+ */
+export function ownsSession(focus: SessionFocus, sessionId: string | undefined): boolean {
+  if (!sessionId) return true
+  return focus.ids.includes(sessionId)
+}
+
 /** Does this event belong to the conversation on screen? */
 export function belongsToFocus(focus: SessionFocus, sessionId: string | undefined): boolean {
   // No session named: agent boot, or an event about the app rather than a

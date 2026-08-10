@@ -27,6 +27,7 @@ import {
   NO_FOCUS,
   beginSwitch,
   belongsToFocus,
+  ownsSession,
   confirmSwitch,
   sessionIdOf,
   type SessionFocus
@@ -474,6 +475,16 @@ export function useGronk() {
       }
 
       if (!belongsToFocus(focusRef.current, sessionIdOf(event))) return
+      // A resync replaces the whole view, so it takes the stricter test. The
+      // latitude above — accept any named session while a switch is open — is for
+      // events that add to a conversation, since a load can resolve to an id the
+      // renderer has not heard yet. Applied to a replacement it means a session
+      // finishing its boot while another switch is open repaints the conversation
+      // on screen as a different one, and the save timer then writes that to disk
+      // under the id the renderer believes it is showing.
+      if (event.type === 'session-resync' && !ownsSession(focusRef.current, event.sessionId)) {
+        return
+      }
 
       switch (event.type) {
         case 'connection':

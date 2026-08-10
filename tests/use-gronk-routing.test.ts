@@ -826,3 +826,41 @@ test('AN ANSWER ABOUT ONE SESSION S TURN DOES NOT SPEAK FOR ANOTHER', async () =
     h.restore()
   }
 })
+
+test('A RESYNC FOR ANOTHER SESSION IS REFUSED WHILE A SWITCH IS STILL OPEN', async () => {
+  // The dangerous half, and the one the settled-state test above does not reach.
+  // While a switch is open the focus filter accepts every named session on
+  // purpose, because a load can resolve to an id the renderer has not heard yet.
+  // That is safe for an event that adds a line and not for one that replaces the
+  // whole conversation: a session finishing its boot in that window repainted the
+  // transcript being read as a different one, and the save timer then wrote those
+  // messages under the id the renderer thought was on screen.
+  const slow = slowLoad('slow')
+  const h = await mountHook({ loadSession: slow.loadSession })
+  try {
+    await selectInto(h, 'mine')
+    await act(async () => {
+      h.emit(chunk('mine', 'the conversation I am reading'))
+    })
+    await flush()
+    const before = transcript(h)
+
+    await act(async () => {
+      const pending = h.hook().selectSession(session('slow'))
+      await slow.parked
+      // Mid-switch: the focus is open, and an unrelated session finishes booting.
+      h.emit(resync('unrelated', [streaming('u1', 'SOMEBODY ELSE ENTIRELY')]))
+      await flush()
+      assert.doesNotMatch(transcript(h), /SOMEBODY ELSE/, 'refused mid-switch')
+      slow.release()
+      await pending
+    })
+    await flush()
+
+    assert.doesNotMatch(transcript(h), /SOMEBODY ELSE/)
+    assert.notEqual(before, '', 'the reading precondition held')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
