@@ -17,6 +17,7 @@ import type {
 import { PERMISSION_MODE_OPTIONS } from '../../shared/types'
 import { MenuButton } from './MenuButton'
 import { composerPermissions, composerPlaceholder } from '../lib/composer-state'
+import type { Draft } from '../hooks/useDrafts'
 
 interface Props {
   connection: ConnectionState
@@ -25,6 +26,17 @@ interface Props {
   busy: boolean
   cwd: string | null
   onSend: (text: string, attachments: PromptAttachment[]) => void
+  /** What was typed for this conversation and not sent. */
+  draft: Draft
+  /**
+   * Which conversation `draft` belongs to.
+   *
+   * The composer is not remounted between sessions, so this is how it knows the
+   * text in the box is no longer the text for what is on screen.
+   */
+  draftKey: string
+  onDraftChange: (draft: Draft) => void
+  onDraftSent: () => void
   onCancel: () => void
   onOpenFolder?: (path: string) => void
   /** Inline Model picker (popover), both surfaces */
@@ -77,6 +89,10 @@ export function Composer({
   busy,
   cwd,
   onSend,
+  draft,
+  draftKey,
+  onDraftChange,
+  onDraftSent,
   onCancel,
   onOpenFolder,
   models,
@@ -96,8 +112,18 @@ export function Composer({
    */
   const working = busy && !hydrating
 
-  const [text, setText] = useState('')
-  const [attachments, setAttachments] = useState<PromptAttachment[]>([])
+  const [text, setText] = useState(draft.text)
+  const [attachments, setAttachments] = useState<PromptAttachment[]>(draft.attachments)
+
+  // Swap the box over when the conversation under it changes. Assigning during
+  // the render rather than in an effect is deliberate: an effect would paint one
+  // frame of the previous conversation's message in the new conversation's box.
+  const shownFor = useRef(draftKey)
+  if (shownFor.current !== draftKey) {
+    shownFor.current = draftKey
+    setText(draft.text)
+    setAttachments(draft.attachments)
+  }
   const [mentionOpen, setMentionOpen] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionItems, setMentionItems] = useState<FileEntry[]>([])
@@ -209,8 +235,41 @@ export function Composer({
     })
   }
 
+  /**
+   * Hand the draft back, a beat after typing stops.
+   *
+   * Not on every keystroke: this lifts into the hook that owns the transcript, so
+   * a write per character re-renders the whole conversation while someone is trying
+   * to type into it. The flush below is what makes the delay safe.
+   */
+  const pendingDraft = useRef<Draft>({ text, attachments })
+  pendingDraft.current = { text, attachments }
+
+  useEffect(() => {
+    // Nothing to say when the box already matches what was handed down. Without
+    // this an untouched composer writes its empty draft back on a timer, which is
+    // pointless work and, worse, would erase a draft written by anything else.
+    if (text === draft.text && attachments === draft.attachments) return
+    const t = setTimeout(() => onDraftChange(pendingDraft.current), 250)
+    return () => clearTimeout(t)
+  }, [text, attachments, draft, onDraftChange])
+
+  useEffect(() => {
+    // Leaving the conversation view unmounts this component, which is exactly the
+    // gesture that used to throw a written message away. Whatever the debounce
+    // above has not written yet is written here instead.
+    // Leaving the conversation view unmounts this component, which is exactly the
+    // gesture that used to throw a written message away. Whatever the debounce
+    // above has not written yet is written here instead.
+    return () => onDraftChange(pendingDraft.current)
+  }, [onDraftChange])
+
   const submit = () => {
     if (!perms.canSend) return
+    // Ahead of onSend: the draft is gone the moment the message is real. Clearing
+    // the box below is what stops the debounce and the unmount flush putting it
+    // back — they write whatever is in the box, and by then that is nothing.
+    onDraftSent()
     onSend(text, attachments)
     setText('')
     setAttachments([])
