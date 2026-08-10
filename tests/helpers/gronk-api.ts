@@ -137,6 +137,7 @@ export function installFakeBridge(overrides: Record<string, unknown> = {}): Fake
     selectFolder: async () => track('selectFolder', null),
     selectFile: async () => track('selectFile', null),
     login: async () => track('login', { ok: true, method: 'oauth', message: '', auth: {} }),
+    cancelLogin: async () => track('cancelLogin', false),
     logout: async () => track('logout', { ok: true, message: '', auth: {} }),
     installCli: async () => track('installCli', { ok: true, message: '', grokPath: null, installed: false }),
 

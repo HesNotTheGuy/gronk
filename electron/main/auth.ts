@@ -12,7 +12,7 @@
  * - API key via XAI_API_KEY is supported as advanced fallback (env only).
  */
 
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { resolveGrokBinary } from './acp/client'
@@ -46,7 +46,7 @@ function resolveBinary(): string | null {
 
 function runGrok(
   args: string[],
-  options?: { timeoutMs?: number; env?: NodeJS.ProcessEnv }
+  options?: { timeoutMs?: number; env?: NodeJS.ProcessEnv; onSpawn?: (proc: ChildProcess) => void }
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   const binary = resolveBinary()
   if (!binary) {
@@ -66,6 +66,8 @@ function runGrok(
         GROK_DISABLE_AUTOUPDATER: '1'
       }
     })
+
+    options?.onSpawn?.(proc)
 
     let stdout = ''
     let stderr = ''
@@ -213,6 +215,43 @@ export interface LoginResult {
  * Start interactive login via the official CLI.
  * Browser OAuth opens the system browser; device flow prints a code.
  */
+/**
+ * The sign-in the CLI is running right now, so it can be called off.
+ *
+ * A browser login waits three minutes for a flow that may never come back — the
+ * browser did not open, or it was closed. Without a way to end it, choosing the
+ * other method would leave two `grok login` processes competing for the same
+ * credential store.
+ */
+let activeLogin: ChildProcess | null = null
+
+/**
+ * End the sign-in in progress, if there is one.
+ *
+ * Answers whether there was one, because the caller uses that to decide whether
+ * to report anything: cancelling nothing is not worth a message.
+ */
+export function cancelLogin(): boolean {
+  const proc = activeLogin
+  if (!proc || proc.exitCode !== null) return false
+  activeLogin = null
+  if (process.platform === 'win32' && proc.pid) {
+    // The CLI spawns its own helper to hold the OAuth wait, and killing only the
+    // parent leaves that helper on the credential store. /T walks the tree.
+    try {
+      spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true })
+    } catch {
+      /* fall through to the direct kill below */
+    }
+  }
+  try {
+    proc.kill()
+  } catch {
+    /* already gone */
+  }
+  return true
+}
+
 export async function loginWithCli(method: LoginMethod = 'oauth'): Promise<LoginResult> {
   const binary = resolveBinary()
   if (!binary) {
@@ -231,7 +270,15 @@ export async function loginWithCli(method: LoginMethod = 'oauth'): Promise<Login
   // Device flow needs a longer poll window; browser OAuth waits for user.
   const timeoutMs = method === 'device' ? 180_000 : 180_000
 
-  const { code, stdout, stderr } = await runGrok(args, { timeoutMs })
+  // A second sign-in replaces the first rather than racing it.
+  cancelLogin()
+  const { code, stdout, stderr } = await runGrok(args, {
+    timeoutMs,
+    onSpawn: (proc) => {
+      activeLogin = proc
+    }
+  })
+  activeLogin = null
   // The CLI just changed sign-in state on disk; the cached probe is now a lie.
   invalidateAuthCache()
   const safeOut = sanitizeCliText(`${stdout}\n${stderr}`)

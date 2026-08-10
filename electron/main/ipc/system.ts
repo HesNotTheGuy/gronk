@@ -7,7 +7,7 @@ import { clipboard, ipcMain } from 'electron'
 import { spawn } from 'node:child_process'
 import { resolveGrokBinary } from '../acp/client'
 import { agentManager } from '../agent-manager'
-import { getAuthStatus, loginWithCli, logoutWithCli } from '../auth'
+import { cancelLogin, getAuthStatus, loginWithCli, logoutWithCli } from '../auth'
 import { getCliVersion } from '../cli-version'
 import { assertTrustedSender } from '../ipc-guard'
 import { listModels } from '../models'
@@ -148,6 +148,11 @@ export function registerSystemIpc(ctx: IpcContext): void {
       })
     }
     return result
+  })
+
+  ipcMain.handle('gronk:cancel-login', (e) => {
+    assertTrustedSender(e)
+    return cancelLogin()
   })
 
   ipcMain.handle('gronk:logout', async (e) => {

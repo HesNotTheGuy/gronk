@@ -65,6 +65,7 @@ const api: GronkApi = {
   getHealth: () => ipcRenderer.invoke('gronk:get-health'),
   getAuthStatus: () => ipcRenderer.invoke('gronk:get-auth-status'),
   login: (method?: LoginMethod) => ipcRenderer.invoke('gronk:login', method),
+  cancelLogin: () => ipcRenderer.invoke('gronk:cancel-login'),
   logout: () => ipcRenderer.invoke('gronk:logout'),
   installCli: () => ipcRenderer.invoke('gronk:install-cli'),
   getStoreHealth: () => ipcRenderer.invoke('gronk:get-store-health'),
