@@ -834,6 +834,10 @@ button {
   -webkit-app-region: drag;
 }
 
+/* Direct children are exempt by default rather than by name, so a control added
+   as a sibling of the title block is undraggable without anyone remembering.
+   This does not reach INSIDE .topbar-left, which grants drag back below — a
+   control added in there needs its own no-drag. */
 .topbar > * {
   -webkit-app-region: no-drag;
 }
@@ -852,11 +856,24 @@ button {
   padding-left: 92px;
 }
 
+/* The title block holds no controls — a kicker, a title and one line of
+   subtitle — so it moves the window like the chrome around it. Drag is granted
+   back here rather than by narrowing the rule above, which would make the
+   default "draggable" and put the burden on whoever adds the next button.
+
+   On Windows this block is most of the titlebar the user has, so without this
+   the app is hard to move at all.
+
+   Unselectable for the same reason it drags: a gesture cannot do both, and text
+   that looks selectable and then moves the window reads as broken. The cost is
+   that the project path on the Build surface can no longer be selected here. */
 .topbar-left {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  -webkit-app-region: drag;
+  user-select: none;
 }
 
 .topbar-kicker {
@@ -2639,6 +2656,12 @@ button {
 
 /* ---------- Modal ---------- */
 .modal-backdrop {
+  /* A full-window overlay does not carve a hole in a drag region beneath it:
+     Blink builds the draggable area from elements that say `drag` minus those
+     that say `no-drag`, and the default contributes nothing either way. So
+     without this the OS hit-tests the header as caption, a click meant to
+     dismiss this overlay drags the window instead, and the overlay stays open. */
+  -webkit-app-region: no-drag;
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.78);
@@ -4869,6 +4892,12 @@ html[data-theme='light'] .session-search {
 }
 
 .session-menu-backdrop {
+  /* A full-window overlay does not carve a hole in a drag region beneath it:
+     Blink builds the draggable area from elements that say `drag` minus those
+     that say `no-drag`, and the default contributes nothing either way. So
+     without this the OS hit-tests the header as caption, a click meant to
+     dismiss this overlay drags the window instead, and the overlay stays open. */
+  -webkit-app-region: no-drag;
   position: fixed;
   inset: 0;
   z-index: 40;
