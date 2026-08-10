@@ -146,35 +146,36 @@ test('MAIN IS TOLD WHICH SESSION IS ON SCREEN WHEN ITS OWN ANSWER WOULD BE WRONG
   // abandoned switch is what puts main back.
   const focused: unknown[] = []
   let releaseSlow = (): void => {}
+  let announceParked = (): void => {}
+  // Resolves once the load is actually parked, which is several awaits into the
+  // switch. Released before then, nothing is released and the wait never ends.
+  const parked = new Promise<void>((r) => (announceParked = r))
   const h = await mountHook({
     focusSession: async (id: unknown) => {
       focused.push(id)
     },
-    loadSession: async (id: unknown) => {
+    loadSession: async (id?: unknown) => {
       if (id === 'slow') {
         await new Promise<void>((resolve) => {
           releaseSlow = resolve
+          announceParked()
         })
       }
-      return { sessionId: id as string, restored: true }
+      return { sessionId: (id as string) ?? 's1', restored: true }
     }
   })
   try {
-    const slow = act(async () => {
-      await h.hook().selectSession(session('slow'))
-    })
-    await flush()
-
-    // The user gives up on it and opens one that is already running.
+    // One act scope: two overlapping ones deadlock.
     await act(async () => {
+      const pending = h.hook().selectSession(session('slow'))
+      await parked
+      // The user gives up on it and opens one that is already running.
       await h.hook().selectSession(session('quick'))
+      await flush()
+      assert.deepEqual(focused, [], 'nothing to correct while only the fast one has landed')
+      releaseSlow()
+      await pending
     })
-    await flush()
-    await flush()
-    assert.deepEqual(focused, [], 'nothing to correct while only the fast one has landed')
-
-    releaseSlow()
-    await slow
     await flush()
     await flush()
 

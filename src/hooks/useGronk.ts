@@ -175,6 +175,17 @@ export function useGronk() {
    * many switches can be in flight; only the newest may commit.
    */
   const switchTicket = useRef(0)
+  /**
+   * What the last resync said about a session's turn.
+   *
+   * The tail of a switch clears `busy` as a safety net for a load that never
+   * reports finishing. A session that is already live is focused before
+   * `loadSession` returns, so its resync lands *before* that tail — and clearing
+   * unconditionally threw away the one thing that knew a turn was still running,
+   * which is most of what the resync is for. Keyed by session so an answer about
+   * one cannot speak for another.
+   */
+  const resyncTurn = useRef<{ sessionId: string; open: boolean } | null>(null)
   const openSwitch = useCallback((requested: string | null): number => {
     focusRef.current = beginSwitch(requested)
     return (switchTicket.current += 1)
@@ -509,6 +520,7 @@ export function useGronk() {
           // A turn can still be running. Without this the reply is visible and
           // the composer says nothing is happening, offers no way to stop it, and
           // takes a second prompt for a session that already has one open.
+          resyncTurn.current = { sessionId: event.sessionId, open: event.hasOpenTurn }
           setBusy(event.hasOpenTurn)
           setUsage(event.usage)
           setActivePlan(() => {
@@ -975,7 +987,12 @@ export function useGronk() {
        */
       const abandoned = (): boolean => {
         if (switchIsCurrent(ticket)) return false
-        if (shownRef.current) void window.gronk.focusSession(shownRef.current)
+        // Only when the newer switch has already settled. One still in flight
+        // focuses main itself when it lands, and asking on its behalf would
+        // repaint the transcript it is about to paint anyway.
+        if (focusRef.current.state === 'settled' && shownRef.current) {
+          void window.gronk.focusSession(shownRef.current)
+        }
         return true
       }
 
@@ -1061,6 +1078,11 @@ export function useGronk() {
       const ticket = openSwitch(null)
       setMessages([])
       setSessionId(null)
+      // Owned here for the same reason openProject owns it: whichever switch is
+      // the current one has to define this, because a switch that loses the race
+      // returns without clearing what it set. Left to the loser, a session opened
+      // and abandoned mid-boot stranded the skeleton over Chat with Send disabled.
+      setHydrating(true)
       setCwd(chatPath)
       setBusy(false)
       setPermission(null)
@@ -1074,7 +1096,12 @@ export function useGronk() {
       /** See openProject: a switch the user moved on from commits nothing. */
       const abandoned = (): boolean => {
         if (switchIsCurrent(ticket)) return false
-        if (shownRef.current) void window.gronk.focusSession(shownRef.current)
+        // Only when the newer switch has already settled. One still in flight
+        // focuses main itself when it lands, and asking on its behalf would
+        // repaint the transcript it is about to paint anyway.
+        if (focusRef.current.state === 'settled' && shownRef.current) {
+          void window.gronk.focusSession(shownRef.current)
+        }
         return true
       }
 
@@ -1090,10 +1117,12 @@ export function useGronk() {
         focusRef.current = confirmSwitch(focusRef.current, id)
         setSessionId(id)
         await refreshMeta()
+        setHydrating(false)
       } catch (err) {
         if (abandoned()) return
         focusRef.current = confirmSwitch(focusRef.current, null)
         failAttempt('agent', err instanceof Error ? err.message : String(err))
+        setHydrating(false)
       }
     },
     [
@@ -1205,7 +1234,12 @@ export function useGronk() {
       /** See openProject: a switch the user moved on from commits nothing. */
       const abandoned = (): boolean => {
         if (switchIsCurrent(ticket)) return false
-        if (shownRef.current) void window.gronk.focusSession(shownRef.current)
+        // Only when the newer switch has already settled. One still in flight
+        // focuses main itself when it lands, and asking on its behalf would
+        // repaint the transcript it is about to paint anyway.
+        if (focusRef.current.state === 'settled' && shownRef.current) {
+          void window.gronk.focusSession(shownRef.current)
+        }
         return true
       }
 
@@ -1259,7 +1293,9 @@ export function useGronk() {
         // here too. `busy` is the one that matters most: a stuck `hydrating`
         // shows a skeleton, a stuck `busy` disables the composer for a session
         // that is otherwise perfectly usable.
-        setBusy(false)
+        setBusy(
+          resyncTurn.current?.sessionId === result.sessionId && resyncTurn.current.open
+        )
         setHydrating(false)
       } catch (err) {
         if (abandoned()) return

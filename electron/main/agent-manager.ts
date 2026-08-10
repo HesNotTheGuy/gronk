@@ -557,6 +557,12 @@ export class AgentManager {
             surface: isChatPadCwd(targetCwd) ? 'chat' : 'project'
           })
         }
+        // `start` empties `liveMessages`, so put the cache back before anything
+        // reads it. Without this the resync on focus hands the renderer an empty
+        // conversation while the banner below says the history is still shown, and
+        // every re-click blanks it again. Same shape as the boot path above.
+        this.liveMessages = plan.messages
+
         // User-facing: history is still on screen; only the agent's live memory failed to resume.
         this.emit({
           type: 'error',

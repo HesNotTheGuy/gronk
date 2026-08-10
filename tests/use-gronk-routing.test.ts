@@ -694,30 +694,19 @@ test('A SWITCH THE USER GAVE UP ON DOES NOT TAKE OVER THE ONE THEY OPENED', asyn
   // `session-resync` made it worse than a mismatched id. It carries a whole
   // transcript, so the abandoned switch could repaint the conversation on screen
   // as a different one.
-  let releaseSlow = (): void => {}
-  const h = await mountHook({
-    loadSession: async (id: unknown) => {
-      if (id === 'slow') await new Promise<void>((resolve) => (releaseSlow = resolve))
-      return { sessionId: id as string, restored: true }
-    }
-  })
+  const slow = slowLoad('slow')
+  const h = await mountHook({ loadSession: slow.loadSession })
   try {
-    const slow = act(async () => {
-      await h.hook().selectSession(session('slow'))
-    })
-    await flush()
+    // One act scope: overlapping ones deadlock.
     await act(async () => {
+      const pending = h.hook().selectSession(session('slow'))
+      await slow.parked
       await h.hook().selectSession(session('quick'))
-    })
-    await flush()
-    await flush()
-    await act(async () => {
+      await flush()
       h.emit(chunk('quick', 'the conversation I opened'))
+      slow.release()
+      await pending
     })
-    await flush()
-
-    releaseSlow()
-    await slow
     await flush()
     await flush()
     // Everything the abandoned switch would have committed, arriving late.
@@ -731,6 +720,107 @@ test('A SWITCH THE USER GAVE UP ON DOES NOT TAKE OVER THE ONE THEY OPENED', asyn
     assert.match(transcript(h), /the conversation I opened/)
     assert.doesNotMatch(transcript(h), /GAVE UP ON/)
     assert.doesNotMatch(transcript(h), /AND ITS REPLY/)
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+// ── What review found the first two rounds missed ────────────────────────────
+
+/**
+ * Hold a session's load open, so another switch can overtake it.
+ *
+ * `parked` resolves once the load has actually been reached, which is several
+ * awaits into the switch. Releasing before then releases nothing and the test
+ * waits on a promise that parks afterwards and is never let go.
+ */
+function slowLoad(slowId: string) {
+  let release = (): void => {}
+  let announceParked = (): void => {}
+  const parked = new Promise<void>((r) => (announceParked = r))
+  return {
+    parked,
+    release: () => release(),
+    loadSession: async (id?: unknown) => {
+      if (id === slowId) {
+        await new Promise<void>((r) => {
+          release = r
+          announceParked()
+        })
+      }
+      return { sessionId: (id as string) ?? 's1', restored: true }
+    }
+  }
+}
+
+test('OPENING CHAT WHILE A SESSION IS BOOTING DOES NOT STRAND THE LOADING STATE', async () => {
+  // The switch that loses the race returns without clearing what it set, so the
+  // one that wins has to define the loading state itself. Chat did not, and the
+  // abandoned session left it on: a skeleton over Chat for the rest of the run,
+  // with Send disabled and nothing able to clear it.
+  const slow = slowLoad('slow')
+  const h = await mountHook({ loadSession: slow.loadSession })
+  try {
+    // One act scope for the whole interleaving: two overlapping ones deadlock,
+    // and nothing mid-flight is observable anyway, since React batches renders
+    // until the scope resolves. What is observable is the state left at the end.
+    await act(async () => {
+      const pending = h.hook().selectSession(session('slow'))
+      await slow.parked
+      await h.hook().openChat()
+      slow.release()
+      await pending
+    })
+    await flush()
+    await flush()
+
+    assert.equal(h.hook().hydrating, false, 'Chat cleared it, so the composer is usable')
+    assert.equal(h.hook().surface, 'chat', 'and Chat is what is on screen')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A TURN ALREADY RUNNING SURVIVES THE REST OF THE SWITCH', async () => {
+  // The resync arrives before the switch finishes — main focuses a live session
+  // before loadSession returns — so the tail of the switch used to clear `busy`
+  // right back off again. That left the reply streaming with the composer saying
+  // nothing was happening, no Abort, and a second prompt accepted into an open
+  // turn. Emitting the resync mid-switch is what the app really does.
+  const bus: { emit: Harness['emit'] } = { emit: () => {} }
+  const h = await mountHook({
+    loadSession: async (id?: unknown) => {
+      const sid = (id as string) ?? 's1'
+      // Main focuses a live session from inside loadSession, before it returns.
+      bus.emit(resync(sid, [streaming('m1', 'still writing')], { hasOpenTurn: true }))
+      return { sessionId: sid, restored: true }
+    }
+  })
+  bus.emit = h.emit
+  try {
+    await selectInto(h, 's1')
+    assert.equal(h.hook().busy, true, 'the open turn outlived the switch that revealed it')
+    assert.match(transcript(h), /still writing/)
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('AN ANSWER ABOUT ONE SESSION S TURN DOES NOT SPEAK FOR ANOTHER', async () => {
+  const bus: { emit: Harness['emit'] } = { emit: () => {} }
+  const h = await mountHook({
+    loadSession: async (id?: unknown) => {
+      bus.emit(resync('somebody-else', [streaming('x1', 'busy elsewhere')], { hasOpenTurn: true }))
+      return { sessionId: (id as string) ?? 's1', restored: true }
+    }
+  })
+  bus.emit = h.emit
+  try {
+    await selectInto(h, 's1')
+    assert.equal(h.hook().busy, false, 'another session being busy does not lock this composer')
   } finally {
     h.unmount()
     h.restore()
