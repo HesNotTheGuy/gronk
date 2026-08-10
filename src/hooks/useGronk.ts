@@ -689,6 +689,11 @@ export function useGronk() {
           break
         case 'message-done': {
           setBusy(false)
+          // And forget what the resync said about this session's turn, or the tail
+          // of a switch still in progress would re-arm `busy` from an answer this
+          // event has just made false. The tail runs after `refreshMeta`, which is
+          // long enough for a turn to finish inside it.
+          if (resyncTurn.current?.sessionId === event.sessionId) resyncTurn.current = null
           setMessages((prev) =>
             prev.map((m) => (m.id === event.messageId ? { ...m, streaming: false } : m))
           )

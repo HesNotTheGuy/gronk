@@ -1010,3 +1010,28 @@ test('AN ABANDONED PROJECT OPEN COMMITS NOTHING EITHER', async () => {
     h.restore()
   }
 })
+
+test('A TURN THAT ENDS MID-SWITCH DOES NOT COME BACK AS RUNNING', async () => {
+  // The tail of a switch asks what the session last said about its turn, and it
+  // asks after `refreshMeta` — long enough for the turn to finish inside it. The
+  // answer has to expire when that happens, or the composer is disabled for a
+  // session with nothing running and no second event coming to release it.
+  const bus: { emit: Harness['emit'] } = { emit: () => {} }
+  const h = await mountHook({
+    loadSession: async (id?: unknown) => {
+      const sid = (id as string) ?? 's1'
+      bus.emit(resync(sid, [streaming('m1', 'still writing')], { hasOpenTurn: true }))
+      // ...and it finishes while the rest of the switch is still running.
+      bus.emit({ type: 'message-done', sessionId: sid, messageId: 'm1' } as MainToRendererEvent)
+      return { sessionId: sid, restored: true }
+    }
+  })
+  bus.emit = h.emit
+  try {
+    await selectInto(h, 's1')
+    assert.equal(h.hook().busy, false, 'the finished turn was not re-armed by the tail')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})

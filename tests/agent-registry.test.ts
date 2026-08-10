@@ -519,3 +519,32 @@ test('THE RESYNC REPORTS A TURN ONLY WHILE A PROMPT IS ACTUALLY OUTSTANDING', as
   assert.equal((source.match(/this\.promptInFlight = false/g) ?? []).length, 4)
   assert.equal((source.match(/this\.promptInFlight = true/g) ?? []).length, 1)
 })
+// Nothing here pins the order of the assignment and the lookup in `focus`. A
+// stopped session left as `focusedId` was raised in review as widening what the
+// renderer may list, and it does not: `lastFocusedCwd` is held past a session's
+// death for exactly that reason, with the reasoning written above it, so
+// `getCwd()` never goes null and nothing reads it as "no project is open".
+
+
+test('STARTING AND RESUMING BOTH HAND THE RENDERER THE SESSION THEY RESOLVED', async () => {
+  // The renderer stopped asking main to focus after a switch, because start and
+  // loadSession focus what they resolve before returning. Nothing pinned that, so
+  // deleting either focus left the renderer with no transcript and no test to say
+  // so.
+  const a = fakeSession('a', '/work/alpha')
+  const b = fakeSession('b', '/work/beta')
+  const { registry, sent } = harness(a, b)
+
+  await registry.start('/work/alpha', { surface: 'project' })
+  assert.ok(
+    sent.some((e) => e.type === 'session-resync' && e.sessionId === 'a'),
+    'starting focused the session it resolved'
+  )
+
+  sent.length = 0
+  await registry.loadSession('b', '/work/beta')
+  assert.ok(
+    sent.some((e) => e.type === 'session-resync' && e.sessionId === 'b'),
+    'resuming focused the session it resolved'
+  )
+})
