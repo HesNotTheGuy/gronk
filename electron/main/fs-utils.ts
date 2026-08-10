@@ -97,7 +97,24 @@ export function exportTranscriptMarkdown(
   title: string,
   messages: Array<{ role: string; text: string; thought?: string }>
 ): string {
-  const lines: string[] = [`# ${title}`, '', `Exported ${new Date().toISOString()}`, '']
+  // "Written with Grok" is one of the two phrasings xAI's brand guidelines ask
+  // for on generated material that is published or distributed. An export is
+  // meant to leave the machine, which is what makes it the place the request
+  // applies — not the store, not the clipboard, not the UI.
+  //
+  // Above the transcript rather than at the end: the guidelines ask for legible
+  // and noticeable, and a footer on a long export is neither.
+  //
+  // The same menu also exports raw JSON. That carries no attribution and should
+  // not: a machine-readable dump of stored fields is not a document being read
+  // by a person, and inventing a field for it would change a shape nothing
+  // currently parses, for a line nobody sees.
+  const lines: string[] = [
+    `# ${title}`,
+    '',
+    `Written with Grok · exported ${new Date().toISOString()}`,
+    ''
+  ]
   for (const m of messages) {
     const role = m.role === 'user' ? 'Operator' : m.role === 'assistant' ? 'Grok' : 'System'
     lines.push(`## ${role}`, '')

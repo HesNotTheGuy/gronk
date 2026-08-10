@@ -135,3 +135,23 @@ test('markdown export labels roles and blockquotes the thinking', () => {
   assert.ok(md.includes('> options'))
   assert.ok(md.includes('_(empty)_'), 'an empty message is marked, not silently blank')
 })
+
+test('the export attributes itself to Grok, once, above the transcript', () => {
+  const md = exportTranscriptMarkdown('My session', [
+    { role: 'user', text: 'hello' },
+    { role: 'assistant', text: 'hi there' }
+  ])
+  // One of the two phrasings xAI's brand guidelines ask for on distributed
+  // generated material. Counted rather than merely found: a phrase repeated per
+  // message would be noise, and this is the only file the app hands to someone
+  // else.
+  const hits = md.split('Written with Grok').length - 1
+  assert.equal(hits, 1, 'attribution should appear exactly once')
+  assert.ok(
+    md.indexOf('Written with Grok') < md.indexOf('## Operator'),
+    'it has to be above the transcript to be noticeable'
+  )
+  // The role headings are what stop a shared transcript reading as though Gronk
+  // wrote the replies, so they stay.
+  assert.ok(md.includes('## Grok'))
+})
