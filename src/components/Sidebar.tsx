@@ -72,7 +72,6 @@ interface Props {
 /** Rails are a hop list, not an archive: the browse homes hold the full set. */
 const LIST_LIMIT = 40
 
-const COLLAPSE_KEY = 'gronk.sidebar.collapse.v2'
 const SESSION_MODE_KEY = 'gronk.sidebar.sessionMode.v1'
 
 function loadSessionMode(): SessionNavMode {
@@ -83,25 +82,6 @@ function loadSessionMode(): SessionNavMode {
     /* ignore */
   }
   return 'recent'
-}
-
-function loadCollapse(): { folders: boolean; sessions: boolean; chats: boolean } {
-  try {
-    const raw = localStorage.getItem(COLLAPSE_KEY)
-    if (!raw) return { folders: true, sessions: true, chats: true }
-    const p = JSON.parse(raw) as {
-      folders?: boolean
-      sessions?: boolean
-      chats?: boolean
-    }
-    return {
-      folders: p.folders !== false,
-      sessions: p.sessions !== false,
-      chats: p.chats !== false
-    }
-  } catch {
-    return { folders: true, sessions: true, chats: true }
-  }
 }
 
 /**
@@ -146,16 +126,7 @@ export function Sidebar({
   onOpenSettings,
   onSignIn
 }: Props) {
-  const [open, setOpen] = useState(loadCollapse)
   const [sessionMode, setSessionMode] = useState<SessionNavMode>(loadSessionMode)
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(COLLAPSE_KEY, JSON.stringify(open))
-    } catch {
-      /* ignore */
-    }
-  }, [open])
 
   useEffect(() => {
     try {
@@ -164,10 +135,6 @@ export function Sidebar({
       /* ignore */
     }
   }, [sessionMode])
-
-  const toggle = (key: 'chats') => {
-    setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
-  }
 
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<SessionSearchHit[] | null>(null)
@@ -386,84 +353,83 @@ export function Sidebar({
           </div>
         ) : null}
 
-        {/* ---- Chat: the list is here whether or not a chat is open ---- */}
+        {/*
+          Chat: the same shape as Build below. Search, then one way to start
+          something, then the list.
+
+          It was a collapsible rail with a chevron, a title, a count, and a
+          "saved in the app · no project" caption above a full-width button.
+          Three of those restated what the switcher directly above already says.
+          The collapse is why this is more than tidying: it persisted, so one
+          click hid the whole list and the only way to start a chat behind a
+          "Chats" expander, on that launch and every launch after. The expander
+          was labelled and one click away, so nothing was unreachable — it just
+          did not look like where a new chat lives. Build has no wrapper to
+          collapse, which is why adopting its shape removes the state rather than
+          fixing what it did.
+        */}
         {showChatRail ? (
-          <div className={`sidebar-rail ${open.chats ? 'open' : 'collapsed'}`}>
-            <button
-              type="button"
-              className="sidebar-rail-head"
-              onClick={() => toggle('chats')}
-              aria-expanded={open.chats}
-              title={open.chats ? 'Minimize chats' : 'Expand chats'}
-            >
-              <span className="sidebar-rail-chevron" aria-hidden>
-                {open.chats ? '▾' : '▸'}
-              </span>
-              <span className="sidebar-rail-title">Chats</span>
-              <span className="sidebar-rail-count">{chatList.length || ''}</span>
-            </button>
-            {open.chats ? (
-              <div className="sidebar-rail-body">
-                <div className="sidebar-rail-toolbar">
-                  <div className="sidebar-rail-sub">Saved in the app · no project</div>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm btn-block sidebar-rail-action"
-                    disabled={!authenticated}
-                    onClick={onOpenChat}
-                  >
-                    New chat
-                  </button>
-                </div>
-                {activityDayFilter ? (
-                  <div className="session-day-filter" role="status">
-                    <span className="session-day-filter-label" title={activityDayFilter}>
-                      {activityDayFilterLabel || activityDayFilter}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn-mini"
-                      onClick={() => onClearActivityDayFilter?.()}
-                      title="Show chats from every day again"
-                    >
-                      Clear day
-                    </button>
-                  </div>
-                ) : null}
-                {chatList.length === 0 ? (
-                  <div className="muted-note">
-                    {activityDayFilter ? 'No chats last updated this day' : 'No chats yet'}
-                  </div>
-                ) : (
-                  chatList.map((s) => (
-                    <SessionRow
-                      key={s.id}
-                      session={s}
-                      active={s.id === activeSessionId}
-                      authenticated={authenticated}
-                      chatWorkspacePath={chatWorkspacePath}
-                      meta={new Date(s.updatedAt).toLocaleDateString()}
-                      onSelect={() => onSelectSession(s)}
-                      onRename={(t) => onRenameSession(s.id, t)}
-                      onArchive={() => onArchiveSession(s.id)}
-                      onExport={(f) => onExportSession(s.id, f)}
-                      onDelete={() => onDeleteSession(s.id)}
-                      liveness={sessionLiveness?.[s.id] ?? null}
-                      onStop={onStopSession ? () => onStopSession(s.id) : undefined}
-                    />
-                  ))
-                )}
-                {hiddenChats > 0 ? (
-                  <button
-                    type="button"
-                    className="sidebar-rail-more"
-                    onClick={onGoChat}
-                    title="Open the full chat list"
-                  >
-                    +{hiddenChats} older · See all
-                  </button>
-                ) : null}
+          <div className="session-nav">
+            <div className="session-nav-bar">
+              <button
+                type="button"
+                className="session-nav-new"
+                disabled={!authenticated}
+                onClick={onOpenChat}
+                title="Start a fresh chat, with no project folder"
+              >
+                + New chat
+              </button>
+              {/* No mode toggle: Build's sorts by project and a chat has none.
+                  A disabled control would be furniture. */}
+            </div>
+            {activityDayFilter ? (
+              <div className="session-day-filter" role="status">
+                <span className="session-day-filter-label" title={activityDayFilter}>
+                  {activityDayFilterLabel || activityDayFilter}
+                </span>
+                <button
+                  type="button"
+                  className="btn-mini"
+                  onClick={() => onClearActivityDayFilter?.()}
+                  title="Show chats from every day again"
+                >
+                  Clear day
+                </button>
               </div>
+            ) : null}
+            {chatList.length === 0 ? (
+              <div className="muted-note">
+                {activityDayFilter ? 'No chats last updated this day' : 'No chats yet'}
+              </div>
+            ) : (
+              chatList.map((s) => (
+                <SessionRow
+                  key={s.id}
+                  session={s}
+                  active={s.id === activeSessionId}
+                  authenticated={authenticated}
+                  chatWorkspacePath={chatWorkspacePath}
+                  meta={new Date(s.updatedAt).toLocaleDateString()}
+                  onSelect={() => onSelectSession(s)}
+                  onRename={(t) => onRenameSession(s.id, t)}
+                  onArchive={() => onArchiveSession(s.id)}
+                  onExport={(f) => onExportSession(s.id, f)}
+                  onDelete={() => onDeleteSession(s.id)}
+                  liveness={sessionLiveness?.[s.id] ?? null}
+                  onStop={onStopSession ? () => onStopSession(s.id) : undefined}
+                />
+              ))
+            )}
+            {hiddenChats > 0 ? (
+              <button
+                type="button"
+                className="sidebar-rail-more"
+                onClick={onGoChat}
+                title="Open the full chat list"
+              >
+                +{hiddenChats} older · See all
+              </button>
             ) : null}
           </div>
         ) : null}
@@ -473,7 +439,8 @@ export function Sidebar({
           Add project, or agent-folder summary — those are furniture around the
           thing the surface exists for. Search (above) + one way to start a
           session + sessions. Mode sits on the same line as New session so it
-          does not own a row. Chat still uses rails; it has several sections.
+          does not own a row. Chat above has the same shape now; the only
+          difference is that it has nothing to sort by, so no mode toggle.
         */}
         {showProjectRails ? (
           <div className="session-nav">
