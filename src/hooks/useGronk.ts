@@ -89,7 +89,7 @@ export function useGronk() {
   // ── The live conversation: the state this file still owns ──────────
   const [connection, setConnection] = useState<ConnectionState>('idle')
   const [cwd, setCwd] = useState<string | null>(null)
-  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [sessionId, setSessionIdState] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [permission, setPermission] = useState<PermissionRequest | null>(null)
   /**
@@ -151,6 +151,35 @@ export function useGronk() {
    * `src/lib/session-focus.ts`.
    */
   const focusRef = useRef<SessionFocus>(NO_FOCUS)
+  /**
+   * The session on screen, mirrored into a ref so an async switch can read it.
+   * State captured in a closure is whatever it was when the switch opened, which
+   * is exactly the question a late switch needs the current answer to.
+   */
+  const shownRef = useRef<string | null>(null)
+  const setSessionId = useCallback((id: string | null) => {
+    shownRef.current = id
+    setSessionIdState(id)
+  }, [])
+  /**
+   * Which switch is the current one.
+   *
+   * Every entry point that opens a switch takes a ticket, and a switch the user
+   * has moved on from commits nothing when it finally resolves. Without this,
+   * clicking a session that has to boot and then clicking a live one left the
+   * slower one to finish and overwrite the answer: `sessionId` became the session
+   * you were no longer looking at, so prompts went there while the folder, the
+   * file tree and the transcript stayed with the one on screen.
+   *
+   * It is a counter rather than a flag because there is no upper bound on how
+   * many switches can be in flight; only the newest may commit.
+   */
+  const switchTicket = useRef(0)
+  const openSwitch = useCallback((requested: string | null): number => {
+    focusRef.current = beginSwitch(requested)
+    return (switchTicket.current += 1)
+  }, [])
+  const switchIsCurrent = useCallback((ticket: number) => switchTicket.current === ticket, [])
 
   /**
    * The last few transcripts this renderer already had, so going back to a
@@ -473,7 +502,14 @@ export function useGronk() {
           // assigned rather than cleared, for the same reason — they belong to this
           // conversation, and the ones on screen belong to the one being left.
           paintTranscript(event.messages)
-          setHistorySource('local')
+          // The source the load reported, not `'local'`: this event is not a
+          // restore and claiming one puts "restored from cache" over a session
+          // that came back from the agent, or over an empty new one.
+          setHistorySource(event.source)
+          // A turn can still be running. Without this the reply is visible and
+          // the composer says nothing is happening, offers no way to stop it, and
+          // takes a second prompt for a session that already has one open.
+          setBusy(event.hasOpenTurn)
           setUsage(event.usage)
           setActivePlan(() => {
             if (!event.plan) return null
@@ -925,11 +961,23 @@ export function useGronk() {
       // Past every route out of here: this call is starting the agent itself,
       // so this is where the switch belongs. The id does not exist yet and
       // comes back from the boot.
-      focusRef.current = beginSwitch(null)
+      const ticket = openSwitch(null)
       setMessages([])
       setSessionId(null)
       setBusy(false)
       setHistorySource(null)
+
+      /**
+       * This switch is not the current one any more: the user clicked something
+       * else while it was booting. Commit nothing — the newer switch owns the
+       * screen — and put main back on the session that is actually shown, since
+       * `start`/`loadSession` focused this one on the way through.
+       */
+      const abandoned = (): boolean => {
+        if (switchIsCurrent(ticket)) return false
+        if (shownRef.current) void window.gronk.focusSession(shownRef.current)
+        return true
+      }
 
       try {
         const s = await window.gronk.getSettings()
@@ -939,20 +987,35 @@ export function useGronk() {
           forceNew: opts?.forceNew,
           surface: 'project'
         })
+        if (abandoned()) return
         focusRef.current = confirmSwitch(focusRef.current, id)
-        void window.gronk.focusSession(id)
+        // Main focuses the session it just resolved, from inside start/loadSession,
+        // before either returns, so there is nothing to ask for here. Asking again
+        // repeated the whole repaint, and it asked *after* this switch was
+        // confirmed — which for a switch the user had already abandoned meant the
+        // other session's transcript painted over the one on screen.
         setSessionId(id)
         await refreshMeta()
         setHydrating(false)
       } catch (err) {
         // Nothing is coming to name the session now, so the switch is closed
         // here. Left open it would go on accepting every session's events.
+        if (abandoned()) return
         focusRef.current = confirmSwitch(focusRef.current, null)
         failAttempt('agent', err instanceof Error ? err.message : String(err))
         setHydrating(false)
       }
     },
-    [cwd, connection, refreshMeta, agentSurface, beginAttempt, failAttempt]
+    [
+      cwd,
+      connection,
+      refreshMeta,
+      agentSurface,
+      beginAttempt,
+      failAttempt,
+      openSwitch,
+      switchIsCurrent
+    ]
   )
 
   const openProjectRef = useRef(openProject)
@@ -995,7 +1058,7 @@ export function useGronk() {
         return
       }
 
-      focusRef.current = beginSwitch(null)
+      const ticket = openSwitch(null)
       setMessages([])
       setSessionId(null)
       setCwd(chatPath)
@@ -1008,6 +1071,13 @@ export function useGronk() {
       setBrowsing(false)
       setAgentSurface('chat')
 
+      /** See openProject: a switch the user moved on from commits nothing. */
+      const abandoned = (): boolean => {
+        if (switchIsCurrent(ticket)) return false
+        if (shownRef.current) void window.gronk.focusSession(shownRef.current)
+        return true
+      }
+
       try {
         const s = await window.gronk.getSettings()
         const { sessionId: id } = await window.gronk.startAgent(chatPath, {
@@ -1016,16 +1086,27 @@ export function useGronk() {
           forceNew: opts?.forceNew,
           surface: 'chat'
         })
+        if (abandoned()) return
         focusRef.current = confirmSwitch(focusRef.current, id)
-        void window.gronk.focusSession(id)
         setSessionId(id)
         await refreshMeta()
       } catch (err) {
+        if (abandoned()) return
         focusRef.current = confirmSwitch(focusRef.current, null)
         failAttempt('agent', err instanceof Error ? err.message : String(err))
       }
     },
-    [chatWorkspacePath, cwd, connection, refreshMeta, agentSurface, beginAttempt, failAttempt]
+    [
+      chatWorkspacePath,
+      cwd,
+      connection,
+      refreshMeta,
+      agentSurface,
+      beginAttempt,
+      failAttempt,
+      openSwitch,
+      switchIsCurrent
+    ]
   )
 
   /**
@@ -1119,7 +1200,14 @@ export function useGronk() {
       // project or chat opens. It still accepts anything until main confirms,
       // because a load can resolve to a different id and the history events
       // naming it arrive before that answer does.
-      focusRef.current = beginSwitch(session.id)
+      const ticket = openSwitch(session.id)
+
+      /** See openProject: a switch the user moved on from commits nothing. */
+      const abandoned = (): boolean => {
+        if (switchIsCurrent(ticket)) return false
+        if (shownRef.current) void window.gronk.focusSession(shownRef.current)
+        return true
+      }
 
       // EVERY await from here down is inside this try, and that is the point of
       // where it starts rather than three statements lower. An open switch
@@ -1161,8 +1249,8 @@ export function useGronk() {
         } else setMessages([])
 
         const result = await window.gronk.loadSession(session.id)
+        if (abandoned()) return
         focusRef.current = confirmSwitch(focusRef.current, result.sessionId)
-        void window.gronk.focusSession(result.sessionId)
         setSessionId(result.sessionId)
         await refreshMeta()
         // history-done clears both of these; keep them here as a safety net for
@@ -1174,6 +1262,7 @@ export function useGronk() {
         setBusy(false)
         setHydrating(false)
       } catch (err) {
+        if (abandoned()) return
         focusRef.current = confirmSwitch(focusRef.current, null)
         failAttempt('agent', err instanceof Error ? err.message : String(err))
         setBusy(false)
@@ -1191,7 +1280,9 @@ export function useGronk() {
       error,
       hydrating,
       beginAttempt,
-      failAttempt
+      failAttempt,
+      openSwitch,
+      switchIsCurrent
     ]
   )
   selectSessionRef.current = selectSession

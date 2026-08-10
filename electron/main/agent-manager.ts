@@ -120,6 +120,8 @@ export class AgentManager {
    * becomes a different conversation.
    */
   private lastPlan: { messageId: string; plan: unknown } | null = null
+  /** What the last `history-done` reported, kept for the same reason as the plan. */
+  private lastHistorySource: 'acp' | 'local' | 'mixed' | 'empty' | null = null
 
   setWindow(win: BrowserWindow | null): void {
     this.window = win
@@ -441,7 +443,9 @@ export class AgentManager {
       sessionId: this.sessionId,
       messages: this.liveMessages,
       usage: this.usage.snapshot(),
-      plan: this.lastPlan
+      plan: this.lastPlan,
+      source: this.lastHistorySource,
+      hasOpenTurn: this.activeMessageId !== null
     })
   }
 
@@ -516,6 +520,7 @@ export class AgentManager {
       // Replayed turn_completed updates then rebuild this session's real total.
       this.usage.reset()
       this.lastPlan = null
+      this.lastHistorySource = null
       // If we already have a local transcript, do not rebuild messages from ACP echo
       this.suppressHistoryReplay = plan.suppressHistoryReplay
       this.historyAssistantId = null
@@ -537,6 +542,7 @@ export class AgentManager {
       const source = historySource(local.length, this.liveMessages.length)
 
       this.persistLiveTranscript()
+      this.lastHistorySource = source
       this.emit({ type: 'history-done', sessionId: this.sessionId, source })
       return { sessionId: this.sessionId, restored: this.liveMessages.length > 0 }
     } catch (err) {
@@ -560,10 +566,11 @@ export class AgentManager {
             `new replies start with a fresh context.`,
           ...this.sessionTag()
         })
+        this.lastHistorySource = local.length ? 'local' : 'empty'
         this.emit({
           type: 'history-done',
           sessionId,
-          source: local.length ? 'local' : 'empty'
+          source: this.lastHistorySource
         })
         return { sessionId: this.sessionId || sessionId, restored: local.length > 0 }
       } catch (err2) {
@@ -606,6 +613,7 @@ export class AgentManager {
     // Totals belong to one live session; a new process starts a new accounting run.
     this.usage.reset()
     this.lastPlan = null
+    this.lastHistorySource = null
     this.permissions.clear()
     this.sessionAllowKinds.clear()
     if (this.client) {

@@ -89,7 +89,9 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
         sessionId: id,
         messages: self.messages,
         usage: null,
-        plan: null
+        plan: null,
+        source: 'local',
+        hasOpenTurn: false
       })
     },
     start: async () => {
@@ -488,17 +490,7 @@ test('RETURNING TO A BACKGROUND SESSION SHOWS ITS REPLY, NOT WHAT WAS ON SCREEN 
   )
 })
 
-test('THE SESSION IS NOT RESTARTED TO RESYNC IT', async () => {
-  // Tearing it down and loading it again would also fix the screen, and would
-  // throw away the running turn that is the entire point of background sessions.
-  const a = fakeSession('a', '/work/alpha')
-  const b = fakeSession('b', '/work/beta')
-  const { registry } = harness(a, b)
-
-  await registry.start('/work/alpha', { surface: 'project' })
-  await registry.start('/work/beta', { surface: 'project' })
-  await registry.loadSession('a', '/work/alpha')
-
-  assert.equal(a.stopped, 0, 'A was never stopped')
-  assert.equal(a.loads, 0, 'A was never re-loaded over ACP')
-})
+// Nothing here asserts that the session is not restarted to resync it: the early
+// return that guarantees it is already covered by 'opening a session that is
+// already live focuses it rather than reloading' above, and a second copy of that
+// assertion would only look like extra coverage.

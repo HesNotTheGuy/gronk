@@ -133,24 +133,52 @@ test('STOPPING A BACKGROUND SESSION NAMES IT', async () => {
   }
 })
 
-test('selecting a session tells main which one is on screen', async () => {
-  // Main routes connection events by it, so a switch that does not say leaves
-  // the wrong session narrating.
+test('MAIN IS TOLD WHICH SESSION IS ON SCREEN WHEN ITS OWN ANSWER WOULD BE WRONG', async () => {
+  // Main routes connection events by the focused session and answers
+  // `getCwd()` from it, so the two have to agree. It normally needs no telling:
+  // `start` and `loadSession` focus the session they resolve before returning,
+  // which is why the renderer no longer asks after every switch — that second
+  // ask repeated a full transcript repaint.
+  //
+  // One case is left where main's own answer is wrong. Click a session that has
+  // to boot, then click another before it finishes: main focuses the slow one
+  // last, so it ends up narrating a conversation nobody is looking at. The
+  // abandoned switch is what puts main back.
   const focused: unknown[] = []
+  let releaseSlow = (): void => {}
   const h = await mountHook({
     focusSession: async (id: unknown) => {
       focused.push(id)
     },
-    loadSession: async () => ({ sessionId: 's1', restored: true })
+    loadSession: async (id: unknown) => {
+      if (id === 'slow') {
+        await new Promise<void>((resolve) => {
+          releaseSlow = resolve
+        })
+      }
+      return { sessionId: id as string, restored: true }
+    }
   })
   try {
+    const slow = act(async () => {
+      await h.hook().selectSession(session('slow'))
+    })
+    await flush()
+
+    // The user gives up on it and opens one that is already running.
     await act(async () => {
-      await h.hook().selectSession(session('s1'))
+      await h.hook().selectSession(session('quick'))
     })
     await flush()
     await flush()
+    assert.deepEqual(focused, [], 'nothing to correct while only the fast one has landed')
 
-    assert.ok(focused.includes('s1'), `expected main to be told about s1, got ${JSON.stringify(focused)}`)
+    releaseSlow()
+    await slow
+    await flush()
+    await flush()
+
+    assert.deepEqual(focused, ['quick'], 'main was put back on the session being shown')
   } finally {
     h.unmount()
     h.restore()

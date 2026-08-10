@@ -583,6 +583,10 @@ export type MainToRendererEvent =
       messages: ChatMessage[]
       usage: SessionUsage | null
       plan: { messageId: string; plan: unknown } | null
+      /** What `history-done` reported at load, null before one has completed. */
+      source: 'acp' | 'local' | 'mixed' | 'empty' | null
+      /** Whether a turn is still running, so the composer can offer to stop it. */
+      hasOpenTurn: boolean
     }
   | { type: 'history-done'; sessionId: string; source: 'acp' | 'local' | 'mixed' | 'empty' }
   | { type: 'user-message'; sessionId: string; message: ChatMessage }
