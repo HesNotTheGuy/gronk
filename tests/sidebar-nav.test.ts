@@ -224,3 +224,58 @@ test('the scope filter is a filter, not a second chart', async () => {
   assert.equal(view.text().includes('streak'), false)
   view.unmount()
 })
+
+// ── #67: one row, one menu ──────────────────────────────────────────────────
+
+/**
+ * A session row showing two `⋯` was seen on the nightly and could not be found by
+ * reading. What follows does not fix it — nothing here reproduced it. It pins the
+ * two things the investigation did establish, so that if the cause is ever one of
+ * them, it fails here instead of being seen again months later.
+ */
+
+const chat = (id: string) =>
+  ({
+    id,
+    cwd: '/data/chat-workspace',
+    title: id,
+    createdAt: 0,
+    updatedAt: 1,
+    surface: 'chat'
+  }) as never
+
+test('ONE MENU BUTTON PER SESSION, LIVE OR NOT', async () => {
+  // The row that showed two was a live one, so liveness is set here on purpose:
+  // the indicator and the Stop entry both arrived with multi-session, and a control
+  // added beside the menu rather than inside it would show up as exactly this.
+  const view = await mount(
+    sidebar({
+      surface: 'chat',
+      chatSessions: [chat('a'), chat('b')],
+      activeSessionId: 'a',
+      sessionLiveness: { a: 'working', b: 'blocked' },
+      onStopSession: noop
+    })
+  )
+  try {
+    const rows = view.queryAll('.session-item-row')
+    assert.equal(rows.length, 2, 'a session was rendered more than once')
+    for (const row of rows) {
+      assert.equal(
+        row.querySelectorAll('.menu-btn').length,
+        1,
+        'a row drew more than one menu button'
+      )
+    }
+    assert.equal(view.queryAll('.menu-btn').length, 2, 'menus outnumber the rows')
+  } finally {
+    view.unmount()
+  }
+})
+
+// Not tested here: that searching REPLACES the list rather than adding to it. If it
+// added, a session matching the query would appear twice, each copy with its own
+// menu, which is the shape of #67. `showChatRail` and `showProjectRails` both carry
+// `&& !searching`, so it holds today — but this harness cannot type into the search
+// box (React ignores programmatic input here), and a test that renders without
+// searching and then asserts one block would pass whatever those clauses said.
