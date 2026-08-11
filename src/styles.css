@@ -4710,6 +4710,16 @@ html[data-theme='light'] .session-tray {
   color: var(--ink);
 }
 
+/* The option already in force. Reads as a statement of where you are rather than
+   something to press: no pointer, no hover lift. Clicking it only closes the menu. */
+.menu-pop-item.current {
+  cursor: default;
+}
+
+.menu-pop-item.current:hover {
+  background: transparent;
+}
+
 .menu-pop-item.active {
   background: linear-gradient(90deg, var(--ignite-dim), transparent 85%);
   color: var(--ink);

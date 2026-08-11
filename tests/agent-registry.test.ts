@@ -80,6 +80,7 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
     getCwd: () => cwd,
     getSurface: () => 'project',
     getCurrentModel: () => undefined,
+    getPermissionMode: () => 'default',
     livenessNow: () => livenessOf({ state, hasPendingPermission: pending, hasOpenTurn: turn }),
     reemitFrontPermission: () => {
       self.reemitted += 1
@@ -92,7 +93,8 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
         usage: null,
         plan: null,
         source: 'local',
-        hasOpenTurn: false
+        hasOpenTurn: false,
+        permissionMode: 'default'
       })
     },
     start: async () => {

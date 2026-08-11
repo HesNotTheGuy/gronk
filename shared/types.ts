@@ -587,6 +587,9 @@ export type MainToRendererEvent =
       source: 'acp' | 'local' | 'mixed' | 'empty' | null
       /** Whether a turn is still running, so the composer can offer to stop it. */
       hasOpenTurn: boolean
+      /** What this session is running — not what settings would start next. */
+      model?: string
+      permissionMode: PermissionMode | null
     }
   | { type: 'history-done'; sessionId: string; source: 'acp' | 'local' | 'mixed' | 'empty' }
   | { type: 'user-message'; sessionId: string; message: ChatMessage }

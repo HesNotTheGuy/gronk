@@ -159,10 +159,16 @@ export function MenuButton({
                   type="button"
                   role="option"
                   aria-selected={o.id === value}
-                  className={`menu-pop-item ${o.id === value ? 'active' : ''} ${o.dangerous ? 'danger' : ''}`}
-                  title={o.description}
+                  /* The one already in force is not a choice. Selecting it used to be
+                     accepted and acted on, and for the model picker acting on it meant
+                     restarting the agent — so choosing what you already had replaced the
+                     conversation with an empty session. Closing the menu is the whole of
+                     what a click on it should do. */
+                  aria-disabled={o.id === value}
+                  className={`menu-pop-item ${o.id === value ? 'active current' : ''} ${o.dangerous ? 'danger' : ''}`}
+                  title={o.id === value ? `Already using ${o.label}` : o.description}
                   onClick={() => {
-                    onSelect(o.id)
+                    if (o.id !== value) onSelect(o.id)
                     setOpen(false)
                   }}
                 >

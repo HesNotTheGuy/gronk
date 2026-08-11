@@ -537,6 +537,7 @@ const resync = (
   plan: null,
   source: 'local',
   hasOpenTurn: false,
+  permissionMode: 'default',
   ...extra
 })
 

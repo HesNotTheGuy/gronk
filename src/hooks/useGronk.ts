@@ -6,6 +6,7 @@ import type {
   ChatMessage,
   ConnectionState,
   MainToRendererEvent,
+  PermissionMode,
   PermissionRequest,
   PromptAttachment,
   SessionInfo,
@@ -138,6 +139,17 @@ export function useGronk() {
    */
   const [sessionLiveness, setSessionLiveness] = useState<Record<string, SessionLiveness>>({})
   const [historySource, setHistorySource] = useState<string | null>(null)
+  /**
+   * What the live session is running, as opposed to what settings would start next.
+   *
+   * Null when nothing is up, and the pickers fall back to the settings default then —
+   * which is the honest reading, because at that point the default IS what the next
+   * session will use.
+   */
+  const [sessionModel, setSessionModel] = useState<string | null>(null)
+  const [sessionPermissionMode, setSessionPermissionMode] = useState<PermissionMode | null>(
+    null
+  )
   /** Token/cost totals for the live session: null until the first turn completes. */
   const [usage, setUsage] = useState<SessionUsage | null>(null)
   const [activePlan, setActivePlan] = useState<ActivePlan | null>(null)
@@ -562,6 +574,8 @@ export function useGronk() {
           // A turn can still be running. Without this the reply is visible and
           // the composer says nothing is happening, offers no way to stop it, and
           // takes a second prompt for a session that already has one open.
+          setSessionModel(event.model ?? null)
+          setSessionPermissionMode(event.permissionMode)
           resyncTurn.current = { sessionId: event.sessionId, open: event.hasOpenTurn }
           setBusy(event.hasOpenTurn)
           setUsage(event.usage)
@@ -1642,6 +1656,8 @@ export function useGronk() {
     sessionId,
     messages,
     ...draftState,
+    sessionModel,
+    sessionPermissionMode,
     ...queueState,
     ...catalog,
     renameSession,
