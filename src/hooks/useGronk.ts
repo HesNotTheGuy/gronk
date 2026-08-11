@@ -27,8 +27,7 @@ import {
   NO_FOCUS,
   beginSwitch,
   belongsToFocus,
-  mayNameSwitch,
-  ownsSession,
+  mayReplaceView,
   confirmSwitch,
   sessionIdOf,
   type SessionFocus
@@ -64,6 +63,23 @@ import { useSessionCatalog } from './useSessionCatalog'
  * the app closed is shown as sent: the only send state worth persisting is a
  * failure, because that one still offers Retry.
  */
+/**
+ * Events that may only replace the view for a session this renderer has named.
+ *
+ * Both of these are announcements about one session, emitted once it is settled:
+ * `session` names it, `session-resync` hands over its whole view. Neither is ever the
+ * answer to an outstanding load, so requiring a name costs nothing.
+ *
+ * `history-replace`, `history-clear` and `history-done` are NOT here, and that is a
+ * known gap rather than an oversight. They ARE the answer to a load, and a load can
+ * resolve to an id the renderer has not heard yet — clicking one session and having
+ * main answer with another is a real path, pinned by "A LOAD THAT RESOLVES TO A
+ * DIFFERENT ID STILL PAINTS ITS HISTORY". Requiring a name there drops the history of
+ * the conversation the user just opened, which is worse than the leak it closes.
+ * Fixing it properly means main saying which request a history event answers.
+ */
+const REPLACES_THE_VIEW = new Set(['session', 'session-resync'])
+
 function restored(m: ChatMessage): ChatMessage {
   return {
     ...m,
@@ -476,14 +492,14 @@ export function useGronk() {
       }
 
       if (!belongsToFocus(focusRef.current, sessionIdOf(event))) return
-      // A resync replaces the whole view, so it takes the stricter test. The
-      // latitude above — accept any named session while a switch is open — is for
-      // events that add to a conversation, since a load can resolve to an id the
-      // renderer has not heard yet. Applied to a replacement it means a session
-      // finishing its boot while another switch is open repaints the conversation
-      // on screen as a different one, and the save timer then writes that to disk
-      // under the id the renderer believes it is showing.
-      if (event.type === 'session-resync' && !ownsSession(focusRef.current, event.sessionId)) {
+      // Events that REPLACE the view rather than adding to it take the stricter
+      // test. The latitude above — accept any named session while a switch is open —
+      // is for events that append, since a load can resolve to an id the renderer
+      // has not heard yet. Applied to a replacement it means a session finishing its
+      // boot while another switch is open repaints the conversation on screen as a
+      // different one, which the save timer then writes to disk under the id the
+      // renderer believes it is showing.
+      if (REPLACES_THE_VIEW.has(event.type) && !mayReplaceView(focusRef.current, sessionIdOf(event))) {
         return
       }
 
@@ -502,11 +518,9 @@ export function useGronk() {
           // stops being open-ended; the other is the value start/load returns.
           // Whichever arrives first closes it.
           //
-          // Only for a switch that has no name yet, or one this already is. A
-          // session booting while a later switch is open would otherwise announce
-          // itself into that switch and move `sessionId` and the folder to a
-          // conversation the user had already left.
-          if (!mayNameSwitch(focusRef.current, event.sessionId)) break
+          // The guard above covers this: a session booting while a later switch is
+          // open would otherwise announce itself into that switch and move
+          // `sessionId` and the folder to a conversation the user had already left.
           focusRef.current = confirmSwitch(focusRef.current, event.sessionId)
           setSessionId(event.sessionId)
           setCwd(event.cwd)

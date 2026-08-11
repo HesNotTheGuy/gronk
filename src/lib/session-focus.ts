@@ -113,35 +113,31 @@ export function confirmSwitch(focus: SessionFocus, id: string | null): SessionFo
 }
 
 /**
- * Is this session one the renderer has actually named?
+ * May this session speak for the whole view?
  *
- * Stricter than `belongsToFocus`, which accepts any named event while a switch is
- * open because a load can resolve to an id the renderer has not heard yet. That
- * latitude is safe for an event that ADDS to a conversation and unsafe for one
- * that REPLACES it: a whole-view event accepted for the wrong session repaints the
- * conversation being read as a different one, and the save timer then writes those
- * messages to disk under the id the renderer believes is on screen. Use this for
- * anything that replaces rather than appends.
+ * Some events do not add to a conversation, they REPLACE what is on screen: the
+ * transcript, the session id, the folder, whether the view follows the end. Accepted
+ * for the wrong session, those repaint the conversation being read as a different
+ * one — and the save timer then writes it to disk under the id the renderer believes
+ * it is showing.
+ *
+ * `belongsToFocus` is deliberately looser: while a switch is open it accepts any
+ * named session, because a load can resolve to an id the renderer has not heard yet
+ * and the events naming it arrive first. That latitude is right for an event that
+ * appends a line and wrong for one that replaces everything.
+ *
+ * An unnamed switch has to accept a name from anyone, though. Opening a project or a
+ * chat starts one with no id at all — the id only exists once the agent has booted,
+ * and main announcing it is how the renderer finds out. So: name an unclaimed switch,
+ * never rename a claimed one.
+ *
+ * What this does not cover: two unnamed switches in flight at once, where the first
+ * name to arrive wins and could be the abandoned one. That window closes the moment
+ * either is named, and closing it properly needs main to echo back which switch it is
+ * answering.
  */
-export function ownsSession(focus: SessionFocus, sessionId: string | undefined): boolean {
+export function mayReplaceView(focus: SessionFocus, sessionId: string | undefined): boolean {
   if (!sessionId) return true
-  return focus.ids.includes(sessionId)
-}
-
-/**
- * May this session put its name to the switch in progress?
- *
- * Opening a project or a chat starts a switch with no id at all, because the id
- * only exists once the agent has booted, and main announcing it is how the
- * renderer finds out. So an unnamed switch has to accept a name from anyone.
- *
- * A switch that already has one does not. Clicking a session that has to boot and
- * then clicking another left the first one's announcement to arrive mid-switch and
- * rename the conversation on screen — moving `sessionId` and the folder to a
- * session the user had walked away from. Naming an unclaimed switch is how the
- * renderer learns; renaming a claimed one is a different act.
- */
-export function mayNameSwitch(focus: SessionFocus, sessionId: string): boolean {
   return focus.ids.length === 0 || focus.ids.includes(sessionId)
 }
 
