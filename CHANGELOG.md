@@ -4,6 +4,102 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-08-11
+
+Two things happened in this release. Sessions stopped being one-at-a-time, and the
+transcript stopped living in one file that got slower the bigger it grew. Most of
+the rest follows from those.
+
+### Before you install this
+
+**Do not go back to 0.3.0 or earlier after running this.** Conversations move out
+of `gronk-store.json` into one file each, and the store is rewritten without them.
+Older versions read the conversation out of the store, so they would show every
+session as empty. Nothing is destroyed — the files are still there and this version
+reads them — but anything said while downgraded is written where this version no
+longer looks.
+
+### Added
+
+- **Sessions keep running when you look at another one.** Clicking a different
+  session used to end the work you walked away from. Several can now run at once,
+  the sidebar marks which are working and which are waiting on you, and each row can
+  be stopped on its own. Coming back to one shows what it actually says rather than
+  what was half-drawn when you left.
+
+- **A message typed while the agent is working is queued instead of refused.** Send
+  used to be disabled for the whole turn, so a finished message sat in the box
+  waiting for an end you cannot see coming. Queued messages are shown in full, each
+  cancellable, and they go in order as turns finish. Stopping a turn holds them
+  rather than releasing the next one — stopping usually means you want to say
+  something different — and the button says so.
+
+- **What you have typed stays with the conversation you typed it in.** Leaving the
+  conversation view used to throw an unsent message away, and switching sessions
+  carried it into the next conversation, one Enter from the wrong agent. Drafts are
+  kept per conversation, including one typed before the agent has finished starting.
+  They do not survive quitting the app.
+
+- **A Changes panel** showing what the agent altered in the open folder.
+
+- **Project notes**, plain text, one per folder, kept with Gronk's own settings
+  rather than in the project.
+
+### Changed
+
+- **The transcript store no longer grows without bound.** Conversations live in one
+  file each, so opening a session reads that session rather than everything ever
+  said. A real store had reached 120 MB, most of it duplicated tool calls that were
+  re-appended on every reopen, and parsing it froze the window for about a minute on
+  every read. The duplicates are removed on first launch and cannot re-accumulate.
+
+- **The store is read once per operation rather than eighteen times.** A single turn
+  was re-reading and rewriting the whole file repeatedly; a permission decision
+  rewrote it as well, and the audit log now has its own file.
+
+- **Chat and Build have the same shape.** They were two different layouts for the
+  same job, and the sidebar now says what each one is for.
+
+- **The window can be dragged by the header** again, without the click-to-dismiss
+  behaviour that first fix broke.
+
+### Fixed
+
+- **A transcript save cannot replace a conversation with a shorter, different one.**
+  This is the fix for real data loss: reopening a session after a restart could
+  overwrite its history with a partial copy. A save that would drop stored messages
+  is refused, and the surviving history is kept.
+
+- **Attached images survive relocating the data folder**, and parked attachments are
+  collected once nothing refers to them — with the collector refusing to act when it
+  cannot be sure.
+
+- **A stalled browser sign-in no longer disables device-code login.** The wait
+  switched off the exact remedy the screen recommends, and restarting the app was the
+  only way out.
+
+- **A rejected agent call says which call failed.** The CLI reports some failures —
+  including a spent weekly plan quota — as a bare JSON-RPC error whose standard name
+  is "Internal error", and that is all the banner used to show. It now names the call
+  and the code, keeps the agent's own reason when there is one, and for that specific
+  empty error suggests checking Grok usage limits first.
+
+- **A turn that fails before the agent says anything no longer leaves a blank message**
+  in the conversation, or on disk. Each failed attempt used to add another.
+
+- **The error banner stays about what is failing now** rather than the last thing that
+  failed.
+
+- **Events are attributed to the session they belong to**, so a background session
+  cannot narrate over the one on screen.
+
+- **The account label never surfaces an email address.**
+
+- **The usage panel says "reused" where it shows the cache share.** A large number
+  with a bare percentage beside it reads as a fuel gauge; it means the opposite. The
+  panel also says plainly that it cannot see a plan's quota — a spent weekly limit
+  arrives as a failed turn, not as a warning there.
+
 ## [0.3.0] - 2026-08-05
 
 Almost all of this is the same complaint from several directions: Gronk got
