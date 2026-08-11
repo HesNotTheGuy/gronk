@@ -158,27 +158,24 @@ test('the export attributes itself to Grok, once, above the transcript', () => {
 
 // ── What a rejected RPC call tells the user ─────────────────────────────────
 
-test('A GENERIC RPC FAILURE NAMES THE CALL, AND POINTS AT THE LIKELY CAUSE', async () => {
-  // Real report: the banner said "Internal error" and nothing else. The agent returns
-  // -32603 with the JSON-RPC name for the code and no detail, and one common cause is a
-  // Grok plan whose weekly limit is spent — which took a screenshot of the Grok website
-  // to work out. Gronk cannot see an account's entitlement, so the quota is offered as
-  // the first thing to check, never asserted.
+test('A GENERIC RPC FAILURE NAMES THE CALL AND GUESSES AT NOTHING', async () => {
+  // Real report: the banner said "Internal error" and nothing else. This first shipped
+  // suggesting a spent plan quota, which was wrong — the CLI reports rate limits on
+  // -32003 with its own copy and classifies -32603 as a server error specifically not a
+  // rate limit (xai-org/grok-build). So the guess sent people to check the one thing the
+  // CLI would already have told them about clearly.
   const { rpcErrorMessage } = await import('../electron/main/acp/client')
 
   const generic = rpcErrorMessage('session/prompt', { code: -32603, message: 'Internal error' })
   assert.match(generic, /session\/prompt/, 'the failed call is not named')
   assert.match(generic, /-32603/)
-  assert.match(generic, /usage limits/i, 'the likeliest cause is not offered')
-  assert.doesNotMatch(generic, /you have run out|your quota is spent/i)
+  assert.doesNotMatch(generic, /usage limits|quota/i, 'it is guessing at a cause again')
+  assert.match(generic, /inside the agent/i, 'it does not say whose fault this is')
 
   // A real message from the agent is kept as-is: it knows more than this function does.
-  const said = rpcErrorMessage('session/load', {
-    code: -32602,
-    message: 'unknown session id'
-  })
+  const said = rpcErrorMessage('session/load', { code: -32602, message: 'unknown session id' })
   assert.match(said, /unknown session id/)
-  assert.doesNotMatch(said, /usage limits/i, 'a real reason was buried under a guess')
+  assert.doesNotMatch(said, /inside the agent/i, 'a real reason was buried under boilerplate')
 
   // Detail from the agent beats both.
   const detailed = rpcErrorMessage('session/prompt', {
