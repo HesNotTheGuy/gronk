@@ -49,6 +49,7 @@ import {
 import { useAppSettings } from './useAppSettings'
 import { useAuth } from './useAuth'
 import { useDrafts } from './useDrafts'
+import { useQueue } from './useQueue'
 import { useCliInstall } from './useCliInstall'
 import { useDataLocation } from './useDataLocation'
 import { useExportNotice } from './useExportNotice'
@@ -337,6 +338,10 @@ export function useGronk() {
   // while you are typing into it; this is where it lives when you are not.
   const { forgetDraft, ...draftState } = useDrafts(sessionId)
 
+  // Messages written while a turn was running. Held here rather than refused at the
+  // composer; the drain rule is below, on the end of a turn.
+  const { takeNext, forgetQueue, holdQueue, releaseQueue, ...queueState } = useQueue(sessionId)
+
   // Same peeling: `hydrate` is refreshMeta's write-through, and the rest are how
   // the live-session flows below keep the browse lists honest.
   const {
@@ -602,6 +607,12 @@ export function useGronk() {
           break
         case 'message-done': {
           setBusy(false)
+          // A turn that was stopped, or that failed, does not release the next
+          // queued message. Stopping usually means the user wants to say something
+          // different, and sending what they queued before that is the opposite.
+          if (event.stopReason === 'cancelled' || event.stopReason === 'error') {
+            holdQueue(event.sessionId)
+          }
           setMessages((prev) =>
             prev.map((m) => (m.id === event.messageId ? { ...m, streaming: false } : m))
           )
@@ -1185,6 +1196,11 @@ export function useGronk() {
       if ((!trimmed && attachments.length === 0) || busy || connection !== 'ready') return
 
       // Past the guard above, so the send is really happening.
+      //
+      // A person sending something is the answer to a queue held by a stopped turn:
+      // they have decided what happens next, so the rest may follow this turn. The
+      // held messages are on screen the whole time, so nothing resumes unseen.
+      if (sessionId) releaseQueue(sessionId)
       beginAttempt('prompt')
       setBusy(true)
       stickToBottom.current = true
@@ -1247,7 +1263,7 @@ export function useGronk() {
         )
       }
     },
-    [busy, connection, beginAttempt, failAttempt]
+    [busy, connection, sessionId, beginAttempt, failAttempt, releaseQueue]
   )
 
   /** Retry only a failed / unanswered user message without duplicating it. */
@@ -1284,6 +1300,31 @@ export function useGronk() {
     [busy, connection, sendPrompt]
   )
 
+  /**
+   * Release one queued message when there is really room for it.
+   *
+   * Every condition here is a decision. `busy` and `connection` are the obvious
+   * ones. `permission` is not: a turn waiting for the user to approve something is
+   * not a finished turn, and draining into it races the approval. `hydrating` keeps
+   * a queue from firing into a session still being read off disk. And a queue put on
+   * hold by a stopped turn waits for a person, not for a timer.
+   */
+  useEffect(() => {
+    if (queueState.queueHeld || queueState.queued.length === 0) return
+    if (busy || hydrating || connection !== 'ready' || permission) return
+    const next = takeNext()
+    if (next) void sendPrompt(next.text, next.attachments)
+  }, [
+    queueState.queueHeld,
+    queueState.queued,
+    busy,
+    hydrating,
+    connection,
+    permission,
+    takeNext,
+    sendPrompt
+  ])
+
   const cancel = useCallback(async () => {
     await window.gronk.cancelPrompt(sessionId ?? undefined)
     setBusy(false)
@@ -1313,6 +1354,7 @@ export function useGronk() {
       transcriptCache.current = forgetTranscript(transcriptCache.current, id)
       // A conversation nobody can open again has nothing to restore into.
       forgetDraft(id)
+      forgetQueue(id)
       const sess = await window.gronk.deleteSession(id)
       setSessions(sess)
       if (sessionId === id) {
@@ -1323,7 +1365,7 @@ export function useGronk() {
         await restartAgent()
       }
     },
-    [sessionId, setSessions, restartAgent, forgetDraft]
+    [sessionId, setSessions, restartAgent, forgetDraft, forgetQueue]
   )
 
   /**
@@ -1395,6 +1437,7 @@ export function useGronk() {
     sessionId,
     messages,
     ...draftState,
+    ...queueState,
     ...catalog,
     renameSession,
     chatWorkspacePath,

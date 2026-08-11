@@ -4738,6 +4738,59 @@ html[data-theme='light'] .session-tray {
   white-space: normal;
 }
 
+/* Messages waiting for the running turn to finish. Deliberately quiet: they are
+   not part of the conversation yet, and they must not read as sent. */
+.queued-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 0;
+}
+
+.queued-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 340px;
+  padding: 3px 6px 3px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.queued-mark {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.queued-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queued-remove {
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.queued-remove:hover {
+  color: var(--text);
+}
+
+.queued-note {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
 .attach-row {
   display: flex;
   flex-wrap: wrap;

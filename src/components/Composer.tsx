@@ -18,6 +18,7 @@ import { PERMISSION_MODE_OPTIONS } from '../../shared/types'
 import { MenuButton } from './MenuButton'
 import { composerPermissions, composerPlaceholder } from '../lib/composer-state'
 import type { Draft } from '../hooks/useDrafts'
+import { QUEUE_LIMIT, type QueuedMessage } from '../hooks/useQueue'
 
 interface Props {
   connection: ConnectionState
@@ -37,6 +38,13 @@ interface Props {
   draftKey: string
   onDraftChange: (draft: Draft) => void
   onDraftSent: () => void
+  /** Hold this message until the running turn finishes. */
+  onQueue: (text: string, attachments: PromptAttachment[]) => void
+  /** Messages already waiting for this conversation. */
+  queued: QueuedMessage[]
+  /** The queue will not go by itself: the last turn was stopped or failed. */
+  queueHeld: boolean
+  onRemoveQueued: (id: string) => void
   onCancel: () => void
   onOpenFolder?: (path: string) => void
   /** Inline Model picker (popover), both surfaces */
@@ -93,6 +101,10 @@ export function Composer({
   draftKey,
   onDraftChange,
   onDraftSent,
+  onQueue,
+  queued,
+  queueHeld,
+  onRemoveQueued,
   onCancel,
   onOpenFolder,
   models,
@@ -138,7 +150,8 @@ export function Composer({
     connection,
     hydrating,
     busy,
-    hasContent: !!text.trim() || attachments.length > 0
+    hasContent: !!text.trim() || attachments.length > 0,
+    queueFull: queued.length >= QUEUE_LIMIT
   })
 
   useEffect(() => {
@@ -265,6 +278,17 @@ export function Composer({
   }, [onDraftChange])
 
   const submit = () => {
+    if (perms.canQueue) {
+      // A turn is running. Hold it rather than refuse it, and empty the box so the
+      // next thought can be typed — the held message is shown above the composer,
+      // so nothing has silently disappeared.
+      onQueue(text, attachments)
+      onDraftSent()
+      setText('')
+      setAttachments([])
+      setMentionOpen(false)
+      return
+    }
     if (!perms.canSend) return
     // Ahead of onSend: the draft is gone the moment the message is real. Clearing
     // the box below is what stops the debounce and the unmount flush putting it
@@ -399,6 +423,36 @@ export function Composer({
       ) : null}
 
       <div className="composer">
+        {queued.length > 0 ? (
+          <div className="queued-row" aria-label="Waiting to send">
+            {queued.map((m) => (
+              <div key={m.id} className="queued-chip">
+                <span className="queued-mark" aria-hidden="true">
+                  ⏳
+                </span>
+                <span className="queued-text" title={m.text}>
+                  {m.text || `${m.attachments.length} attachment(s)`}
+                </span>
+                <button
+                  type="button"
+                  className="queued-remove"
+                  aria-label="Do not send this message"
+                  onClick={() => onRemoveQueued(m.id)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <span className="queued-note">
+              {queueHeld
+                ? 'held — the turn was stopped. Send something to carry on, or remove these.'
+                : queued.length === 1
+                  ? 'sends when this turn finishes'
+                  : `${queued.length} waiting`}
+            </span>
+          </div>
+        ) : null}
+
         {attachments.length > 0 ? (
           <div className="attach-row">
             {attachments.map((a) => (
