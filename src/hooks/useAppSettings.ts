@@ -120,7 +120,9 @@ export function useAppSettings({ cwd, connection, restartAgent, setAuth }: Setti
   }, [cwd, connection, restartAgent])
 
   const changePermissionMode = useCallback(
-    async (mode: PermissionMode) => {
+    async (mode: PermissionMode, runningMode?: PermissionMode | null) => {
+      // Same as the model: choosing the mode already in force restarts nothing.
+      if (mode === (runningMode ?? settings?.permissionMode)) return
       if (mode === 'bypassPermissions') {
         setShowYoloConfirm(true)
         return
@@ -133,7 +135,7 @@ export function useAppSettings({ cwd, connection, restartAgent, setAuth }: Setti
       // Restart agent so CLI gets the new mode
       if (cwd && (connection === 'ready' || connection === 'error')) await restartAgent()
     },
-    [cwd, connection, restartAgent]
+    [cwd, connection, restartAgent, settings?.permissionMode]
   )
 
   const cancelYolo = useCallback(() => {
@@ -141,12 +143,17 @@ export function useAppSettings({ cwd, connection, restartAgent, setAuth }: Setti
   }, [])
 
   const changeModel = useCallback(
-    async (modelId: string) => {
+    async (modelId: string, runningModel?: string | null) => {
+      // Picking the model already in use does nothing at all. It used to write the
+      // setting and restart, and restarting means `forceNew` — so choosing the model you
+      // were already on replaced the conversation with an empty session. Nothing about
+      // that was asked for.
+      if (modelId === (runningModel ?? settings?.model)) return
       const next = await window.gronk.setSettings({ model: modelId })
       setSettingsState(next)
       if (cwd) await restartAgent()
     },
-    [cwd, restartAgent]
+    [cwd, restartAgent, settings?.model]
   )
 
   const pickBinary = useCallback(async () => {

@@ -58,6 +58,7 @@ import type {
   MainToRendererEvent,
   ModelInfo,
   PermissionDecision,
+  PermissionMode,
   PermissionRequest
 } from '../../shared/types'
 
@@ -126,6 +127,15 @@ export class AgentManager {
    * cannot drift from how it was started (see isAutoApproveActive).
    */
   private bootAlwaysApprove = false
+  /**
+   * The permission mode the RUNNING child was spawned with.
+   *
+   * Kept for the same reason as `bootAlwaysApprove`: the pickers under the composer are
+   * about the session in front of you, and reading them off current settings said what
+   * the NEXT session would start with, which is a different sentence and was wrong
+   * whenever a setting had been changed without restarting.
+   */
+  private bootPermissionMode: PermissionMode | null = null
   /** Running token/cost totals for the live session (in memory only, never persisted). */
   private usage = new SessionUsageTracker()
   /**
@@ -172,6 +182,11 @@ export class AgentManager {
 
   getCurrentModel(): string | undefined {
     return this.currentModel
+  }
+
+  /** The mode the running child was started with, not the one settings would use next. */
+  getPermissionMode(): PermissionMode | null {
+    return this.bootPermissionMode
   }
 
   /**
@@ -306,6 +321,7 @@ export class AgentManager {
     })
     this.surface = built.surface
     this.bootAlwaysApprove = built.alwaysApprove
+    this.bootPermissionMode = built.permissionMode
     const agentArgs = built.args
     // The argv is what decides whether grok asks Gronk for permission at all,
     // so record the posture the child actually starts with.
@@ -460,7 +476,11 @@ export class AgentManager {
       usage: this.usage.snapshot(),
       plan: this.lastPlan,
       source: this.lastHistorySource,
-      hasOpenTurn: this.promptInFlight
+      hasOpenTurn: this.promptInFlight,
+      // What this session is actually running, so the pickers under the composer
+      // describe the conversation in front of you rather than the app's defaults.
+      model: this.currentModel,
+      permissionMode: this.bootPermissionMode
     })
   }
 
@@ -1320,6 +1340,7 @@ export interface ManagedSession {
   getCwd(): string | null
   getSurface(): 'chat' | 'project'
   getCurrentModel(): string | undefined
+  getPermissionMode(): PermissionMode | null
   livenessNow(): SessionLiveness | null
   reemitFrontPermission(): void
   reemitViewState(): void

@@ -765,10 +765,14 @@ export function App() {
               busy={g.busy || g.connection === 'loading'}
               cwd={inChat ? null : g.cwd}
               models={g.models}
-              currentModel={g.settings?.model}
-              onChangeModel={(id) => void g.changeModel(id)}
-              permissionMode={g.permissionMode}
-              onChangeMode={(m) => void g.changePermissionMode(m)}
+              /* The live session's own model and mode, falling back to the settings
+                 default when nothing is running — at which point the default really is
+                 what the next session will use. Reading settings while a session was up
+                 described the next session, not the one on screen. */
+              currentModel={g.sessionModel ?? g.settings?.model}
+              onChangeModel={(id) => void g.changeModel(id, g.sessionModel)}
+              permissionMode={g.sessionPermissionMode ?? g.permissionMode}
+              onChangeMode={(m) => void g.changePermissionMode(m, g.sessionPermissionMode)}
               showMode={inProject}
               onSend={(t, atts) => void g.sendPrompt(t, atts)}
               onCancel={() => void g.cancel()}

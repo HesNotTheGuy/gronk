@@ -125,6 +125,8 @@ const EXPECTED_MEMBERS: string[] = [
   "sessionId",
   // Two live sessions: what each one is doing, and stopping one without opening it.
   "sessionLiveness",
+  "sessionModel",
+  "sessionPermissionMode",
   "sessions",
   "setCliInstallResult",
   "setDraft",
