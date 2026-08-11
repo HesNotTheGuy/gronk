@@ -538,6 +538,20 @@ export function SessionTray({
             <UsageCol label="Session total" usage={usage!.totals} auth={auth} />
             {usage!.last ? <UsageCol label="Last turn" usage={usage!.last} auth={auth} /> : null}
           </div>
+          {/*
+            There is no fullness gauge here, and that is a decision rather than an
+            omission. The reasoning used to live on UsageMeter, which was deleted once
+            nothing rendered it (#85), so it is restored here where the panel actually is.
+
+            A percentage needs a context limit, and the CLI reports none. xAI publishes
+            one per model — 500k for grok-4.5 — so a gauge is now buildable from a table
+            of published numbers, which is exactly the problem: it would be right until a
+            model changed, wrong silently after, and it would have to be maintained by
+            hand for every model the CLI offers. The CLI also compacts context on its own,
+            so a bar filling up would not mean what a reader assumes it means. If the CLI
+            ever reports the limit for the model in use, revisit it; until then a number
+            here would be invented.
+          */}
           <p className="usage-note session-tray-note">
             Reported by the Grok CLI. {costNote(auth)} The CLI compacts context on its own, so
             there is nothing here to manage.
