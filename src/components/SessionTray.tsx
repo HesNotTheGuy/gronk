@@ -544,11 +544,12 @@ export function SessionTray({
           </p>
           {share !== null ? (
             <p className="session-tray-note muted">
-              Cache hit rate {share}% of prompt tokens this session
+              {share}% of this session&apos;s prompt tokens were reused from cache rather than
+              read again
               {usage!.totals.cachedReadTokens
                 ? ` (${formatExact(usage!.totals.cachedReadTokens)} tokens)`
                 : ''}
-              .
+              . Nothing here counts against a quota this app can see.
             </p>
           ) : null}
         </div>
@@ -583,9 +584,16 @@ function UsageCol({
         </div>
         <div className="usage-cell cached">
           <dt>Cached</dt>
-          <dd title={`${formatExact(usage.cachedReadTokens)} prompt tokens served from cache`}>
+          <dd
+            title={`${formatExact(usage.cachedReadTokens)} prompt tokens were served from cache rather than read again`}
+          >
             {formatTokens(usage.cachedReadTokens)}
-            {share !== null ? <span className="usage-share"> {share}%</span> : null}
+            {/* The share says "reused", never a bare percentage. A large number with
+                a bare % beside it reads as a fuel gauge — it was read that way, as
+                "97% of my tokens are gone", when it means the opposite and is the
+                number you want high. One word, at the point of reading, rather than
+                an explanation further down the panel. */}
+            {share !== null ? <span className="usage-share"> {share}% reused</span> : null}
           </dd>
         </div>
         <div className="usage-cell">
