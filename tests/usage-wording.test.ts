@@ -73,13 +73,26 @@ test('THE CACHE SHARE IS NEVER A BARE PERCENTAGE', async () => {
 
 test('NOTHING IN THE PANEL CLAIMS TO KNOW A QUOTA', async () => {
   // The app cannot see what the account has left: the CLI reports what a session
-  // consumed, not what remains. Saying or implying otherwise is the misreading.
+  // consumed, not what remains. This checks the CLAIM rather than the vocabulary — an
+  // earlier version banned the words, which failed the sentence that says plainly the
+  // panel is not a quota reading. What must not appear is a number presented as an
+  // amount remaining.
   const view = await openUsage()
   try {
-    const text = (view.text() || '').replace(/\s+/g, ' ').toLowerCase()
-    for (const claim of ['remaining', 'left', 'quota used', '% used', 'of your limit']) {
-      assert.ok(!text.includes(claim), `the panel says "${claim}", which it cannot know`)
+    const text = (view.text() || '').replace(/\s+/g, ' ')
+    for (const claim of [
+      /\d[\d.,]*\s*(tokens?\s*)?(remaining|left)/i,
+      /\d+%\s*(of\s+)?(your\s+)?(quota|limit|plan)/i,
+      /\d+%\s*used/i
+    ]) {
+      assert.doesNotMatch(text, claim, 'the panel states an amount it cannot know')
     }
+    // And it says so out loud, because silence here is what got misread in the first place.
+    assert.match(
+      text,
+      /a quota reading|never what the plan has left|counts against a quota this app can see/i,
+      'the panel does not say that it cannot see a quota, which is what got misread'
+    )
   } finally {
     view.unmount()
   }

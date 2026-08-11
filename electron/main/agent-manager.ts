@@ -18,6 +18,7 @@ import {
 import { buildAgentArgs, isAutoApproveActive } from './agent-args'
 import { MAX_FS_READ_BYTES, resolveInsideJail, sliceLines } from './agent/fs-bridge'
 import {
+  assistantSaidNothing,
   canAppendHistoryUserChunk,
   historySource,
   needsAgentBoot,
@@ -796,7 +797,18 @@ export class AgentManager {
           message: err.message,
           sessionId: this.sessionId ?? undefined
         })
-        this.finalizeAssistant(messageId)
+        // Drop the bubble if nothing ever arrived in it, and tell the renderer so it
+        // does the same. The error banner already says the turn failed; a blank message
+        // under it says nothing and cannot be got rid of.
+        if (this.discardEmptyAssistant(messageId)) {
+          this.emit({
+            type: 'message-remove',
+            sessionId: this.sessionId!,
+            messageId
+          })
+        } else {
+          this.finalizeAssistant(messageId)
+        }
         this.emit({
           type: 'message-done',
           sessionId: this.sessionId!,
@@ -816,6 +828,27 @@ export class AgentManager {
     this.liveMessages = this.liveMessages.map((m) =>
       m.id === messageId ? { ...m, streaming: false } : m
     )
+  }
+
+  /**
+   * Close out a turn that failed before the agent said anything.
+   *
+   * A prompt creates the assistant message up front so the caret has somewhere to
+   * appear. If the call then fails, finalizing it left an empty bubble in the
+   * transcript — and `persistLiveTranscript` wrote it to disk, so every failed attempt
+   * added another permanent blank. Two of them showed up in one session by retrying
+   * once.
+   *
+   * A turn that produced something before failing keeps it: partial output is worth
+   * more than a tidy transcript, and it stays marked as not streaming so it does not
+   * read as still coming.
+   */
+  private discardEmptyAssistant(messageId: string): boolean {
+    const message = this.liveMessages.find((m) => m.id === messageId)
+    if (!message) return false
+    if (!assistantSaidNothing(message)) return false
+    this.liveMessages = this.liveMessages.filter((m) => m.id !== messageId)
+    return true
   }
 
   private patchAssistant(

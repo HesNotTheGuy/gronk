@@ -602,6 +602,14 @@ export type MainToRendererEvent =
     }
   | { type: 'message-done'; sessionId: string; messageId: string; stopReason?: string }
   /**
+   * Take a message back off screen.
+   *
+   * Only for one that never had content: a prompt creates the assistant bubble before
+   * the agent answers, and a call that fails immediately would otherwise leave a blank
+   * one in the transcript for good.
+   */
+  | { type: 'message-remove'; sessionId: string; messageId: string }
+  /**
    * `request: null` clears the prompt. It carries the session id too, so a
    * background session clearing its own queue cannot take down the dialog the
    * user is looking at.
