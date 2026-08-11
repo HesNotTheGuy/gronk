@@ -525,6 +525,35 @@ button {
 
 /* Rail lists are capped, and the count above them only describes what is drawn.
    This row is the only thing telling you the rest exist, and where to find them. */
+/* Archived, at the end of the session list.
+   A quiet row rather than a button: it is a way further into the same content, like
+   "See all" above it, not an action on the app. Separated by a hairline so it does not
+   read as another session. */
+.session-nav-archived {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: calc(100% - 8px);
+  margin: 6px 4px 2px;
+  padding: 6px 8px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.session-nav-archived:hover {
+  color: var(--ink-2);
+}
+
 .sidebar-rail-more {
   margin: 2px 4px 0;
   padding: 6px 8px;
