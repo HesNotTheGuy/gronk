@@ -522,3 +522,516 @@ test("a background session's permission prompt does not appear over this one", a
     h.restore()
   }
 })
+
+// ── #66: what a resync hands over, and what it must not undo ────────────────
+
+const resync = (
+  sessionId: string,
+  messages: ChatMessage[],
+  extra: Partial<Extract<MainToRendererEvent, { type: 'session-resync' }>> = {}
+): MainToRendererEvent => ({
+  type: 'session-resync',
+  sessionId,
+  messages,
+  usage: null,
+  plan: null,
+  source: 'local',
+  hasOpenTurn: false,
+  ...extra
+})
+
+const streaming = (id: string, text: string): ChatMessage =>
+  ({ id, role: 'assistant', text, createdAt: 0, streaming: true }) as ChatMessage
+
+test('A RESYNC PAINTS WHAT THE SESSION HOLDS', async () => {
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    await act(async () => {
+      h.emit(resync('s1', [streaming('m1', 'the reply that arrived while you were away')]))
+    })
+    await flush()
+    assert.match(transcript(h), /arrived while you were away/)
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A TURN STILL RUNNING SURVIVES THE RESYNC AND KEEPS STREAMING INTO THE SAME MESSAGE', async () => {
+  // The trap in this fix. `history-replace` stamps every message finished, which
+  // is right for a conversation restored from disk and wrong here: the chunks
+  // still to come would append to a message the UI has already drawn as done,
+  // so the text would keep growing with no sign it was still being written.
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    await act(async () => {
+      h.emit(resync('s1', [streaming('m1', 'half a ')]))
+    })
+    await flush()
+
+    const mid = (h.hook().messages as ChatMessage[]).find((m) => m.id === 'm1')
+    assert.equal(mid?.streaming, true, 'still streaming after the resync')
+
+    await act(async () => {
+      h.emit(chunk('s1', 'thought', 'm1'))
+    })
+    await flush()
+
+    const after = h.hook().messages as ChatMessage[]
+    assert.equal(after.length, 1, 'the chunk continued the message rather than starting a new one')
+    assert.equal(after[0].text, 'half a thought')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A RESYNC CARRIES THE TOKEN COUNT AND PLAN, IT DOES NOT LEAVE THEM CLEARED', async () => {
+  // Half of this bug is a correct transcript sitting next to the previous
+  // conversation's numbers. Clearing them instead would swap one wrong answer
+  // for a blank one, so the resync carries all three or it has not finished.
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    await act(async () => {
+      h.emit(
+        resync('s1', [streaming('m1', 'hello')], {
+          usage: { sessionId: 's1', turns: 3, totals: { inputTokens: 12, outputTokens: 34 } } as never,
+          plan: { messageId: 'm1', plan: { entries: [{ content: 'ship it', status: 'in_progress' }] } }
+        })
+      )
+    })
+    await flush()
+
+    assert.equal((h.hook().usage as { turns: number } | null)?.turns, 3)
+    const plan = h.hook().activePlan as { sessionId: string; entries: unknown[] } | null
+    assert.equal(plan?.sessionId, 's1')
+    assert.ok(plan && plan.entries.length > 0, 'the plan came back with the conversation')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A RESYNC FOR A SESSION THAT IS NOT ON SCREEN IS DROPPED', async () => {
+  // The severe failure this event makes possible. It carries a WHOLE transcript,
+  // so one accepted for the wrong session does not add a stray line — it replaces
+  // the conversation the user is reading with a different one.
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    await act(async () => {
+      h.emit(chunk('s1', 'the conversation I am reading'))
+    })
+    await flush()
+    const before = transcript(h)
+
+    await act(async () => {
+      h.emit(resync('background-session', [streaming('bg1', 'SOMEBODY ELSE ENTIRELY')]))
+    })
+    await flush()
+
+    assert.equal(transcript(h), before)
+    assert.doesNotMatch(transcript(h), /SOMEBODY ELSE/)
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A TURN STILL RUNNING COMES BACK AS RUNNING, SO IT CAN BE STOPPED', async () => {
+  // Without this the reply streams in while the composer says nothing is
+  // happening: no way to abort, and a second prompt accepted into a session that
+  // already has a turn open.
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    assert.equal(h.hook().busy, false, 'nothing running to begin with')
+
+    await act(async () => {
+      h.emit(resync('s1', [streaming('m1', 'still writing')], { hasOpenTurn: true }))
+    })
+    await flush()
+    assert.equal(h.hook().busy, true, 'the open turn came back with the transcript')
+
+    await act(async () => {
+      h.emit(resync('s1', [streaming('m1', 'still writing')], { hasOpenTurn: false }))
+    })
+    await flush()
+    assert.equal(h.hook().busy, false, 'and a finished one does not leave it stuck')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('THE RENDERER DOES NOT ASK MAIN TO FOCUS A SESSION MAIN JUST FOCUSED', async () => {
+  // It used to, and the second ask was the problem: it landed after this switch
+  // was confirmed, so a switch the user had abandoned mid-boot could still have
+  // its transcript painted over the one on screen. Main focuses the session it
+  // resolves before start/loadSession return, so there is nothing left to ask.
+  let asked = 0
+  const h = await mountHook({ focusSession: async () => void (asked += 1) })
+  try {
+    await selectInto(h, 's1')
+    assert.equal(asked, 0)
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+// ── An abandoned switch commits nothing ─────────────────────────────────────
+
+test('A SWITCH THE USER GAVE UP ON DOES NOT TAKE OVER THE ONE THEY OPENED', async () => {
+  // Click a session that has to boot, lose patience, click one that is already
+  // running. The slow one finishes a moment later and used to overwrite the
+  // answer: `sessionId` became the session nobody was looking at, so the next
+  // prompt went there while the folder and the transcript stayed here.
+  //
+  // `session-resync` made it worse than a mismatched id. It carries a whole
+  // transcript, so the abandoned switch could repaint the conversation on screen
+  // as a different one.
+  const slow = slowLoad('slow')
+  const h = await mountHook({ loadSession: slow.loadSession })
+  try {
+    // One act scope: overlapping ones deadlock.
+    await act(async () => {
+      const pending = h.hook().selectSession(session('slow'))
+      await slow.parked
+      await h.hook().selectSession(session('quick'))
+      await flush()
+      h.emit(chunk('quick', 'the conversation I opened'))
+      slow.release()
+      await pending
+    })
+    await flush()
+    await flush()
+    // Everything the abandoned switch would have committed, arriving late.
+    await act(async () => {
+      h.emit(resync('slow', [streaming('s1', 'THE ONE I GAVE UP ON')]))
+      h.emit(chunk('slow', 'AND ITS REPLY'))
+    })
+    await flush()
+
+    assert.equal(h.hook().sessionId, 'quick', 'the id stayed with the session on screen')
+    assert.match(transcript(h), /the conversation I opened/)
+    assert.doesNotMatch(transcript(h), /GAVE UP ON/)
+    assert.doesNotMatch(transcript(h), /AND ITS REPLY/)
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+// ── What review found the first two rounds missed ────────────────────────────
+
+/**
+ * Hold a session's load open, so another switch can overtake it.
+ *
+ * `parked` resolves once the load has actually been reached, which is several
+ * awaits into the switch. Releasing before then releases nothing and the test
+ * waits on a promise that parks afterwards and is never let go.
+ */
+function slowLoad(slowId: string) {
+  let release = (): void => {}
+  let announceParked = (): void => {}
+  const parked = new Promise<void>((r) => (announceParked = r))
+  return {
+    parked,
+    release: () => release(),
+    loadSession: async (id?: unknown) => {
+      if (id === slowId) {
+        await new Promise<void>((r) => {
+          release = r
+          announceParked()
+        })
+      }
+      return { sessionId: (id as string) ?? 's1', restored: true }
+    }
+  }
+}
+
+test('OPENING CHAT WHILE A SESSION IS BOOTING DOES NOT STRAND THE LOADING STATE', async () => {
+  // The switch that loses the race returns without clearing what it set, so the
+  // one that wins has to define the loading state itself. Chat did not, and the
+  // abandoned session left it on: a skeleton over Chat for the rest of the run,
+  // with Send disabled and nothing able to clear it.
+  const slow = slowLoad('slow')
+  const h = await mountHook({ loadSession: slow.loadSession })
+  try {
+    // One act scope for the whole interleaving: two overlapping ones deadlock,
+    // and nothing mid-flight is observable anyway, since React batches renders
+    // until the scope resolves. What is observable is the state left at the end.
+    await act(async () => {
+      const pending = h.hook().selectSession(session('slow'))
+      await slow.parked
+      await h.hook().openChat()
+      slow.release()
+      await pending
+    })
+    await flush()
+    await flush()
+
+    assert.equal(h.hook().hydrating, false, 'Chat cleared it, so the composer is usable')
+    assert.equal(h.hook().surface, 'chat', 'and Chat is what is on screen')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A TURN ALREADY RUNNING SURVIVES THE REST OF THE SWITCH', async () => {
+  // The resync arrives before the switch finishes — main focuses a live session
+  // before loadSession returns — so the tail of the switch used to clear `busy`
+  // right back off again. That left the reply streaming with the composer saying
+  // nothing was happening, no Abort, and a second prompt accepted into an open
+  // turn. Emitting the resync mid-switch is what the app really does.
+  const bus: { emit: Harness['emit'] } = { emit: () => {} }
+  const h = await mountHook({
+    loadSession: async (id?: unknown) => {
+      const sid = (id as string) ?? 's1'
+      // Main focuses a live session from inside loadSession, before it returns.
+      bus.emit(resync(sid, [streaming('m1', 'still writing')], { hasOpenTurn: true }))
+      return { sessionId: sid, restored: true }
+    }
+  })
+  bus.emit = h.emit
+  try {
+    await selectInto(h, 's1')
+    assert.equal(h.hook().busy, true, 'the open turn outlived the switch that revealed it')
+    assert.match(transcript(h), /still writing/)
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('AN ANSWER ABOUT ONE SESSION S TURN DOES NOT SPEAK FOR ANOTHER', async () => {
+  const bus: { emit: Harness['emit'] } = { emit: () => {} }
+  const h = await mountHook({
+    loadSession: async (id?: unknown) => {
+      bus.emit(resync('somebody-else', [streaming('x1', 'busy elsewhere')], { hasOpenTurn: true }))
+      return { sessionId: (id as string) ?? 's1', restored: true }
+    }
+  })
+  bus.emit = h.emit
+  try {
+    await selectInto(h, 's1')
+    assert.equal(h.hook().busy, false, 'another session being busy does not lock this composer')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A RESYNC FOR ANOTHER SESSION IS REFUSED WHILE A SWITCH IS STILL OPEN', async () => {
+  // The dangerous half, and the one the settled-state test above does not reach.
+  // While a switch is open the focus filter accepts every named session on
+  // purpose, because a load can resolve to an id the renderer has not heard yet.
+  // That is safe for an event that adds a line and not for one that replaces the
+  // whole conversation: a session finishing its boot in that window repainted the
+  // transcript being read as a different one, and the save timer then wrote those
+  // messages under the id the renderer thought was on screen.
+  const slow = slowLoad('slow')
+  const h = await mountHook({ loadSession: slow.loadSession })
+  try {
+    await selectInto(h, 'mine')
+    await act(async () => {
+      h.emit(chunk('mine', 'the conversation I am reading'))
+    })
+    await flush()
+    const before = transcript(h)
+
+    await act(async () => {
+      const pending = h.hook().selectSession(session('slow'))
+      await slow.parked
+      // Mid-switch: the focus is open, and an unrelated session finishes booting.
+      h.emit(resync('unrelated', [streaming('u1', 'SOMEBODY ELSE ENTIRELY')]))
+      await flush()
+      assert.doesNotMatch(transcript(h), /SOMEBODY ELSE/, 'refused mid-switch')
+      slow.release()
+      await pending
+    })
+    await flush()
+
+    assert.doesNotMatch(transcript(h), /SOMEBODY ELSE/)
+    assert.notEqual(before, '', 'the reading precondition held')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A SESSION BOOTING LATE DOES NOT RENAME THE CONVERSATION ON SCREEN', async () => {
+  // Main announces a session id with a `session` event, and that is how opening a
+  // project learns its id — a switch with no name has to accept one from anyone.
+  // A switch that already has a name does not: a session booting while a later
+  // switch is open used to announce itself into it, moving the id and the folder
+  // to a conversation the user had walked away from.
+  // Both loads are held, because the window that matters is the one where the
+  // SECOND switch is still open. Once it has settled the ordinary focus filter
+  // already refuses the first session's events, and nothing is being tested.
+  const held: Record<string, () => void> = {}
+  const parked: Record<string, Promise<void>> = {}
+  const announce: Record<string, () => void> = {}
+  for (const id of ['slow', 'quick']) {
+    parked[id] = new Promise<void>((r) => (announce[id] = r))
+  }
+  const h = await mountHook({
+    loadSession: async (id?: unknown) => {
+      const sid = (id as string) ?? 's1'
+      if (sid in parked) {
+        await new Promise<void>((r) => {
+          held[sid] = r
+          announce[sid]()
+        })
+      }
+      return { sessionId: sid, restored: true }
+    }
+  })
+  try {
+    await act(async () => {
+      const first = h.hook().selectSession(session('slow'))
+      await parked.slow
+      const second = h.hook().selectSession(session('quick'))
+      await parked.quick
+
+      // 'quick' is still switching. 'slow' finishes booting and announces itself.
+      h.emit({ type: 'session', sessionId: 'slow', cwd: '/work/abandoned' } as MainToRendererEvent)
+      await flush()
+
+      held.slow()
+      held.quick()
+      await first
+      await second
+    })
+    await flush()
+    await flush()
+
+    assert.equal(h.hook().sessionId, 'quick')
+    assert.notEqual(h.hook().cwd, '/work/abandoned', 'the folder stayed with the session on screen')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('OPENING A PROJECT STILL LEARNS ITS SESSION ID FROM MAIN', async () => {
+  // The other side of the same rule, and the one it could break: a project opens a
+  // switch with no id at all, because the id does not exist until the agent boots.
+  // If an unnamed switch stopped accepting a name, opening a project would never
+  // learn which session it is on.
+  // Main announces it DURING the boot, before startAgent returns — which is the
+  // window where the switch still has no name.
+  const bus: { emit: Harness['emit'] } = { emit: () => {} }
+  const h = await mountHook({
+    startAgent: async (cwd?: unknown) => {
+      bus.emit({
+        type: 'session',
+        sessionId: 'booted',
+        cwd: (cwd as string) ?? '/work/fresh'
+      } as MainToRendererEvent)
+      return { sessionId: 'booted' }
+    }
+  })
+  bus.emit = h.emit
+  try {
+    await act(async () => {
+      await h.hook().openProject('/work/fresh', { forceNew: true })
+    })
+    await flush()
+    await flush()
+    assert.equal(h.hook().sessionId, 'booted')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A RESYNC CARRIES THE SOURCE THE LOAD REPORTED, NOT A CLAIM OF LOCAL CACHE', async () => {
+  // Hardcoding 'local' put "restored from cache" over sessions that came back from
+  // the agent and over empty new ones.
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    await act(async () => {
+      h.emit(resync('s1', [streaming('m1', 'from the agent')], { source: 'acp' }))
+    })
+    await flush()
+    assert.equal(h.hook().historySource, 'acp')
+
+    await act(async () => {
+      h.emit(resync('s1', [], { source: 'empty' }))
+    })
+    await flush()
+    assert.equal(h.hook().historySource, 'empty', 'and an empty session claims no restore')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('AN ABANDONED PROJECT OPEN COMMITS NOTHING EITHER', async () => {
+  // openProject and openChat have the same guard as selectSession and neither was
+  // pinned: deleting either left every test green.
+  let releaseStart = (): void => {}
+  let announceParked = (): void => {}
+  const parked = new Promise<void>((r) => (announceParked = r))
+  const h = await mountHook({
+    startAgent: async (cwd?: unknown) => {
+      if (cwd === '/work/slow') {
+        await new Promise<void>((r) => {
+          releaseStart = r
+          announceParked()
+        })
+        return { sessionId: 'slow-project' }
+      }
+      return { sessionId: 'quick-project' }
+    }
+  })
+  try {
+    await act(async () => {
+      const pending = h.hook().openProject('/work/slow', { forceNew: true })
+      await parked
+      await h.hook().openProject('/work/quick', { forceNew: true })
+      await flush()
+      releaseStart()
+      await pending
+    })
+    await flush()
+    await flush()
+
+    assert.equal(h.hook().sessionId, 'quick-project', 'the abandoned open did not take over')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A TURN THAT ENDS MID-SWITCH DOES NOT COME BACK AS RUNNING', async () => {
+  // The tail of a switch asks what the session last said about its turn, and it
+  // asks after `refreshMeta` — long enough for the turn to finish inside it. The
+  // answer has to expire when that happens, or the composer is disabled for a
+  // session with nothing running and no second event coming to release it.
+  const bus: { emit: Harness['emit'] } = { emit: () => {} }
+  const h = await mountHook({
+    loadSession: async (id?: unknown) => {
+      const sid = (id as string) ?? 's1'
+      bus.emit(resync(sid, [streaming('m1', 'still writing')], { hasOpenTurn: true }))
+      // ...and it finishes while the rest of the switch is still running.
+      bus.emit({ type: 'message-done', sessionId: sid, messageId: 'm1' } as MainToRendererEvent)
+      return { sessionId: sid, restored: true }
+    }
+  })
+  bus.emit = h.emit
+  try {
+    await selectInto(h, 's1')
+    assert.equal(h.hook().busy, false, 'the finished turn was not re-armed by the tail')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})

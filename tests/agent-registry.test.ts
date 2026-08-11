@@ -1,8 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { AgentRegistry, type ManagedSession } from '../electron/main/agent-manager'
 import { livenessOf, mayForward } from '../electron/main/agent/session-liveness'
 import type {
+  ChatMessage,
   ConnectionState,
   MainToRendererEvent,
   PermissionDecision,
@@ -23,7 +25,11 @@ interface Fake extends ManagedSession {
   stopped: number
   loads: number
   reemitted: number
+  /** What this session holds, the way the real one holds `liveMessages`. */
+  messages: ChatMessage[]
   emit(event: MainToRendererEvent): void
+  /** Append a message and emit it, the way a streaming reply arrives. */
+  say(text: string): void
   setState(state: ConnectionState): void
   setPending(pending: boolean): void
   setTurn(open: boolean): void
@@ -43,7 +49,13 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
     stopped: 0,
     loads: 0,
     reemitted: 0,
+    messages: [],
     emit: (event) => sink?.(event),
+    say: (text) => {
+      const messageId = `${id}-${self.messages.length}`
+      self.messages.push({ id: messageId, role: 'assistant', text, createdAt: self.messages.length })
+      sink?.({ type: 'message-chunk', sessionId: id, messageId, text })
+    },
     setState: (next) => {
       state = next
       sink?.({ type: 'connection', state: next, ...(started ? { sessionId: id } : {}) })
@@ -71,6 +83,17 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
     livenessNow: () => livenessOf({ state, hasPendingPermission: pending, hasOpenTurn: turn }),
     reemitFrontPermission: () => {
       self.reemitted += 1
+    },
+    reemitViewState: () => {
+      sink?.({
+        type: 'session-resync',
+        sessionId: id,
+        messages: self.messages,
+        usage: null,
+        plan: null,
+        source: 'local',
+        hasOpenTurn: false
+      })
     },
     start: async () => {
       started = true
@@ -431,3 +454,129 @@ test('only connection events are withheld from a background session', () => {
 
 const _decision: PermissionDecision = 'allow-once'
 void _decision
+
+// ── #66: coming back to a session shows what it says ────────────────────────
+
+test('RETURNING TO A BACKGROUND SESSION SHOWS ITS REPLY, NOT WHAT WAS ON SCREEN WHEN YOU LEFT', async () => {
+  // The bug: the renderer drops events for a session it is not showing, which is
+  // right, and focus() re-sent the connection state and any pending permission
+  // but never the messages. So a reply that arrived while you were in another tab
+  // was on disk and in memory and simply not on screen — an empty assistant
+  // bubble that never filled until the app was restarted.
+  const a = fakeSession('a', '/work/alpha')
+  const b = fakeSession('b', '/work/beta')
+  const { registry, sent } = harness(a, b)
+
+  await registry.start('/work/alpha', { surface: 'project' })
+  a.say('half a thought')
+
+  await registry.start('/work/beta', { surface: 'project' })
+  b.say('something else entirely')
+
+  // Back to A. Its reply finished while B was in front.
+  a.say('half a thought, finished')
+  sent.length = 0
+  await registry.loadSession('a', '/work/alpha')
+
+  const replaced = sent.filter(
+    (e): e is Extract<MainToRendererEvent, { type: 'session-resync' }> =>
+      e.type === 'session-resync'
+  )
+  assert.equal(replaced.length, 1, 'focusing a live session re-sends its transcript')
+  assert.equal(replaced[0].sessionId, 'a')
+  assert.deepEqual(
+    replaced[0].messages.map((m) => m.text),
+    ['half a thought', 'half a thought, finished'],
+    "A's transcript, not B's, and not the half-painted version from the moment of the switch"
+  )
+})
+
+// Nothing here asserts that the session is not restarted to resync it: the early
+// return that guarantees it is already covered by 'opening a session that is
+// already live focuses it rather than reloading' above, and a second copy of that
+// assertion would only look like extra coverage.
+
+// ── A composer lock a person cannot undo ────────────────────────────────────
+
+test('THE RESYNC REPORTS A TURN ONLY WHILE A PROMPT IS ACTUALLY OUTSTANDING', async () => {
+  // `hasOpenTurn` came from `activeMessageId`, which answers a looser question:
+  // any chunk with no message id of its own adopts it, so a chunk arriving after
+  // a turn has settled leaves it set with nothing left to clear it. The sidebar's
+  // working dot recovers on the next turn. The composer does not: the resync turns
+  // that flag straight into a disabled Send with no turn coming to re-enable it.
+  //
+  // This pins the field the two now read, not the wiring — nothing in the suite
+  // constructs an AgentManager, so the wiring is checked by reading it.
+  const source = readFileSync(new URL('../electron/main/agent-manager.ts', import.meta.url), 'utf8')
+
+  const resync = source.slice(source.indexOf('reemitViewState()'))
+  const resyncBody = resync.slice(0, resync.indexOf('\n  }'))
+  assert.match(resyncBody, /hasOpenTurn: this\.promptInFlight/)
+  assert.doesNotMatch(resyncBody, /hasOpenTurn: this\.activeMessageId/)
+
+  // Every field comes off the session. The fake in this file supplies its own
+  // reemitViewState, so the assertions elsewhere prove the registry CALLS this and
+  // nothing about what it sends; reading the body is the only check there is.
+  for (const field of [
+    /messages: this\.liveMessages/,
+    /usage: this\.usage\.snapshot\(\)/,
+    /plan: this\.lastPlan/,
+    /source: this\.lastHistorySource/
+  ]) {
+    assert.match(resyncBody, field)
+  }
+
+  // Set with the prompt, cleared on both the way a turn ends and the way it fails,
+  // and again wherever the process is torn down. Four, or one of them strands it.
+  assert.equal((source.match(/this\.promptInFlight = false/g) ?? []).length, 4)
+  assert.equal((source.match(/this\.promptInFlight = true/g) ?? []).length, 1)
+})
+// Nothing here pins the order of the assignment and the lookup in `focus`. A
+// stopped session left as `focusedId` was raised in review as widening what the
+// renderer may list, and it does not: `lastFocusedCwd` is held past a session's
+// death for exactly that reason, with the reasoning written above it, so
+// `getCwd()` never goes null and nothing reads it as "no project is open".
+
+
+test('STARTING AND RESUMING BOTH HAND THE RENDERER THE SESSION THEY RESOLVED', async () => {
+  // The renderer stopped asking main to focus after a switch, because start and
+  // loadSession focus what they resolve before returning. Nothing pinned that, so
+  // deleting either focus left the renderer with no transcript and no test to say
+  // so.
+  const a = fakeSession('a', '/work/alpha')
+  const b = fakeSession('b', '/work/beta')
+  const { registry, sent } = harness(a, b)
+
+  await registry.start('/work/alpha', { surface: 'project' })
+  assert.ok(
+    sent.some((e) => e.type === 'session-resync' && e.sessionId === 'a'),
+    'starting focused the session it resolved'
+  )
+
+  sent.length = 0
+  await registry.loadSession('b', '/work/beta')
+  assert.ok(
+    sent.some((e) => e.type === 'session-resync' && e.sessionId === 'b'),
+    'resuming focused the session it resolved'
+  )
+})
+
+test('A FAILED RESUME PUTS THE CONVERSATION BACK BEFORE ANYTHING READS IT', async () => {
+  // When session/load fails, the fallback restarts the agent so the session stays
+  // usable — and `start` empties the in-memory transcript. Without putting it back,
+  // the resync on focus hands the renderer an empty conversation under a banner
+  // promising the history is still there, and every re-click empties it again.
+  //
+  // Read rather than driven: nothing in the suite constructs an AgentManager, so
+  // this pins the line's presence and its position relative to the banner it makes
+  // true. Deleting it leaves every other test in the suite green.
+  const source = readFileSync(new URL('../electron/main/agent-manager.ts', import.meta.url), 'utf8')
+  const fallback = source.slice(source.indexOf('// Fall back: start new live session'))
+  const body = fallback.slice(0, fallback.indexOf('} catch (err2)'))
+
+  const restore = body.indexOf('this.liveMessages = plan.messages')
+  const banner = body.indexOf('Your chat history is still shown here')
+  assert.notEqual(restore, -1, 'the fallback restores the cached conversation')
+  assert.notEqual(banner, -1, 'the banner this makes true is still here')
+  assert.ok(restore < banner, 'and the restore happens before it')
+})

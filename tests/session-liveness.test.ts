@@ -133,24 +133,53 @@ test('STOPPING A BACKGROUND SESSION NAMES IT', async () => {
   }
 })
 
-test('selecting a session tells main which one is on screen', async () => {
-  // Main routes connection events by it, so a switch that does not say leaves
-  // the wrong session narrating.
+test('MAIN IS TOLD WHICH SESSION IS ON SCREEN WHEN ITS OWN ANSWER WOULD BE WRONG', async () => {
+  // Main routes connection events by the focused session and answers
+  // `getCwd()` from it, so the two have to agree. It normally needs no telling:
+  // `start` and `loadSession` focus the session they resolve before returning,
+  // which is why the renderer no longer asks after every switch — that second
+  // ask repeated a full transcript repaint.
+  //
+  // One case is left where main's own answer is wrong. Click a session that has
+  // to boot, then click another before it finishes: main focuses the slow one
+  // last, so it ends up narrating a conversation nobody is looking at. The
+  // abandoned switch is what puts main back.
   const focused: unknown[] = []
+  let releaseSlow = (): void => {}
+  let announceParked = (): void => {}
+  // Resolves once the load is actually parked, which is several awaits into the
+  // switch. Released before then, nothing is released and the wait never ends.
+  const parked = new Promise<void>((r) => (announceParked = r))
   const h = await mountHook({
     focusSession: async (id: unknown) => {
       focused.push(id)
     },
-    loadSession: async () => ({ sessionId: 's1', restored: true })
+    loadSession: async (id?: unknown) => {
+      if (id === 'slow') {
+        await new Promise<void>((resolve) => {
+          releaseSlow = resolve
+          announceParked()
+        })
+      }
+      return { sessionId: (id as string) ?? 's1', restored: true }
+    }
   })
   try {
+    // One act scope: two overlapping ones deadlock.
     await act(async () => {
-      await h.hook().selectSession(session('s1'))
+      const pending = h.hook().selectSession(session('slow'))
+      await parked
+      // The user gives up on it and opens one that is already running.
+      await h.hook().selectSession(session('quick'))
+      await flush()
+      assert.deepEqual(focused, [], 'nothing to correct while only the fast one has landed')
+      releaseSlow()
+      await pending
     })
     await flush()
     await flush()
 
-    assert.ok(focused.includes('s1'), `expected main to be told about s1, got ${JSON.stringify(focused)}`)
+    assert.deepEqual(focused, ['quick'], 'main was put back on the session being shown')
   } finally {
     h.unmount()
     h.restore()
@@ -306,5 +335,54 @@ test('delete stays the last item once stop is added', async () => {
     )
   } finally {
     view.unmount()
+  }
+})
+
+test('A SWITCH STILL IN FLIGHT IS NOT RE-FOCUSED ON ITS BEHALF', async () => {
+  // The abandoned switch puts main back on the session being shown, but only once
+  // the newer switch has settled. One still in flight focuses main itself when it
+  // lands, so asking on its behalf only repaints a transcript it is about to paint.
+  const focused: unknown[] = []
+  const held: Record<string, () => void> = {}
+  const announce: Record<string, () => void> = {}
+  const parked: Record<string, Promise<void>> = {}
+  for (const id of ['slow', 'alsoSlow']) {
+    parked[id] = new Promise<void>((r) => (announce[id] = r))
+  }
+  const h = await mountHook({
+    focusSession: async (id: unknown) => {
+      focused.push(id)
+    },
+    loadSession: async (id?: unknown) => {
+      const sid = (id as string) ?? 's1'
+      if (sid in parked) {
+        await new Promise<void>((r) => {
+          held[sid] = r
+          announce[sid]()
+        })
+      }
+      return { sessionId: sid, restored: true }
+    }
+  })
+  try {
+    await act(async () => {
+      const first = h.hook().selectSession(session('slow'))
+      await parked.slow
+      const second = h.hook().selectSession(session('alsoSlow'))
+      await parked.alsoSlow
+
+      // The abandoned one finishes while the newer switch is STILL open.
+      held.slow()
+      await first
+      assert.deepEqual(focused, [], 'the switch in flight was left to focus itself')
+
+      held.alsoSlow()
+      await second
+    })
+    await flush()
+    await flush()
+  } finally {
+    h.unmount()
+    h.restore()
   }
 })

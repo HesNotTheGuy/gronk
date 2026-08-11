@@ -112,6 +112,35 @@ export function confirmSwitch(focus: SessionFocus, id: string | null): SessionFo
   }
 }
 
+/**
+ * May this session speak for the whole view?
+ *
+ * Some events do not add to a conversation, they REPLACE what is on screen: the
+ * transcript, the session id, the folder, whether the view follows the end. Accepted
+ * for the wrong session, those repaint the conversation being read as a different
+ * one — and the save timer then writes it to disk under the id the renderer believes
+ * it is showing.
+ *
+ * `belongsToFocus` is deliberately looser: while a switch is open it accepts any
+ * named session, because a load can resolve to an id the renderer has not heard yet
+ * and the events naming it arrive first. That latitude is right for an event that
+ * appends a line and wrong for one that replaces everything.
+ *
+ * An unnamed switch has to accept a name from anyone, though. Opening a project or a
+ * chat starts one with no id at all — the id only exists once the agent has booted,
+ * and main announcing it is how the renderer finds out. So: name an unclaimed switch,
+ * never rename a claimed one.
+ *
+ * What this does not cover: two unnamed switches in flight at once, where the first
+ * name to arrive wins and could be the abandoned one. That window closes the moment
+ * either is named, and closing it properly needs main to echo back which switch it is
+ * answering.
+ */
+export function mayReplaceView(focus: SessionFocus, sessionId: string | undefined): boolean {
+  if (!sessionId) return true
+  return focus.ids.length === 0 || focus.ids.includes(sessionId)
+}
+
 /** Does this event belong to the conversation on screen? */
 export function belongsToFocus(focus: SessionFocus, sessionId: string | undefined): boolean {
   // No session named: agent boot, or an event about the app rather than a

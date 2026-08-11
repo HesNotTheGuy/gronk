@@ -85,6 +85,19 @@ export class AgentManager {
   private cwd: string | null = null
   private state: ConnectionState = 'idle'
   private activeMessageId: string | null = null
+  /**
+   * Whether a prompt of ours is still outstanding.
+   *
+   * Deliberately not `activeMessageId`, which answers a looser question: any
+   * chunk arriving with no message id of its own adopts it, so a trailing chunk
+   * after a turn has settled leaves it set with nothing left to clear it. That is
+   * harmless for the sidebar's working dot — briefly wrong, corrected by the next
+   * turn — and not harmless for the composer, which the resync locks from this:
+   * a composer disabled with no turn coming stays disabled until the app
+   * restarts. `livenessNow` keeps the looser signal on purpose; this one is for
+   * anything a person cannot recover from.
+   */
+  private promptInFlight = false
   private window: BrowserWindow | null = null
   /** One pending permission per request id (queue display FIFO). */
   private permissions = new PermissionQueue()
@@ -114,6 +127,14 @@ export class AgentManager {
   private bootAlwaysApprove = false
   /** Running token/cost totals for the live session (in memory only, never persisted). */
   private usage = new SessionUsageTracker()
+  /**
+   * The plan last emitted, kept only so focusing this session can put it back on
+   * screen. Cleared wherever the usage totals are, which is every point a session
+   * becomes a different conversation.
+   */
+  private lastPlan: { messageId: string; plan: unknown } | null = null
+  /** What the last `history-done` reported, kept for the same reason as the plan. */
+  private lastHistorySource: 'acp' | 'local' | 'mixed' | 'empty' | null = null
 
   setWindow(win: BrowserWindow | null): void {
     this.window = win
@@ -300,6 +321,7 @@ export class AgentManager {
     this.replayingHistory = false
     this.historyAssistantId = null
     this.activeMessageId = null
+    this.promptInFlight = false
     this.permissions.clear()
 
     this.client.on('stderr', (line) => this.log('stderr', line))
@@ -414,6 +436,34 @@ export class AgentManager {
   }
 
   /**
+   * Re-send this session's messages, for the same reason the permission above is
+   * re-sent: while the session was in the background the renderer dropped its
+   * events, correctly, because they did not belong to the conversation on screen.
+   *
+   * Without this, coming back to a session showed whatever was half-painted at
+   * the moment of the switch — an assistant bubble with nothing in it, which never
+   * filled. The reply was never lost; it was in here, and reopening the app showed
+   * it. Only the live view was stale.
+   *
+   * `liveMessages` is sent as-is, and `session-resync` exists rather than reusing
+   * `history-replace` for the same reason: that path stamps `streaming: false`. A
+   * turn still running has to arrive still streaming, or the chunks that follow it
+   * append to a message the renderer has already drawn as finished.
+   */
+  reemitViewState(): void {
+    if (!this.sessionId) return
+    this.emit({
+      type: 'session-resync',
+      sessionId: this.sessionId,
+      messages: this.liveMessages,
+      usage: this.usage.snapshot(),
+      plan: this.lastPlan,
+      source: this.lastHistorySource,
+      hasOpenTurn: this.promptInFlight
+    })
+  }
+
+  /**
    * Resume an existing Grok session: boot agent, session/load (no session/new),
    * hydrate UI from ACP replay + local transcript cache.
    */
@@ -483,6 +533,8 @@ export class AgentManager {
       // process), so without this an earlier session's totals would carry over.
       // Replayed turn_completed updates then rebuild this session's real total.
       this.usage.reset()
+      this.lastPlan = null
+      this.lastHistorySource = null
       // If we already have a local transcript, do not rebuild messages from ACP echo
       this.suppressHistoryReplay = plan.suppressHistoryReplay
       this.historyAssistantId = null
@@ -504,6 +556,7 @@ export class AgentManager {
       const source = historySource(local.length, this.liveMessages.length)
 
       this.persistLiveTranscript()
+      this.lastHistorySource = source
       this.emit({ type: 'history-done', sessionId: this.sessionId, source })
       return { sessionId: this.sessionId, restored: this.liveMessages.length > 0 }
     } catch (err) {
@@ -518,6 +571,12 @@ export class AgentManager {
             surface: isChatPadCwd(targetCwd) ? 'chat' : 'project'
           })
         }
+        // `start` empties `liveMessages`, so put the cache back before anything
+        // reads it. Without this the resync on focus hands the renderer an empty
+        // conversation while the banner below says the history is still shown, and
+        // every re-click blanks it again. Same shape as the boot path above.
+        this.liveMessages = plan.messages
+
         // User-facing: history is still on screen; only the agent's live memory failed to resume.
         this.emit({
           type: 'error',
@@ -527,10 +586,11 @@ export class AgentManager {
             `new replies start with a fresh context.`,
           ...this.sessionTag()
         })
+        this.lastHistorySource = local.length ? 'local' : 'empty'
         this.emit({
           type: 'history-done',
           sessionId,
-          source: local.length ? 'local' : 'empty'
+          source: this.lastHistorySource
         })
         return { sessionId: this.sessionId || sessionId, restored: local.length > 0 }
       } catch (err2) {
@@ -572,6 +632,8 @@ export class AgentManager {
 
     // Totals belong to one live session; a new process starts a new accounting run.
     this.usage.reset()
+    this.lastPlan = null
+    this.lastHistorySource = null
     this.permissions.clear()
     this.sessionAllowKinds.clear()
     if (this.client) {
@@ -580,6 +642,7 @@ export class AgentManager {
     }
     this.sessionId = null
     this.activeMessageId = null
+    this.promptInFlight = false
   }
 
   private notifyIfUnfocused(title: string, body: string): void {
@@ -667,6 +730,7 @@ export class AgentManager {
 
     const messageId = randomUUID()
     this.activeMessageId = messageId
+    this.promptInFlight = true
 
     const { user, assistant } = buildTurnMessages({
       userId: randomUUID(),
@@ -709,6 +773,7 @@ export class AgentManager {
           stopReason
         })
         this.activeMessageId = null
+        this.promptInFlight = false
         this.persistLiveTranscript()
         this.notifyIfUnfocused(
           'Gronk',
@@ -739,6 +804,7 @@ export class AgentManager {
           stopReason: 'error'
         })
         this.activeMessageId = null
+        this.promptInFlight = false
         this.persistLiveTranscript()
         this.notifyIfUnfocused('Gronk', 'Agent turn failed')
       })
@@ -1146,6 +1212,7 @@ export class AgentManager {
       }
 
       case 'plan':
+        this.lastPlan = { messageId, plan: action.plan }
         this.emit({ type: 'plan', sessionId, messageId, plan: action.plan })
         return
 
@@ -1222,6 +1289,7 @@ export interface ManagedSession {
   getCurrentModel(): string | undefined
   livenessNow(): SessionLiveness | null
   reemitFrontPermission(): void
+  reemitViewState(): void
   start(
     cwd: string,
     options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project' }
@@ -1424,6 +1492,9 @@ export class AgentRegistry {
     const manager = this.sessions.get(sessionId)
     if (!manager) return
     this.lastFocusedCwd = manager.getCwd() ?? this.lastFocusedCwd
+    // The conversation first: a permission modal over a stale transcript is worse
+    // than one over a correct transcript, and this is the bigger repaint.
+    manager.reemitViewState()
     manager.reemitFrontPermission()
     const state = manager.getConnectionState()
     this.send({ type: 'connection', state, sessionId })

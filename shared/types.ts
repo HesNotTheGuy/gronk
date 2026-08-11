@@ -567,6 +567,27 @@ export type MainToRendererEvent =
    * over history-clear + N user-message events so the UI does not thrash.
    */
   | { type: 'history-replace'; sessionId: string; messages: ChatMessage[] }
+  /**
+   * Everything the view of one session holds, handed over on focus.
+   *
+   * Not `history-replace`: that one restores a conversation nobody is watching
+   * live, so it stamps every message finished and drops the plan and the token
+   * count. This one describes a session that may be mid-turn, so the messages
+   * arrive exactly as the session holds them and the other two arrive with them
+   * rather than being cleared. One event because the three have to land together;
+   * a transcript next to another conversation's token count is its own wrong answer.
+   */
+  | {
+      type: 'session-resync'
+      sessionId: string
+      messages: ChatMessage[]
+      usage: SessionUsage | null
+      plan: { messageId: string; plan: unknown } | null
+      /** What `history-done` reported at load, null before one has completed. */
+      source: 'acp' | 'local' | 'mixed' | 'empty' | null
+      /** Whether a turn is still running, so the composer can offer to stop it. */
+      hasOpenTurn: boolean
+    }
   | { type: 'history-done'; sessionId: string; source: 'acp' | 'local' | 'mixed' | 'empty' }
   | { type: 'user-message'; sessionId: string; message: ChatMessage }
   | { type: 'message-chunk'; sessionId: string; messageId: string; text: string }
