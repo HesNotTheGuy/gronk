@@ -549,7 +549,9 @@ export function SessionTray({
               {usage!.totals.cachedReadTokens
                 ? ` (${formatExact(usage!.totals.cachedReadTokens)} tokens)`
                 : ''}
-              . Nothing here counts against a quota this app can see.
+              . None of this is a quota reading: the CLI reports what a session used, never
+              what the plan has left, so a spent weekly limit shows up as a turn that
+              fails rather than as a warning here.
             </p>
           ) : null}
         </div>

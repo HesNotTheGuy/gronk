@@ -456,32 +456,53 @@ export function Composer({
 
       <div className="composer">
         {queued.length > 0 ? (
-          <div className="queued-row" aria-label="Waiting to send">
-            {queued.map((m) => (
-              <div key={m.id} className="queued-chip">
-                <span className="queued-mark" aria-hidden="true">
-                  ⏳
-                </span>
-                <span className="queued-text" title={m.text}>
-                  {m.text || `${m.attachments.length} attachment(s)`}
-                </span>
+          <div className="pending-stack" aria-label="Waiting to send">
+            <div className="pending-head">
+              <span className="pending-count">
+                {queued.length === 1 ? '1 message waiting' : `${queued.length} messages waiting`}
+              </span>
+              {/* Says what Stop does BEFORE it is pressed. With messages behind the
+                  running turn, "abort" stops reading as abort: the obvious guess is
+                  that it stops this turn and the next one starts, which is the
+                  opposite of what happens. */}
+              <span className="pending-what">
+                {queueHeld
+                  ? 'held — the turn was stopped. Send anything to carry on.'
+                  : queued.length === 1
+                    ? 'sends when this turn finishes · Stop keeps it waiting'
+                    : 'they send in order as turns finish · Stop keeps them waiting'}
+              </span>
+              {queued.length > 1 ? (
                 <button
                   type="button"
-                  className="queued-remove"
-                  aria-label="Do not send this message"
+                  className="btn btn-ghost btn-sm pending-clear"
+                  onClick={() => queued.forEach((m) => onRemoveQueued(m.id))}
+                >
+                  Cancel all
+                </button>
+              ) : null}
+            </div>
+            {queued.map((m) => (
+              <div key={m.id} className={`pending-msg ${queueHeld ? 'held' : ''}`}>
+                <span className="pending-body">
+                  {m.text || `${m.attachments.length} attachment(s)`}
+                </span>
+                {m.attachments.length > 0 && m.text ? (
+                  <span className="pending-attach">
+                    +{m.attachments.length} attached
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className="pending-cancel"
+                  aria-label={`Cancel this message: ${m.text.slice(0, 60)}`}
+                  title="Cancel this message"
                   onClick={() => onRemoveQueued(m.id)}
                 >
-                  ×
+                  Cancel
                 </button>
               </div>
             ))}
-            <span className="queued-note">
-              {queueHeld
-                ? 'held — the turn was stopped. Send something to carry on, or remove these.'
-                : queued.length === 1
-                  ? 'sends when this turn finishes'
-                  : `${queued.length} waiting`}
-            </span>
           </div>
         ) : null}
 
@@ -596,8 +617,22 @@ export function Composer({
             {/* Nothing to abort during a restore: `onCancel` cancels a prompt,
                 and opening a session has not sent one. */}
             {working ? (
-              <button type="button" className="btn btn-danger" onClick={onCancel}>
-                Abort
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={onCancel}
+                /* "Abort" is honest about one turn and misleading about a queue: with
+                   messages waiting behind, the obvious reading is that stopping frees
+                   the next one to start. It does the opposite — the rest are held for a
+                   person — so when there is a queue the button says which it stops and
+                   the title says what happens to the others. */
+                title={
+                  queued.length > 0
+                    ? `Stop this turn. The ${queued.length} waiting will stay put until you send something.`
+                    : 'Stop this turn'
+                }
+              >
+                {queued.length > 0 ? 'Stop this turn' : 'Abort'}
               </button>
             ) : null}
             <button

@@ -1035,3 +1035,29 @@ test('A TURN THAT ENDS MID-SWITCH DOES NOT COME BACK AS RUNNING', async () => {
     h.restore()
   }
 })
+
+test('A MESSAGE THE AGENT NEVER FILLED IS TAKEN BACK OFF SCREEN', async () => {
+  // The other half of the same fix: main drops the empty shell and says so, and the
+  // renderer has to act on it or the blank bubble stays on screen anyway.
+  const h = await mountHook()
+  try {
+    await selectInto(h, 's1')
+    await act(async () => {
+      h.emit(chunk('s1', 'a real reply', 'keep-me'))
+      h.emit({ type: 'message-chunk', sessionId: 's1', messageId: 'blank', text: '' } as MainToRendererEvent)
+    })
+    await flush()
+
+    await act(async () => {
+      h.emit({ type: 'message-remove', sessionId: 's1', messageId: 'blank' } as MainToRendererEvent)
+    })
+    await flush()
+
+    const ids = (h.hook().messages as { id: string }[]).map((m) => m.id)
+    assert.ok(!ids.includes('blank'), 'the empty bubble stayed on screen')
+    assert.ok(ids.includes('keep-me'), 'it took a real message with it')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})

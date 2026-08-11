@@ -103,3 +103,24 @@ test('a replayed user chunk extends only an open history user bubble', () => {
     false
   )
 })
+
+// ── A turn that failed before the agent said anything ───────────────────────
+
+test('AN ASSISTANT TURN THAT PRODUCED NOTHING IS NOT WORTH KEEPING', async () => {
+  // The shell is created before the agent answers so the caret has somewhere to appear.
+  // When the call fails immediately, that shell is all there is, and keeping it wrote an
+  // empty bubble to disk — one per failed attempt, permanently. Seen for real: two blanks
+  // from one retry, on a plan whose weekly limit had run out.
+  const { assistantSaidNothing } = await import('../electron/main/agent/history')
+
+  assert.equal(assistantSaidNothing({}), true)
+  assert.equal(assistantSaidNothing({ text: '' }), true)
+  assert.equal(assistantSaidNothing({ text: '   \n ' }), true, 'whitespace is not content')
+  assert.equal(assistantSaidNothing({ parts: [], toolCalls: [] }), true)
+
+  // Anything it managed to say before failing is worth more than a tidy transcript.
+  assert.equal(assistantSaidNothing({ text: 'half a sen' }), false)
+  assert.equal(assistantSaidNothing({ thought: 'considering' }), false, 'a thought is output')
+  assert.equal(assistantSaidNothing({ toolCalls: [{ id: 't1' }] }), false, 'a tool call is output')
+  assert.equal(assistantSaidNothing({ parts: [{ kind: 'text' }] }), false)
+})

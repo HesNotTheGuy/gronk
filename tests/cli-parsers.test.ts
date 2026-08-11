@@ -155,3 +155,36 @@ test('the export attributes itself to Grok, once, above the transcript', () => {
   // wrote the replies, so they stay.
   assert.ok(md.includes('## Grok'))
 })
+
+// ── What a rejected RPC call tells the user ─────────────────────────────────
+
+test('A GENERIC RPC FAILURE NAMES THE CALL, AND POINTS AT THE LIKELY CAUSE', async () => {
+  // Real report: the banner said "Internal error" and nothing else. The agent returns
+  // -32603 with the JSON-RPC name for the code and no detail, and one common cause is a
+  // Grok plan whose weekly limit is spent — which took a screenshot of the Grok website
+  // to work out. Gronk cannot see an account's entitlement, so the quota is offered as
+  // the first thing to check, never asserted.
+  const { rpcErrorMessage } = await import('../electron/main/acp/client')
+
+  const generic = rpcErrorMessage('session/prompt', { code: -32603, message: 'Internal error' })
+  assert.match(generic, /session\/prompt/, 'the failed call is not named')
+  assert.match(generic, /-32603/)
+  assert.match(generic, /usage limits/i, 'the likeliest cause is not offered')
+  assert.doesNotMatch(generic, /you have run out|your quota is spent/i)
+
+  // A real message from the agent is kept as-is: it knows more than this function does.
+  const said = rpcErrorMessage('session/load', {
+    code: -32602,
+    message: 'unknown session id'
+  })
+  assert.match(said, /unknown session id/)
+  assert.doesNotMatch(said, /usage limits/i, 'a real reason was buried under a guess')
+
+  // Detail from the agent beats both.
+  const detailed = rpcErrorMessage('session/prompt', {
+    code: -32603,
+    message: 'Internal error',
+    data: 'model overloaded'
+  })
+  assert.match(detailed, /model overloaded/)
+})
