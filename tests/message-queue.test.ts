@@ -322,3 +322,88 @@ test('A TURN WAITING FOR A PERMISSION IS NOT A FINISHED TURN', async () => {
     h.restore()
   }
 })
+
+// ── What the pending messages say for themselves ────────────────────────────
+
+test('A WAITING MESSAGE IS SHOWN IN FULL, WITH ITS OWN CANCEL', async () => {
+  // It was a chip that truncated to a few words and read as a status badge. It is the
+  // message, so it is shown as one, and every one of them stays cancellable right up to
+  // the moment it goes.
+  const { Composer } = await import('../src/components/Composer')
+  const removed: string[] = []
+  const view = await mount(
+    createElement(Composer, {
+      connection: 'ready',
+      hydrating: false,
+      busy: true,
+      cwd: '/work/alpha',
+      draft: { text: '', attachments: [] },
+      draftKey: 's1',
+      onSend: () => {},
+      onCancel: () => {},
+      onDraftChange: () => {},
+      onDraftSent: () => {},
+      onQueue: () => {},
+      queued: [
+        { id: 'q1', text: 'the first thing I said', attachments: [] },
+        { id: 'q2', text: 'and the second', attachments: [] }
+      ],
+      queueHeld: false,
+      onRemoveQueued: (id: string) => removed.push(id)
+    } as never)
+  )
+  try {
+    const text = (view.text() || '').replace(/\s+/g, ' ')
+    assert.match(text, /the first thing I said/, 'the message itself is not shown')
+    assert.match(text, /and the second/)
+    assert.match(text, /2 messages waiting/)
+
+    const cancels = view.queryAll('.pending-cancel')
+    assert.equal(cancels.length, 2, 'every waiting message needs its own cancel')
+    await view.click(cancels[1])
+    assert.deepEqual(removed, ['q2'], 'cancelling took the wrong one')
+  } finally {
+    view.unmount()
+  }
+})
+
+test('STOP SAYS WHICH TURN IT STOPS WHEN MESSAGES ARE WAITING', async () => {
+  // The maintainer's point: "abort" does not read as abort when something is queued
+  // behind it — the obvious guess is that the next one then starts. It does not.
+  const { Composer } = await import('../src/components/Composer')
+  const withQueue = {
+    connection: 'ready',
+    hydrating: false,
+    busy: true,
+    cwd: '/work/alpha',
+    draft: { text: '', attachments: [] },
+    draftKey: 's1',
+    onSend: () => {},
+    onCancel: () => {},
+    onDraftChange: () => {},
+    onDraftSent: () => {},
+    onQueue: () => {},
+    queueHeld: false,
+    onRemoveQueued: () => {}
+  }
+
+  const queued = await mount(
+    createElement(Composer, {
+      ...withQueue,
+      queued: [{ id: 'q1', text: 'waiting', attachments: [] }]
+    } as never)
+  )
+  const alone = await mount(createElement(Composer, { ...withQueue, queued: [] } as never))
+  try {
+    assert.match((queued.text() || '').replace(/\s+/g, ' '), /Stop this turn/)
+    assert.match(
+      (queued.text() || '').replace(/\s+/g, ' '),
+      /Stop keeps it waiting/,
+      'nothing tells the user what happens to the queued message'
+    )
+    assert.match((alone.text() || '').replace(/\s+/g, ' '), /Abort/, 'plain Abort was lost')
+  } finally {
+    queued.unmount()
+    alone.unmount()
+  }
+})
