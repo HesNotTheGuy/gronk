@@ -87,6 +87,12 @@ longer looks.
 - **A turn that fails before the agent says anything no longer leaves a blank message**
   in the conversation, or on disk. Each failed attempt used to add another.
 
+- **Reading an older part of a conversation is no longer interrupted by the restore
+  finishing.** Scrolling and typing are allowed while a session loads, and on a large
+  one that takes long enough to start reading — then the moment it finished, the view
+  was dragged back to the newest message. Only something you just did moves the view
+  to the end now.
+
 - **The error banner stays about what is failing now** rather than the last thing that
   failed.
 
