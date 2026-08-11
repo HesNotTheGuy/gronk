@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { act, createElement } from 'react'
-import { flush, mount } from './helpers/render'
+import { ensureDom, flush, mount } from './helpers/render'
 import { Composer } from '../src/components/Composer'
 import { EMPTY_DRAFT, useDrafts, type Draft } from '../src/hooks/useDrafts'
 import type { PromptAttachment } from '../shared/types'
@@ -15,13 +15,14 @@ import type { PromptAttachment } from '../shared/types'
  * NOT unmount it, so the message was still in the box when another conversation
  * opened — one Enter from the wrong agent.
  *
- * Nothing here types into the box. React's change events do not fire for
- * programmatic input in this harness — the reason no test in this repo simulates
- * typing — and a test that appears to type is worse than one that does not: setting
- * `el.value` updates the DOM without telling React, so the box reads back the value
- * you wrote while the component's state is still empty, and assertions about it pass
- * for no reason. Both halves are driven through the draft the hook hands down and
- * the Send button, which are real paths.
+ * Some of what follows types into the box and some drives the draft handed down. The
+ * difference is worth knowing: React 19's change plugin does not synthesize `onChange`
+ * from a dispatched input event outside a real browser, so a composer on `onChange`
+ * could not be typed into at all — which is why it is on `onInput`, matching the
+ * project-notes box. Assigning `el.value` directly is still useless: it updates the DOM
+ * without telling React, so the box reads back what the test wrote while the state is
+ * empty, and assertions about it pass for no reason. The helper below uses the
+ * prototype setter and a real input event.
  */
 
 const props = (over: Record<string, unknown> = {}) =>
@@ -48,6 +49,21 @@ const box = (view: { query: (s: string) => Element | null }) =>
   view.query('textarea') as HTMLTextAreaElement
 
 const draftOf = (text: string): Draft => ({ text, attachments: [] })
+
+/** Type the way a person does: the prototype setter, then a real input event. */
+async function type(el: Element, text: string): Promise<void> {
+  const window = ensureDom().window
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLTextAreaElement.prototype,
+    'value'
+  )?.set
+  assert.ok(setter, 'jsdom has no textarea value setter')
+  await act(async () => {
+    setter.call(el, text)
+    el.dispatchEvent(new window.Event('input', { bubbles: true }))
+  })
+  await flush()
+}
 
 // ── The composer and the draft handed to it ─────────────────────────────────
 
@@ -350,6 +366,71 @@ test('AN UNTOUCHED COMPOSER DOES NOT WRITE ANYTHING BACK', async () => {
       await new Promise((resolve) => setTimeout(resolve, 400))
     })
     assert.deepEqual(handed, [], 'the composer wrote back without being touched')
+  } finally {
+    view.unmount()
+  }
+})
+
+// ── Typed for real, end to end ─────────────────────────────────────────────
+
+/** The composer wired to the hook, the way App wires them. */
+function Pair({ id }: { id: string | null }) {
+  const { draft, draftKey, setDraft, clearDraft } = useDrafts(id)
+  return createElement(
+    Composer,
+    props({ draft, draftKey, onDraftChange: setDraft, onDraftSent: clearDraft })
+  )
+}
+
+test('TEXT TYPED AND NOT SENT SURVIVES LEAVING THE CONVERSATION', async () => {
+  // The claim #71 is actually about, and the one that could only be argued from
+  // reading while the composer was on onChange.
+  const handed: Draft[] = []
+  const view = await mount(
+    createElement(Composer, props({ onDraftChange: (d: Draft) => handed.push(d) }))
+  )
+  await type(box(view), 'half a thought I am not finished with')
+  assert.equal(box(view).value, 'half a thought I am not finished with', 'React never saw it')
+
+  view.unmount()
+  await flush()
+
+  assert.equal(
+    handed[handed.length - 1]?.text,
+    'half a thought I am not finished with',
+    'leaving threw away what was typed'
+  )
+})
+
+test('TYPING FOR ONE CONVERSATION DOES NOT FOLLOW YOU TO ANOTHER', async () => {
+  const view = await mount(createElement(Pair, { id: 'a' }))
+  await flush()
+  try {
+    await type(box(view), 'meant for A')
+    assert.equal(box(view).value, 'meant for A')
+
+    await view.rerender(createElement(Pair, { id: 'b' }))
+    await flush()
+    assert.equal(box(view).value, '', "A's message was sitting in B's box")
+
+    await view.rerender(createElement(Pair, { id: 'a' }))
+    await flush()
+    assert.equal(box(view).value, 'meant for A', 'coming back lost it')
+  } finally {
+    view.unmount()
+  }
+})
+
+test('TEXT TYPED WHILE A SESSION IS STILL BOOTING SURVIVES IT BEING NAMED', async () => {
+  // Typed with no session, then the agent answers and the conversation has an id.
+  // Driven through the composer this time, so it covers the swap as well as the hook.
+  const view = await mount(createElement(Pair, { id: null }))
+  await flush()
+  try {
+    await type(box(view), 'typed while it opened')
+    await view.rerender(createElement(Pair, { id: 'booted' }))
+    await flush()
+    assert.equal(box(view).value, 'typed while it opened')
   } finally {
     view.unmount()
   }

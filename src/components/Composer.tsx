@@ -36,7 +36,8 @@ interface Props {
    * text in the box is no longer the text for what is on screen.
    */
   draftKey: string
-  onDraftChange: (draft: Draft) => void
+  /** `forKey` names the conversation the text belongs to, when it is not the current one. */
+  onDraftChange: (draft: Draft, forKey?: string | null) => void
   onDraftSent: () => void
   /** Hold this message until the running turn finishes. */
   onQueue: (text: string, attachments: PromptAttachment[]) => void
@@ -124,6 +125,11 @@ export function Composer({
    */
   const working = busy && !hydrating
 
+  /**
+   * What the box holds right now, readable from a render or a cleanup. Declared above
+   * the swap because the swap reads it to know what the conversation being left had.
+   */
+  const pendingDraftRef = useRef<Draft>(draft)
   const [text, setText] = useState(draft.text)
   const [attachments, setAttachments] = useState<PromptAttachment[]>(draft.attachments)
 
@@ -131,10 +137,30 @@ export function Composer({
   // the render rather than in an effect is deliberate: an effect would paint one
   // frame of the previous conversation's message in the new conversation's box.
   const shownFor = useRef(draftKey)
+  /**
+   * What the box held for the conversation being left, waiting to be filed.
+   *
+   * Captured in the render that swaps and written in an effect below, because a write
+   * is a side effect and the swap has to be immediate — an effect-driven swap paints
+   * one frame of the previous conversation's message under the new one.
+   *
+   * Without this, typing and then switching inside the write-back delay lost the text:
+   * the swap replaced the box and the pending write was cancelled with it.
+   */
+  const outgoing = useRef<{ key: string; draft: Draft } | null>(null)
   if (shownFor.current !== draftKey) {
+    // A conversation getting its name is not a switch. Typing is allowed before the
+    // agent answers, and the id only exists once it does — so the box keeps what it
+    // holds and the text is filed under the name that just arrived. Treating it as a
+    // switch loaded the new conversation's empty draft over the message someone was
+    // part-way through writing, at the moment the session became real.
+    const named = shownFor.current === '' && draftKey !== ''
+    outgoing.current = { key: named ? draftKey : shownFor.current, draft: pendingDraftRef.current }
     shownFor.current = draftKey
-    setText(draft.text)
-    setAttachments(draft.attachments)
+    if (!named) {
+      setText(draft.text)
+      setAttachments(draft.attachments)
+    }
   }
   const [mentionOpen, setMentionOpen] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
@@ -255,15 +281,21 @@ export function Composer({
    * a write per character re-renders the whole conversation while someone is trying
    * to type into it. The flush below is what makes the delay safe.
    */
-  const pendingDraft = useRef<Draft>({ text, attachments })
-  pendingDraft.current = { text, attachments }
+  pendingDraftRef.current = { text, attachments }
+
+  useEffect(() => {
+    const leaving = outgoing.current
+    if (!leaving) return
+    outgoing.current = null
+    onDraftChange(leaving.draft, leaving.key)
+  }, [draftKey, onDraftChange])
 
   useEffect(() => {
     // Nothing to say when the box already matches what was handed down. Without
     // this an untouched composer writes its empty draft back on a timer, which is
     // pointless work and, worse, would erase a draft written by anything else.
     if (text === draft.text && attachments === draft.attachments) return
-    const t = setTimeout(() => onDraftChange(pendingDraft.current), 250)
+    const t = setTimeout(() => onDraftChange(pendingDraftRef.current), 250)
     return () => clearTimeout(t)
   }, [text, attachments, draft, onDraftChange])
 
@@ -274,7 +306,7 @@ export function Composer({
     // Leaving the conversation view unmounts this component, which is exactly the
     // gesture that used to throw a written message away. Whatever the debounce
     // above has not written yet is written here instead.
-    return () => onDraftChange(pendingDraft.current)
+    return () => onDraftChange(pendingDraftRef.current, shownFor.current)
   }, [onDraftChange])
 
   const submit = () => {
@@ -479,9 +511,23 @@ export function Composer({
         <textarea
           ref={ref}
           value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            detectMention(e.target.value, e.target.selectionStart ?? e.target.value.length)
+          /*
+            onInput rather than onChange, matching the project-notes box for the
+            same reason recorded there: React 19's change plugin does not
+            synthesize onChange from a dispatched input event outside a real
+            browser, so with onChange the whole draft and queue path had no test
+            that could type a character. It fires for exactly the same keystrokes.
+
+            This is not a detail of the tests. Every claim about what happens to
+            text someone has typed and not sent — that leaving the conversation
+            keeps it, that switching does not carry it to the wrong agent, that a
+            queued message is the one that was written — could only be argued from
+            reading before this.
+          */
+          onInput={(e) => {
+            const el = e.currentTarget
+            setText(el.value)
+            detectMention(el.value, el.selectionStart ?? el.value.length)
           }}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
