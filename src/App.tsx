@@ -754,6 +754,10 @@ export function App() {
             <Composer
               connection={g.connection}
               hydrating={g.hydrating}
+              draft={g.draft}
+              draftKey={g.draftKey}
+              onDraftChange={g.setDraft}
+              onDraftSent={g.clearDraft}
               busy={g.busy || g.connection === 'loading'}
               cwd={inChat ? null : g.cwd}
               models={g.models}

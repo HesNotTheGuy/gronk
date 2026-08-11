@@ -48,6 +48,7 @@ import {
 } from '../lib/scroll-stick'
 import { useAppSettings } from './useAppSettings'
 import { useAuth } from './useAuth'
+import { useDrafts } from './useDrafts'
 import { useCliInstall } from './useCliInstall'
 import { useDataLocation } from './useDataLocation'
 import { useExportNotice } from './useExportNotice'
@@ -331,6 +332,10 @@ export function useGronk() {
   // `setAuth` is peeled off: it is how the flows below hand this hook an
   // AuthStatus they already fetched. It is not part of the public surface.
   const { setAuth, ...authState } = useAuth({ refreshMeta, clearLiveSession })
+
+  // What is typed but not sent, per conversation. The composer keeps its own copy
+  // while you are typing into it; this is where it lives when you are not.
+  const { forgetDraft, ...draftState } = useDrafts(sessionId)
 
   // Same peeling: `hydrate` is refreshMeta's write-through, and the rest are how
   // the live-session flows below keep the browse lists honest.
@@ -1306,6 +1311,8 @@ export function useGronk() {
   const deleteSession = useCallback(
     async (id: string) => {
       transcriptCache.current = forgetTranscript(transcriptCache.current, id)
+      // A conversation nobody can open again has nothing to restore into.
+      forgetDraft(id)
       const sess = await window.gronk.deleteSession(id)
       setSessions(sess)
       if (sessionId === id) {
@@ -1316,7 +1323,7 @@ export function useGronk() {
         await restartAgent()
       }
     },
-    [sessionId, setSessions, restartAgent]
+    [sessionId, setSessions, restartAgent, forgetDraft]
   )
 
   /**
@@ -1387,6 +1394,7 @@ export function useGronk() {
     projectName,
     sessionId,
     messages,
+    ...draftState,
     ...catalog,
     renameSession,
     chatWorkspacePath,

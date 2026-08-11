@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createElement } from 'react'
 import { flush, mount } from './helpers/render'
 import { Composer } from '../src/components/Composer'
+import { EMPTY_DRAFT } from '../src/hooks/useDrafts'
 
 /**
  * Restoring a session is not the agent working.
@@ -26,6 +27,10 @@ const props = (over: Record<string, unknown> = {}) =>
     permissionMode: 'default',
     onSend: () => {},
     onCancel: () => {},
+    draft: EMPTY_DRAFT,
+    draftKey: 's1',
+    onDraftChange: () => {},
+    onDraftSent: () => {},
     ...over
   }) as never
 
