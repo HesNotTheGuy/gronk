@@ -431,6 +431,25 @@ export function Sidebar({
                 +{hiddenChats} older · See all
               </button>
             ) : null}
+            {/*
+              Archived sits at the end of the list because archived sessions ARE
+              sessions. It used to be in the footer between the account chip and
+              Settings, which grouped it with app-level things and left it floating in
+              an empty column on Home. The cost of moving it is that Home no longer
+              offers it, which is the right trade: you restore a session into Chat or
+              Build, and both of those show this.
+            */}
+            {archivedCount > 0 ? (
+              <button
+                type="button"
+                className="session-nav-archived"
+                onClick={onOpenArchived}
+                title="View and restore archived sessions"
+              >
+                Archived
+                <span className="archived-entry-count">{archivedCount}</span>
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -562,6 +581,25 @@ export function Sidebar({
                 +{projectSessionNav.hidden} older · See all
               </button>
             ) : null}
+            {/*
+              Archived sits at the end of the list because archived sessions ARE
+              sessions. It used to be in the footer between the account chip and
+              Settings, which grouped it with app-level things and left it floating in
+              an empty column on Home. The cost of moving it is that Home no longer
+              offers it, which is the right trade: you restore a session into Chat or
+              Build, and both of those show this.
+            */}
+            {archivedCount > 0 ? (
+              <button
+                type="button"
+                className="session-nav-archived"
+                onClick={onOpenArchived}
+                title="View and restore archived sessions"
+              >
+                Archived
+                <span className="archived-entry-count">{archivedCount}</span>
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -578,17 +616,6 @@ export function Sidebar({
         {!authenticated ? (
           <button type="button" className="btn btn-primary btn-block" onClick={onSignIn}>
             Sign in
-          </button>
-        ) : null}
-        {archivedCount > 0 ? (
-          <button
-            type="button"
-            className="btn btn-ghost btn-block"
-            onClick={onOpenArchived}
-            title="View and restore archived sessions"
-          >
-            Archived
-            <span className="archived-entry-count">{archivedCount}</span>
           </button>
         ) : null}
         <button type="button" className="btn btn-ghost btn-block" onClick={onOpenPlugins}>

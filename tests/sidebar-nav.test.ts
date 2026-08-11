@@ -279,3 +279,83 @@ test('ONE MENU BUTTON PER SESSION, LIVE OR NOT', async () => {
 // `&& !searching`, so it holds today — but this harness cannot type into the search
 // box (React ignores programmatic input here), and a test that renders without
 // searching and then asserts one block would pass whatever those clauses said.
+
+// ── Archived belongs with the sessions ──────────────────────────────────────
+
+const archivedRow = (view: { query: (s: string) => Element | null }) =>
+  view.query('.session-nav-archived')
+
+test('ARCHIVED SITS WITH THE SESSIONS, NOT IN THE APP FOOTER', async () => {
+  // It used to be in the footer between the account chip and Settings, which grouped a
+  // list of sessions with plugins and settings and left it floating in an empty column.
+  const view = await mount(
+    sidebar({ surface: 'chat', chatSessions: [chat('a')], archivedCount: 2 })
+  )
+  try {
+    const row = archivedRow(view)
+    assert.ok(row, 'Archived is not with the sessions')
+    assert.ok(
+      view.query('.session-nav')?.contains(row!),
+      'Archived is outside the session list it belongs to'
+    )
+    assert.ok(!view.query('.sidebar-footer')?.contains(row!), 'Archived is still in the footer')
+    assert.match(row!.textContent ?? '', /2/, 'the count went missing')
+  } finally {
+    view.unmount()
+  }
+})
+
+test('IT IS THERE ON BOTH SURFACES THAT HAVE A SESSION LIST', async () => {
+  for (const surface of ['chat', 'project'] as const) {
+    const view = await mount(sidebar({ surface, archivedCount: 1 }))
+    try {
+      assert.ok(archivedRow(view), `no Archived on the ${surface} surface`)
+    } finally {
+      view.unmount()
+    }
+  }
+})
+
+test('WITH NOTHING ARCHIVED IT IS NOT OFFERED', async () => {
+  const view = await mount(sidebar({ surface: 'chat', archivedCount: 0 }))
+  try {
+    assert.equal(archivedRow(view), null)
+  } finally {
+    view.unmount()
+  }
+})
+
+test('IT IS STILL OFFERED WHEN EVERY SESSION IS ARCHIVED', async () => {
+  // The case where it matters most: nothing active to list, so an empty list plus no way
+  // to reach the archive would be a dead end.
+  const view = await mount(sidebar({ surface: 'chat', chatSessions: [], archivedCount: 3 }))
+  try {
+    assert.ok(archivedRow(view), 'a user whose only sessions are archived cannot reach them')
+  } finally {
+    view.unmount()
+  }
+})
+
+test('OPENING IT ASKS THE APP TO SHOW THE ARCHIVE', async () => {
+  let opened = 0
+  const view = await mount(
+    sidebar({ surface: 'chat', archivedCount: 1, onOpenArchived: () => (opened += 1) })
+  )
+  try {
+    await view.click(archivedRow(view)!)
+    assert.equal(opened, 1)
+  } finally {
+    view.unmount()
+  }
+})
+
+test('HOME NO LONGER OFFERS IT, WHICH IS THE COST OF THE MOVE', async () => {
+  // Written down rather than left as a surprise: Home has no session list, and a session
+  // is restored into Chat or Build, both of which show it.
+  const view = await mount(sidebar({ surface: 'home', archivedCount: 2 }))
+  try {
+    assert.equal(archivedRow(view), null)
+  } finally {
+    view.unmount()
+  }
+})
