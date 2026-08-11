@@ -35,6 +35,15 @@ export function useAuth({ refreshMeta, clearLiveSession }: AuthDeps) {
   const [authBusy, setAuthBusy] = useState(false)
   const [authMessage, setAuthMessage] = useState<string | null>(null)
   const [deviceHint, setDeviceHint] = useState<string | null>(null)
+  /**
+   * Which sign-in is waiting, rather than just that one is.
+   *
+   * A browser login waits up to three minutes for a flow that may never come
+   * back, and one flag for both methods meant that wait also disabled device
+   * code — the remedy the screen recommends for exactly this — leaving nothing
+   * to do but restart the app.
+   */
+  const [pendingLogin, setPendingLogin] = useState<LoginMethod | null>(null)
 
   useEffect(() => {
     return window.gronk.onEvent((event: MainToRendererEvent) => {
@@ -57,11 +66,15 @@ export function useAuth({ refreshMeta, clearLiveSession }: AuthDeps) {
 
   const login = useCallback(
     async (method: LoginMethod = 'oauth') => {
+      // Switching methods calls off the one still waiting, so two `grok login`
+      // processes never work on the same credential store at once.
+      if (pendingLogin && pendingLogin !== method) await window.gronk.cancelLogin()
       setAuthBusy(true)
+      setPendingLogin(method)
       setAuthMessage(
         method === 'device'
           ? 'Device login started. Complete the code in your browser…'
-          : 'Browser login started. Complete sign-in in the window that opens…'
+          : 'Browser login started. Complete sign-in in the window that opens, or use device code instead.'
       )
       setDeviceHint(null)
       try {
@@ -79,9 +92,10 @@ export function useAuth({ refreshMeta, clearLiveSession }: AuthDeps) {
         return null
       } finally {
         setAuthBusy(false)
+        setPendingLogin(null)
       }
     },
-    [refreshMeta]
+    [refreshMeta, pendingLogin]
   )
 
   const logout = useCallback(async () => {
@@ -112,6 +126,7 @@ export function useAuth({ refreshMeta, clearLiveSession }: AuthDeps) {
     authBusy,
     authMessage,
     deviceHint,
+    pendingLogin,
     isAuthenticated,
     refreshAuth,
     login,

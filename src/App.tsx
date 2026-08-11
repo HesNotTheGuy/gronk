@@ -754,6 +754,14 @@ export function App() {
             <Composer
               connection={g.connection}
               hydrating={g.hydrating}
+              draft={g.draft}
+              draftKey={g.draftKey}
+              onDraftChange={g.setDraft}
+              onDraftSent={g.clearDraft}
+              onQueue={g.enqueue}
+              queued={g.queued}
+              queueHeld={g.queueHeld}
+              onRemoveQueued={g.removeQueued}
               busy={g.busy || g.connection === 'loading'}
               cwd={inChat ? null : g.cwd}
               models={g.models}
@@ -790,6 +798,7 @@ export function App() {
           <AuthGate
             auth={g.auth}
             busy={g.authBusy}
+            pendingLogin={g.pendingLogin}
             deviceHint={g.deviceHint}
             message={g.authMessage}
             grokFound={!!g.grokPath || !!g.health?.grokFound}

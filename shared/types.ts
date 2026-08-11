@@ -868,6 +868,8 @@ export interface GronkApi {
     deviceHint?: string
     auth: AuthStatus
   }>
+  /** End a sign-in still waiting on a browser. True when there was one. */
+  cancelLogin: () => Promise<boolean>
   logout: () => Promise<{ ok: boolean; message: string; auth: AuthStatus }>
   /** Install the Grok CLI via the official installer (only after explicit user consent). */
   installCli: () => Promise<{
