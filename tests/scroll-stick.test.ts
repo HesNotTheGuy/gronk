@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   ARRIVED_EPS,
   isScrollbarClick,
@@ -310,4 +311,50 @@ test('a whole turn ending under a reader who scrolled up, end to end', () => {
     previousScrollHeight: height
   })
   assert.equal(sticking, false, 'the turn ending snapped the reader back')
+})
+
+// ── #76: a restore that finishes must not override the reader ────────────────
+
+test('ONLY A DELIBERATE MOVE RE-ATTACHES THE TRANSCRIPT TO THE END', async () => {
+  // Reported: scrolling was not interrupted while scrolling, but stopping snapped the
+  // view down to the newest thing. The cause was not the arrival check in this file — it
+  // was `history-done` assigning the follow flag directly, which overrode a reader who
+  // had scrolled up during a restore. On a large session the restore is long enough to
+  // read during, and typing and scrolling there are deliberately allowed.
+  //
+  // Read from source rather than driven: the flag is a ref inside the hook and the pin
+  // needs a real scroll box, neither of which this suite can reach. Comments are stripped
+  // first — an earlier version of this test matched the comment that explains the fix,
+  // and passed for it.
+  const raw = readFileSync(new URL('../src/hooks/useGronk.ts', import.meta.url), 'utf8')
+  const source = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+
+  const assignments = source.split('stickToBottom.current = true').length - 1
+  assert.equal(
+    assignments,
+    4,
+    'the set of events that re-attach the transcript to the end changed. Every one has ' +
+      'to be something the user just asked for — opening a session, going somewhere, ' +
+      'sending a prompt. If this moved, name the event and say why a person would expect ' +
+      'to be taken to the end by it'
+  )
+
+  // The two that must never: finishing a restore, and the bulk paint before it. Both
+  // happen while the reader may already be somewhere they chose.
+  for (const event of ['history-done', 'history-replace']) {
+    const from = source.slice(source.indexOf(`case '${event}':`))
+    const body = from.slice(0, from.indexOf('break'))
+    assert.ok(body.length > 0, `${event} is no longer handled`)
+    assert.doesNotMatch(
+      body,
+      /stickToBottom\.current = true/,
+      `${event} re-attaches the view, which yanks a reader who scrolled up during a restore`
+    )
+  }
+
+  // And the delayed pins still ask before moving anything.
+  const done = source.slice(source.indexOf("case 'history-done':"))
+  const doneBody = done.slice(0, done.indexOf('break'))
+  assert.match(doneBody, /if \(el && stickToBottom\.current\) pinToBottom\(el\)/)
+  assert.match(doneBody, /if \(again && stickToBottom\.current\) pinToBottom\(again\)/)
 })
