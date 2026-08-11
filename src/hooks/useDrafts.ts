@@ -50,21 +50,31 @@ export function useDrafts(sessionId: string | null) {
     setUnnamed(null)
   }, [sessionId, unnamed])
 
+  /**
+   * `forSession` files the draft under a conversation other than the current one.
+   *
+   * The composer hands back what it holds a beat after typing stops, and a switch can
+   * happen inside that beat — so the text arriving may belong to the conversation just
+   * left, not the one now on screen. Without saying which, switching within a moment of
+   * typing threw the text away, which is the bug this hook exists to fix arriving in a
+   * narrower window.
+   */
   const setDraft = useCallback(
-    (next: Draft) => {
-      if (!sessionId) {
+    (next: Draft, forSession?: string | null) => {
+      const target = forSession === undefined ? sessionId : forSession
+      if (!target) {
         setUnnamed(isEmpty(next) ? null : next)
         return
       }
       setSaved((prev) => {
         if (isEmpty(next)) {
-          if (!(sessionId in prev)) return prev
-          const { [sessionId]: _empty, ...rest } = prev
+          if (!(target in prev)) return prev
+          const { [target]: _empty, ...rest } = prev
           return rest
         }
-        const held = prev[sessionId]
+        const held = prev[target]
         if (held && held.text === next.text && held.attachments === next.attachments) return prev
-        return { ...prev, [sessionId]: next }
+        return { ...prev, [target]: next }
       })
     },
     [sessionId]
