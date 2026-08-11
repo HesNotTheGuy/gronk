@@ -790,6 +790,7 @@ export function App() {
           <AuthGate
             auth={g.auth}
             busy={g.authBusy}
+            pendingLogin={g.pendingLogin}
             deviceHint={g.deviceHint}
             message={g.authMessage}
             grokFound={!!g.grokPath || !!g.health?.grokFound}

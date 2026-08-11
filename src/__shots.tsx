@@ -682,6 +682,7 @@ const api: Record<string, unknown> = {
   selectFolder: async () => null,
   selectFile: async () => null,
   login: async () => ({ ok: true, method: 'oauth', message: '', auth: AUTH_OK }),
+  cancelLogin: async () => false,
   logout: async () => ({ ok: true, message: '', auth: AUTH_OUT }),
   installCli: async () => ({ ok: true, message: '', grokPath: null, installed: false }),
 

@@ -3,6 +3,14 @@ import type { AuthStatus, LoginMethod } from '../../shared/types'
 interface Props {
   auth: AuthStatus | null
   busy: boolean
+  /**
+   * The method currently waiting, when one is.
+   *
+   * Which one matters, not just that one exists: a browser sign-in waits minutes
+   * for a flow that may never return, and disabling device code for the duration
+   * takes away the one thing this screen recommends when a browser will not do.
+   */
+  pendingLogin?: LoginMethod | null
   deviceHint?: string | null
   message?: string | null
   grokFound: boolean
@@ -15,6 +23,7 @@ interface Props {
 export function AuthGate({
   auth,
   busy,
+  pendingLogin,
   deviceHint,
   message,
   grokFound,
@@ -82,25 +91,26 @@ export function AuthGate({
           <button
             type="button"
             className="btn btn-primary"
-            disabled={busy || !grokFound}
+            disabled={pendingLogin === 'oauth' || !grokFound}
             onClick={() => onLogin('oauth')}
           >
-            {busy ? 'Waiting for browser…' : 'Sign in with browser'}
+            {pendingLogin === 'oauth' ? 'Waiting for browser…' : 'Sign in with browser'}
           </button>
           <button
             type="button"
             className="btn btn-secondary"
-            disabled={busy || !grokFound}
+            disabled={pendingLogin === 'device' || !grokFound}
             onClick={() => onLogin('device')}
           >
-            Device code login
+            {pendingLogin === 'device'
+              ? 'Waiting for code…'
+              : pendingLogin === 'oauth'
+                ? 'Use device code instead'
+                : 'Device code login'}
           </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={busy}
-            onClick={onRefresh}
-          >
+          {/* A read-only probe. There is never a reason to take it away, and it
+              is what a person reaches for when a sign-in looks stuck. */}
+          <button type="button" className="btn btn-ghost" onClick={onRefresh}>
             Re-check status
           </button>
         </div>

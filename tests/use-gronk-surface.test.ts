@@ -81,6 +81,7 @@ const EXPECTED_MEMBERS: string[] = [
   "newChat",
   "openChat",
   "openProject",
+  "pendingLogin",
   "permission",
   "permissionMode",
   "popOutPreview",
