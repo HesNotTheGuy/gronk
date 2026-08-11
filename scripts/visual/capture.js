@@ -122,7 +122,11 @@ const usageSteps = [
   { wait: 1800 },
   { emit: USAGE_EVENT },
   { wait: 800 },
-  { click: '.usage-summary' },
+  // The tray's own Usage tab. It was `.usage-summary`, a control on UsageMeter,
+  // which nothing renders any more — so this step could not succeed and both usage
+  // scenarios were captured with the panel still closed, quietly shooting the wrong
+  // screen while reporting "errored" in a line that is easy to scroll past.
+  { clickText: 'Usage' },
   { wait: 700 }
 ]
 
