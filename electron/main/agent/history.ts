@@ -92,3 +92,29 @@ export function canAppendHistoryUserChunk(
 ): last is ChatMessage {
   return !!last && last.role === 'user' && !!last.fromHistory && last.streaming !== false
 }
+
+/**
+ * Did this assistant turn produce anything at all?
+ *
+ * A prompt creates the assistant message before the agent answers, so the caret has
+ * somewhere to appear. If the call then fails, that shell is all there is — and keeping
+ * it puts an empty bubble in the transcript and writes it to disk, so every failed
+ * attempt adds another permanent blank. Two showed up in one real session from a single
+ * retry, on a plan whose weekly limit had run out.
+ *
+ * Anything the agent managed to say before failing counts, including a thought or a tool
+ * call with no prose: partial output is worth more than a tidy transcript.
+ */
+export function assistantSaidNothing(message: {
+  text?: string
+  thought?: string
+  parts?: unknown[]
+  toolCalls?: unknown[]
+}): boolean {
+  return (
+    !message.text?.trim() &&
+    !message.thought?.trim() &&
+    (message.parts?.length ?? 0) === 0 &&
+    (message.toolCalls?.length ?? 0) === 0
+  )
+}

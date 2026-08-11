@@ -35,6 +35,8 @@ export interface PermissionOption {
 }
 
 type Pending = {
+  /** The method this request called, so a rejection can say what failed. */
+  method?: string
   resolve: (value: unknown) => void
   reject: (err: Error) => void
 }
@@ -45,6 +47,42 @@ type Pending = {
  * Critical: the agent also sends *requests* to us (permission, optional fs/terminal).
  * Those MUST get a response or the prompt turn freezes forever.
  */
+/**
+ * What to show a person when the agent rejects one of our calls.
+ *
+ * The agent's own `message` is often just the JSON-RPC name for the code — a -32603
+ * arrives as the bare words "Internal error", which names neither the call that failed
+ * nor anything to try. The method is the one piece of context that always exists, and
+ * the code is worth keeping because it says whose fault it is: -32601 and -32602 are
+ * Gronk sending something wrong, -32603 is the agent failing inside a call we made
+ * correctly.
+ */
+export function rpcErrorMessage(
+  method: string | undefined,
+  error: { code?: number; message?: string; data?: unknown }
+): string {
+  const said = (error.message || '').trim()
+  const generic = !said || /^(internal|server|parse) error$/i.test(said)
+  const code = error.code !== undefined ? ` (${error.code})` : ''
+  const where = method ? `The agent failed on ${method}` : 'The agent failed'
+  const detail =
+    typeof error.data === 'string' && error.data.trim() ? `: ${error.data.trim()}` : ''
+
+  if (generic) {
+    // No reason given, and one cause is common enough to name: a Grok plan whose weekly
+    // limit is spent arrives exactly like this — a -32603 with the JSON-RPC name for the
+    // code and nothing else. Gronk cannot see an account's entitlement, so this is
+    // offered as the first thing to check rather than asserted as the cause. Diagnosing
+    // it took a maintainer a screenshot of the Grok website and half an hour.
+    const hint =
+      error.code === -32603
+        ? ' It gave no reason. If this keeps happening, check your Grok usage limits — a spent plan quota is reported exactly like this.'
+        : '. It gave no reason.'
+    return `${where}${code}${detail || hint}`
+  }
+  return `${where}${code}: ${said}${detail}`
+}
+
 export class GrokAcpClient extends EventEmitter {
   private proc: ChildProcessWithoutNullStreams | null = null
   private rl: Interface | null = null
@@ -309,7 +347,11 @@ export class GrokAcpClient extends EventEmitter {
     }
     const id = this.nextId++
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      // The method travels with the request so a failure can name it. Without it the
+      // renderer showed whatever the agent put in `message`, and for a JSON-RPC -32603
+      // that is the literal words "Internal error" — a banner that tells the user
+      // nothing about which call failed or where to look.
+      this.pending.set(id, { resolve, reject, method })
       this.write({ jsonrpc: '2.0', id, method, params })
     })
   }
@@ -361,9 +403,7 @@ export class GrokAcpClient extends EventEmitter {
       if (pending) {
         this.pending.delete(msg.id as JsonRpcId)
         if (msg.error) {
-          pending.reject(
-            new Error(msg.error.message || `RPC error ${msg.error.code ?? 'unknown'}`)
-          )
+          pending.reject(new Error(rpcErrorMessage(pending.method, msg.error)))
         } else {
           pending.resolve(msg.result)
         }

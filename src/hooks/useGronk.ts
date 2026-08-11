@@ -711,6 +711,9 @@ export function useGronk() {
             })
           )
           break
+        case 'message-remove':
+          setMessages((prev) => prev.filter((m) => m.id !== event.messageId))
+          break
         case 'message-done': {
           setBusy(false)
           // Forget what the resync said about this session's turn, or the tail of a
