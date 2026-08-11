@@ -593,13 +593,25 @@ export function useGronk() {
           setHistorySource('local')
           setActivePlan(null)
           setUsage(null)
-          stickToBottom.current = true
           break
         case 'history-done':
           setHistorySource(event.source)
           setBusy(false)
           setHydrating(false)
-          stickToBottom.current = true
+          // NOT `stickToBottom.current = true`, and neither is the paint above.
+          //
+          // Typing and scrolling are allowed while a session restores — that is
+          // deliberate, and on a large session the restore takes long enough to read
+          // during. Re-arming here overrode whatever the reader had done: scroll up
+          // while it loads, and the moment it finished you were yanked to the end,
+          // twice, by the two pins below. It reads as "I stopped scrolling and it
+          // jumped", because the jump lands in the pause rather than during the gesture.
+          //
+          // Nothing is lost by dropping it. Opening a session sets this at the start of
+          // the switch, and it begins true on a cold launch, so a reader who has not
+          // touched anything still lands at the end. The pins below are already gated on
+          // it, which is what makes them respect a gesture once the line above is gone.
+          //
           // Second stick after images/layout settle so the viewport lands on the
           // real end of a long restored thread, not a mid-load height.
           requestAnimationFrame(() => {
