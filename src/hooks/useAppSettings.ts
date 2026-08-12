@@ -156,6 +156,19 @@ export function useAppSettings({ cwd, connection, restartAgent, setAuth }: Setti
     [cwd, restartAgent, settings?.model]
   )
 
+  /**
+   * Record that this version's notes have been read.
+   *
+   * One field, in the settings store rather than the transcript store — it is about the
+   * install, not a conversation, and it has to survive an update or the panel comes back on
+   * every release.
+   */
+  const markNotesSeen = useCallback(async (version: string) => {
+    if (!version) return
+    const next = await window.gronk.setSettings({ seenNotesVersion: version })
+    setSettingsState(next)
+  }, [])
+
   const pickBinary = useCallback(async () => {
     const path = await window.gronk.selectFile({
       title: 'Select grok binary',
@@ -203,6 +216,7 @@ export function useAppSettings({ cwd, connection, restartAgent, setAuth }: Setti
     confirmYolo,
     cancelYolo,
     changeModel,
+    markNotesSeen,
     changePermissionMode,
     pickBinary,
     clearBinary,
