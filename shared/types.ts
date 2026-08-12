@@ -561,12 +561,25 @@ export type MainToRendererEvent =
    */
   | { type: 'connection'; state: ConnectionState; error?: string; sessionId?: string }
   | { type: 'session'; sessionId: string; cwd: string }
-  | { type: 'history-clear'; sessionId: string }
+  | { type: 'history-clear'; sessionId: string; forRequest?: string }
   /**
    * Replace the entire transcript in one shot (local cache restore). Prefer this
    * over history-clear + N user-message events so the UI does not thrash.
    */
-  | { type: 'history-replace'; sessionId: string; messages: ChatMessage[] }
+  /**
+   * The three history events carry `forRequest` when they answer a specific load.
+   *
+   * Without it the renderer cannot tell "the load I asked for resolved to an id I have not
+   * heard yet" from "an unrelated session finished booting" — the events look identical, so
+   * it had to accept both, and accepting the second repaints the conversation being read as
+   * a different one. The id is the renderer's own, handed to `loadSession` and echoed back.
+   */
+  | {
+      type: 'history-replace'
+      sessionId: string
+      messages: ChatMessage[]
+      forRequest?: string
+    }
   /**
    * Everything the view of one session holds, handed over on focus.
    *
@@ -591,7 +604,12 @@ export type MainToRendererEvent =
       model?: string
       permissionMode: PermissionMode | null
     }
-  | { type: 'history-done'; sessionId: string; source: 'acp' | 'local' | 'mixed' | 'empty' }
+  | {
+      type: 'history-done'
+      sessionId: string
+      source: 'acp' | 'local' | 'mixed' | 'empty'
+      forRequest?: string
+    }
   | { type: 'user-message'; sessionId: string; message: ChatMessage }
   | { type: 'message-chunk'; sessionId: string; messageId: string; text: string }
   | { type: 'thought-chunk'; sessionId: string; messageId: string; text: string }
@@ -844,7 +862,11 @@ export interface GronkApi {
     sessionId?: string
   ) => Promise<void>
   listSessions: () => Promise<SessionInfo[]>
-  loadSession: (sessionId: string) => Promise<{ sessionId: string; restored: boolean }>
+  /** `requestId` is echoed on this load's history events so the renderer can claim them. */
+  loadSession: (
+    sessionId: string,
+    requestId?: string
+  ) => Promise<{ sessionId: string; restored: boolean }>
   getTranscript: (sessionId: string) => Promise<ChatMessage[]>
   /** Full-text search over every stored transcript. Empty query returns []. */
   searchSessions: (query: string) => Promise<SessionSearchHit[]>

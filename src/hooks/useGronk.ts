@@ -83,6 +83,17 @@ import { useSessionCatalog } from './useSessionCatalog'
  */
 const REPLACES_THE_VIEW = new Set(['session', 'session-resync'])
 
+/**
+ * Events that replace the view AND are the answer to a load.
+ *
+ * They cannot take the same test as the two above, because a load can resolve to a session
+ * id this renderer has never heard — clicking one session and having main answer with
+ * another is a real path. What makes them safe is `forRequest`: the id this renderer handed
+ * to `loadSession`, echoed back. An unknown session is accepted only when it is answering
+ * the load still outstanding here.
+ */
+const ANSWERS_A_LOAD = new Set(['history-replace', 'history-clear', 'history-done'])
+
 function restored(m: ChatMessage): ChatMessage {
   return {
     ...m,
@@ -208,6 +219,15 @@ export function useGronk() {
    */
   const switchTicket = useRef(0)
   /**
+   * The id given to the load this renderer is waiting on, or null between loads.
+   *
+   * A history event naming a session nobody here has heard of is accepted only when it
+   * carries this id. Cleared when the switch that asked for it is abandoned, so the load the
+   * user walked away from cannot paint over what they opened instead.
+   */
+  const loadRequest = useRef<string | null>(null)
+  const loadCounter = useRef(0)
+  /**
    * What the last resync said about a session's turn.
    *
    * The tail of a switch clears `busy` as a safety net for a load that never
@@ -220,6 +240,15 @@ export function useGronk() {
   const resyncTurn = useRef<{ sessionId: string; open: boolean } | null>(null)
   const openSwitch = useCallback((requested: string | null): number => {
     focusRef.current = beginSwitch(requested)
+    // A new switch invalidates any outstanding load's claim on history.
+    //
+    // Belt and braces, and not observable today: a switch that issues its own load
+    // overwrites the claim anyway, and one that does not — Chat, or opening a project —
+    // begins with no session named, which `mayReplaceView` accepts regardless. So no test
+    // fails without this line, and I am leaving it rather than pretending otherwise,
+    // because a claim that outlives the switch that made it is the kind of thing that
+    // becomes load-bearing the moment the empty-ids rule tightens.
+    loadRequest.current = null
     return (switchTicket.current += 1)
   }, [])
   const switchIsCurrent = useCallback((ticket: number) => switchTicket.current === ticket, [])
@@ -523,6 +552,11 @@ export function useGronk() {
       // renderer believes it is showing.
       if (REPLACES_THE_VIEW.has(event.type) && !mayReplaceView(focusRef.current, sessionIdOf(event))) {
         return
+      }
+      if (ANSWERS_A_LOAD.has(event.type)) {
+        const forRequest = 'forRequest' in event ? event.forRequest : undefined
+        const answersMine = !!forRequest && forRequest === loadRequest.current
+        if (!answersMine && !mayReplaceView(focusRef.current, sessionIdOf(event))) return
       }
 
       switch (event.type) {
@@ -1364,8 +1398,19 @@ export function useGronk() {
           setHistorySource('local')
         } else setMessages([])
 
-        const result = await window.gronk.loadSession(session.id)
-        if (abandoned()) return
+        // Named so this renderer can tell its own answer from an unrelated session's.
+        // The history events for this load carry it back.
+        const request = `load-${(loadCounter.current += 1)}`
+        loadRequest.current = request
+        const result = await window.gronk.loadSession(session.id, request)
+        if (abandoned()) {
+          // Only if it is still ours: a newer switch may have claimed the slot already,
+          // and clearing then would strip the claim from a load that is still wanted.
+          if (loadRequest.current === request) loadRequest.current = null
+          return
+        }
+        // The answer has arrived and been accepted; nothing further may claim it.
+        loadRequest.current = null
         focusRef.current = confirmSwitch(focusRef.current, result.sessionId)
         setSessionId(result.sessionId)
         await refreshMeta()
