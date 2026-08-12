@@ -78,11 +78,11 @@ longer looks.
   switched off the exact remedy the screen recommends, and restarting the app was the
   only way out.
 
-- **A rejected agent call says which call failed.** The CLI reports some failures —
-  including a spent weekly plan quota — as a bare JSON-RPC error whose standard name
-  is "Internal error", and that is all the banner used to show. It now names the call
-  and the code, keeps the agent's own reason when there is one, and for that specific
-  empty error suggests checking Grok usage limits first.
+- **A rejected agent call says which call failed.** A JSON-RPC `-32603` arrives as the
+  bare words "Internal error", and that is all the banner used to show. It now names
+  the call and the code, keeps the agent's own reason when there is one, and says that
+  a well-formed request failing this way is a fault inside the agent rather than
+  something to change locally.
 
 - **A turn that fails before the agent says anything no longer leaves a blank message**
   in the conversation, or on disk. Each failed attempt used to add another.

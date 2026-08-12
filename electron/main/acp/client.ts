@@ -69,14 +69,21 @@ export function rpcErrorMessage(
     typeof error.data === 'string' && error.data.trim() ? `: ${error.data.trim()}` : ''
 
   if (generic) {
-    // No reason given, and one cause is common enough to name: a Grok plan whose weekly
-    // limit is spent arrives exactly like this — a -32603 with the JSON-RPC name for the
-    // code and nothing else. Gronk cannot see an account's entitlement, so this is
-    // offered as the first thing to check rather than asserted as the cause. Diagnosing
-    // it took a maintainer a screenshot of the Grok website and half an hour.
+    // No reason given, and deliberately no guess at one.
+    //
+    // This used to suggest a spent plan quota, which was wrong. The CLI reports rate
+    // limits on their own code — `RATE_LIMITED_ERROR_CODE = -32003`, set only for an HTTP
+    // 429 — with its own user-facing copy, and it classifies -32603 as a server error
+    // specifically NOT a rate limit (`stop_failure_error_type`, xai-org/grok-build). So a
+    // quota block arrives clearly labelled, and pointing at quota here sent people to
+    // check the one thing the CLI would already have told them about.
+    //
+    // What -32603 does mean is worth saying, because it decides whose problem it is: the
+    // call was well-formed and the agent failed inside it. That is not something the user
+    // can fix by changing what they typed.
     const hint =
       error.code === -32603
-        ? ' It gave no reason. If this keeps happening, check your Grok usage limits — a spent plan quota is reported exactly like this.'
+        ? ' It gave no reason. The request was well-formed, so this is a fault inside the agent rather than something to change here — worth retrying.'
         : '. It gave no reason.'
     return `${where}${code}${detail || hint}`
   }
