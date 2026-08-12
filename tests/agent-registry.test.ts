@@ -582,3 +582,30 @@ test('A FAILED RESUME PUTS THE CONVERSATION BACK BEFORE ANYTHING READS IT', asyn
   assert.notEqual(banner, -1, 'the banner this makes true is still here')
   assert.ok(restore < banner, 'and the restore happens before it')
 })
+
+test('EVERY HISTORY EVENT CARRIES THE REQUEST IT ANSWERS', async () => {
+  // The renderer accepts history for a session it has never heard of only when the event
+  // says it answers the load still outstanding there. If main stops stamping, that check
+  // silently starts refusing legitimate history and a restored conversation renders empty.
+  //
+  // Read from source: nothing in the suite constructs an AgentManager, and the renderer-side
+  // tests stamp the id in their own fakes, so this is the only thing standing between a
+  // dropped stamp and a green suite.
+  const source = readFileSync(new URL('../electron/main/agent-manager.ts', import.meta.url), 'utf8')
+
+  assert.match(
+    source,
+    /this\.historyRequestId = requestId/,
+    'loadSession no longer records the request it is answering'
+  )
+
+  const emits = source.match(/type: 'history-(replace|clear|done)'/g) ?? []
+  assert.equal(emits.length, 4, 'the number of history emits changed — check each one stamps')
+
+  const stamped = source.match(/forRequest: this\.historyRequestId/g) ?? []
+  assert.equal(
+    stamped.length,
+    emits.length,
+    'a history event is emitted without the request id it answers'
+  )
+})

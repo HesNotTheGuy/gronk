@@ -22,7 +22,7 @@ import {
 } from '../store'
 import { parseQuery, rankHits, scoreSession } from '../../../shared/session-search'
 import { rememberExportedPath } from './exported-paths'
-import { assertString } from './validate'
+import { assertOptionalString, assertString } from './validate'
 import type { IpcContext } from './context'
 import type { ChatMessage } from '../../../shared/types'
 
@@ -32,7 +32,7 @@ export function registerSessionsIpc(ctx: IpcContext): void {
     return listSessions()
   })
 
-  ipcMain.handle('gronk:load-session', async (e, sessionId: string) => {
+  ipcMain.handle('gronk:load-session', async (e, sessionId: unknown, requestId?: unknown) => {
     assertTrustedSender(e)
     const auth = await getAuthStatus()
     if (!auth.authenticated) {
@@ -42,9 +42,12 @@ export function registerSessionsIpc(ctx: IpcContext): void {
       )
     }
     const id = assertString(sessionId, 'sessionId')
+    // Validated like any other renderer argument: it is echoed back on this load's
+    // history events, so it reaches the renderer's own filtering decisions.
+    const request = assertOptionalString(requestId, 'requestId')
     const sessions = listSessions()
     const match = sessions.find((s) => s.id === id)
-    return agentManager.loadSession(id, match?.cwd)
+    return agentManager.loadSession(id, match?.cwd, request)
   })
 
   ipcMain.handle('gronk:get-transcript', (e, sessionId: string) => {

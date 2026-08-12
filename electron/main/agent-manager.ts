@@ -146,6 +146,14 @@ export class AgentManager {
   private lastPlan: { messageId: string; plan: unknown } | null = null
   /** What the last `history-done` reported, kept for the same reason as the plan. */
   private lastHistorySource: 'acp' | 'local' | 'mixed' | 'empty' | null = null
+  /**
+   * The renderer's id for the load in progress, echoed on this load's history events.
+   *
+   * It lets the renderer tell its own answer from an unrelated session's — those events are
+   * otherwise identical, and a load can legitimately resolve to a session id the renderer
+   * has never heard, so it had to accept both.
+   */
+  private historyRequestId: string | undefined
 
   setWindow(win: BrowserWindow | null): void {
     this.window = win
@@ -490,8 +498,10 @@ export class AgentManager {
    */
   async loadSession(
     sessionId: string,
-    cwd?: string
+    cwd?: string,
+    requestId?: string
   ): Promise<{ sessionId: string; restored: boolean }> {
+    this.historyRequestId = requestId
     const targetCwd = cwd ? normalizeCwd(cwd) : this.cwd
     if (!targetCwd) throw new Error('No project folder for session')
 
@@ -511,9 +521,14 @@ export class AgentManager {
     // One event with the whole cache: clear + N user-message emits made restore
     // thrash the renderer for large sessions (and looked hung).
     if (plan.messages.length > 0) {
-      this.emit({ type: 'history-replace', sessionId, messages: plan.messages })
+      this.emit({
+        type: 'history-replace',
+        sessionId,
+        messages: plan.messages,
+        forRequest: this.historyRequestId
+      })
     } else {
-      this.emit({ type: 'history-clear', sessionId })
+      this.emit({ type: 'history-clear', sessionId, forRequest: this.historyRequestId })
     }
 
     try {
@@ -578,7 +593,12 @@ export class AgentManager {
 
       this.persistLiveTranscript()
       this.lastHistorySource = source
-      this.emit({ type: 'history-done', sessionId: this.sessionId, source })
+      this.emit({
+        type: 'history-done',
+        sessionId: this.sessionId,
+        source,
+        forRequest: this.historyRequestId
+      })
       return { sessionId: this.sessionId, restored: this.liveMessages.length > 0 }
     } catch (err) {
       this.replayingHistory = false
@@ -611,7 +631,8 @@ export class AgentManager {
         this.emit({
           type: 'history-done',
           sessionId,
-          source: this.lastHistorySource
+          source: this.lastHistorySource,
+          forRequest: this.historyRequestId
         })
         return { sessionId: this.sessionId || sessionId, restored: local.length > 0 }
       } catch (err2) {
@@ -1348,7 +1369,11 @@ export interface ManagedSession {
     cwd: string,
     options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project' }
   ): Promise<{ sessionId: string }>
-  loadSession(sessionId: string, cwd?: string): Promise<{ sessionId: string; restored: boolean }>
+  loadSession(
+    sessionId: string,
+    cwd?: string,
+    requestId?: string
+  ): Promise<{ sessionId: string; restored: boolean }>
   stop(): Promise<void>
   sendPrompt(text: string, options?: unknown): Promise<{ messageId: string }>
   cancelPrompt(): Promise<void>
@@ -1605,7 +1630,11 @@ export class AgentRegistry {
    * Open a stored session. One already live is focused rather than reloaded,
    * because reloading it would tear down the work this branch exists to keep.
    */
-  async loadSession(sessionId: string, cwd?: string): Promise<{ sessionId: string; restored: boolean }> {
+  async loadSession(
+    sessionId: string,
+    cwd?: string,
+    requestId?: string
+  ): Promise<{ sessionId: string; restored: boolean }> {
     const live = this.sessions.get(sessionId)
     if (live && live.getConnectionState() === 'ready') {
       this.focus(sessionId)
@@ -1617,7 +1646,7 @@ export class AgentRegistry {
       this.adopt(manager)
       this.booting = manager
     }
-    const result = await manager.loadSession(sessionId, cwd)
+    const result = await manager.loadSession(sessionId, cwd, requestId)
     this.sessions.set(result.sessionId, manager)
     if (this.booting === manager) this.booting = null
     this.focus(result.sessionId)

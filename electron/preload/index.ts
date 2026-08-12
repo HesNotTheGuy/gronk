@@ -44,7 +44,8 @@ const api: GronkApi = {
     sessionId?: string
   ) => ipcRenderer.invoke('gronk:respond-permission', requestId, decision, sessionId),
   listSessions: () => ipcRenderer.invoke('gronk:list-sessions'),
-  loadSession: (sessionId: string) => ipcRenderer.invoke('gronk:load-session', sessionId),
+  loadSession: (sessionId: string, requestId?: string) =>
+    ipcRenderer.invoke('gronk:load-session', sessionId, requestId),
   searchSessions: (query: string) => ipcRenderer.invoke('gronk:search-sessions', query),
   getTranscript: (sessionId: string) => ipcRenderer.invoke('gronk:get-transcript', sessionId),
   saveTranscript: (sessionId: string, messages: ChatMessage[]) =>

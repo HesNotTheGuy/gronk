@@ -108,10 +108,23 @@ test('A LOAD THAT RESOLVES TO A DIFFERENT ID STILL PAINTS ITS HISTORY', async ()
   ]
   let emit: ((event: MainToRendererEvent) => void) | null = null
   const h = await mountHook({
-    loadSession: async () => {
-      // Main emits under the id it actually loaded, before the call resolves.
-      emit?.({ type: 'history-replace', sessionId: 'resolved-elsewhere', messages: restored })
-      emit?.({ type: 'history-done', sessionId: 'resolved-elsewhere', source: 'local' })
+    loadSession: async (_id?: unknown, requestId?: unknown) => {
+      // Main emits under the id it actually loaded, before the call resolves — and stamps
+      // those events with the request id the renderer handed in, which is how the renderer
+      // can tell this answer apart from an unrelated session's identical-looking events.
+      const forRequest = requestId as string | undefined
+      emit?.({
+        type: 'history-replace',
+        sessionId: 'resolved-elsewhere',
+        messages: restored,
+        forRequest
+      })
+      emit?.({
+        type: 'history-done',
+        sessionId: 'resolved-elsewhere',
+        source: 'local',
+        forRequest
+      })
       return { sessionId: 'resolved-elsewhere', restored: true }
     }
   })
@@ -1057,6 +1070,82 @@ test('A MESSAGE THE AGENT NEVER FILLED IS TAKEN BACK OFF SCREEN', async () => {
     const ids = (h.hook().messages as { id: string }[]).map((m) => m.id)
     assert.ok(!ids.includes('blank'), 'the empty bubble stayed on screen')
     assert.ok(ids.includes('keep-me'), 'it took a real message with it')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+// ── #77: history is claimed by the load that asked for it ───────────────────
+
+test('HISTORY FROM AN UNRELATED SESSION IS REFUSED MID-SWITCH', async () => {
+  // The hole this closes, and it only exists mid-switch. Once a switch has settled the
+  // ordinary focus filter already refuses a foreign session — an earlier version of this
+  // test emitted after settling and passed without exercising anything.
+  //
+  // While a switch is OPEN the filter accepts any named session on purpose, because a load
+  // can resolve to an id this renderer has never heard. So a history event naming an unknown
+  // session used to be indistinguishable from that legitimate case, and accepting it repaints
+  // the conversation being read. `forRequest` is what tells them apart.
+  const slow = slowLoad('slow')
+  const h = await mountHook({ loadSession: slow.loadSession })
+  try {
+    await selectInto(h, 'mine')
+    await act(async () => {
+      h.emit(chunk('mine', 'the conversation I am reading'))
+    })
+    await flush()
+    const before = transcript(h)
+
+    await act(async () => {
+      const pending = h.hook().selectSession(session('slow'))
+      await slow.parked
+
+      // Mid-switch. Nothing here asked for this session's history.
+      h.emit({
+        type: 'history-replace',
+        sessionId: 'somebody-else',
+        messages: [
+          { id: 'x1', role: 'user', text: 'SOMEBODY ELSE HISTORY', createdAt: 1 } as ChatMessage
+        ]
+      } as MainToRendererEvent)
+      await flush()
+      assert.doesNotMatch(transcript(h), /SOMEBODY ELSE/, 'accepted mid-switch')
+
+      slow.release()
+      await pending
+    })
+    await flush()
+
+    assert.doesNotMatch(transcript(h), /SOMEBODY ELSE/)
+    assert.notEqual(before, '', 'the reading precondition held')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('AND THE ANSWER TO THIS LOAD IS STILL ACCEPTED MID-SWITCH', async () => {
+  // The other direction, because the guard must not close the door on the case the latitude
+  // exists for: main answering with a session id the renderer has not heard yet.
+  const bus: { emit: Harness['emit'] } = { emit: () => {} }
+  const h = await mountHook({
+    loadSession: async (id?: unknown, requestId?: unknown) => {
+      bus.emit({
+        type: 'history-replace',
+        sessionId: 'resolved-elsewhere',
+        messages: [
+          { id: 'r1', role: 'user', text: 'THE ANSWER', createdAt: 1 } as ChatMessage
+        ],
+        forRequest: requestId as string
+      } as MainToRendererEvent)
+      return { sessionId: 'resolved-elsewhere', restored: true }
+    }
+  })
+  bus.emit = h.emit
+  try {
+    await selectInto(h, 'clicked')
+    assert.match(transcript(h), /THE ANSWER/, 'the history for this very load was refused')
   } finally {
     h.unmount()
     h.restore()
