@@ -4,6 +4,29 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-08-11
+
+A correction and a fix. 0.4.0 gave wrong advice when a turn failed, and this replaces it.
+
+### Fixed
+
+- **A failed turn no longer suggests the wrong cause.** 0.4.0 said that a bare
+  "Internal error" from the agent probably meant a spent plan quota, and told you to
+  check your usage limits. That is wrong: the Grok CLI reports rate limits on their own
+  error code with its own message about upgrading, and treats "Internal error" as a
+  server fault specifically *not* a rate limit. So the advice pointed at the one thing
+  the CLI would already have told you about clearly. The message now says what the code
+  actually means — a well-formed request that failed inside the agent, worth retrying —
+  and guesses at nothing.
+
+- **History from one conversation can no longer be painted into another.** Opening a
+  session can return a different session than the one clicked, so the app had to accept
+  restored history for a conversation it had not heard of yet. That left a window, while
+  a session was opening, where an unrelated session finishing its own startup could
+  repaint what you were reading — and the save that follows would store it under the
+  name of the conversation you thought you were in. Each open is now named, and restored
+  history is only accepted from the open it answers.
+
 ## [0.4.0] - 2026-08-11
 
 Two things happened in this release. Sessions stopped being one-at-a-time, and the
