@@ -16,7 +16,9 @@ import { SessionCard } from './components/SessionCard'
 import { SettingsPanel } from './components/SettingsPanel'
 import { Sidebar } from './components/Sidebar'
 import { StatusMenu } from './components/StatusMenu'
+import { WhatsNew } from './components/WhatsNew'
 import { YoloConfirm } from './components/YoloConfirm'
+import { decideWhatsNew } from './lib/whats-new'
 import { CliInstall } from './components/CliInstall'
 import { PaneSplitter } from './components/PaneSplitter'
 import { PreviewPane } from './components/PreviewPane'
@@ -43,6 +45,27 @@ const CHAT_HINTS = [
 
 export function App() {
   const g = useGronk()
+  /**
+   * Dismissed in this run. Separate from the stored version because the record is written
+   * asynchronously — without it the panel stays up for a beat after "Got it", which reads as
+   * the button not working.
+   */
+  const [notesDismissed, setNotesDismissed] = useState(false)
+  const whatsNew = useMemo(() => {
+    // Settings not loaded yet: deciding now would treat every launch as a first run and
+    // record the current version, so the update after this one would show nothing.
+    if (!g.settings) return { notes: [], record: null }
+    return decideWhatsNew(__APP_VERSION__, g.settings.seenNotesVersion)
+  }, [g.settings])
+
+  /**
+   * A first run records where it came in and shows nothing. Someone opening the app for the
+   * first time wants the app, not a changelog — but the next update needs something to
+   * compare against, so the silent record matters.
+   */
+  useEffect(() => {
+    if (whatsNew.notes.length === 0 && whatsNew.record) void g.markNotesSeen(whatsNew.record)
+  }, [whatsNew, g.markNotesSeen])
   /**
    * Lifted above Home so leaving the surface does not wipe the painted grid.
    * Refreshed only when Home becomes visible — getActivityCalendar re-reads up
@@ -845,6 +868,17 @@ export function App() {
       {g.showYoloConfirm ? (
         <YoloConfirm onConfirm={() => void g.confirmYolo()} onCancel={g.cancelYolo} />
       ) : null}
+
+      {/* What changed since the version last run here. `decideWhatsNew` is what decides
+          whether that is anything at all — a fresh install, a downgrade and an unreleased
+          build all show nothing, for different reasons. */}
+      <WhatsNew
+        notes={notesDismissed ? [] : whatsNew.notes}
+        onDismiss={() => {
+          setNotesDismissed(true)
+          if (whatsNew.record) void g.markNotesSeen(whatsNew.record)
+        }}
+      />
 
       {g.showArchived ? (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Archived sessions">

@@ -6089,6 +6089,75 @@ html[data-theme='light'] .auth-card {
   font-variant-numeric: tabular-nums;
 }
 
+/* What changed since the version last run here. Quiet and readable: it is shown once, to
+   somebody who wants to get on with using the app. */
+.whats-new {
+  max-width: 620px;
+  width: calc(100% - 64px);
+}
+
+.whats-new-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 16px 20px 0;
+}
+
+.whats-new-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.whats-new-version {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.whats-new-body {
+  padding: 8px 20px 4px;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.whats-new-release + .whats-new-release {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.whats-new-release-version {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.whats-new-body h3 {
+  margin: 12px 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.whats-new-body ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.whats-new-body li {
+  margin: 4px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.whats-new-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px 16px;
+}
+
 .archived-modal {
   width: min(620px, 100%);
   max-height: min(86vh, 780px);

@@ -336,6 +336,15 @@ export interface AppSettings {
   alwaysApprove: boolean
   /** User acknowledged YOLO risk at least once this install */
   alwaysApproveAck?: boolean
+  /**
+   * The app version whose release notes have been seen, per install.
+   *
+   * Survives an update, which is the whole point: a dismissed panel that comes back on the
+   * next release looks broken rather than merely redundant. Absent means this install has
+   * never recorded one, which is treated as a first run — nothing is shown, and the current
+   * version is recorded so the next update has something to compare against.
+   */
+  seenNotesVersion?: string
   grokBinary?: string
   theme: 'dark' | 'light' | 'system'
   /** Custom dev command for the preview pane (defaults to `npm run dev`). */

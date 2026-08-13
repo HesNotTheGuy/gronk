@@ -77,6 +77,7 @@ const EXPECTED_MEMBERS: string[] = [
   "loadPluginCatalog",
   "login",
   "logout",
+  "markNotesSeen",
   "marketplaces",
   "mcpServers",
   "messages",
