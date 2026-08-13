@@ -117,6 +117,12 @@ export function SettingsPanel({
   onChangePermissionMode,
   onOpenPlugins
 }: Props) {
+  /**
+   * What "follow grok" resolves to right now, named so the choice is not a blind one.
+   * Absent when the model list could not be read, in which case the option still works
+   * — it means "send no model", which does not depend on knowing the answer.
+   */
+  const defaultModelName = models.find((m) => m.isDefault)?.name
   /** Chosen destination awaiting confirmation. A move is never one click. */
   const [pendingTarget, setPendingTarget] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -338,27 +344,36 @@ export function SettingsPanel({
         </div>
 
         <div className="settings-block">
-          <div className="section-label">Model</div>
+          <div className="section-label">Model for new sessions</div>
+          {/*
+            `settings?.model ?? ''` and nothing else. This used to fall back to the
+            model grok reports as its default, so a pinned install and an unpinned one
+            looked identical here — the one screen that could have said which it was.
+            Empty is a real, distinct state: no model is stored and none is sent.
+          */}
+          {/* `model-select` is a shared style class — the theme dropdown above wears it
+              too — so the label is also what identifies this control. */}
           <select
             className="model-select"
-            value={settings?.model || models.find((m) => m.isDefault)?.id || ''}
+            aria-label="Model for new sessions"
+            value={settings?.model ?? ''}
             onChange={(e) => onChangeModel(e.target.value)}
             disabled={!auth?.authenticated}
           >
-            {models.length === 0 ? (
-              <option value="">No models discovered</option>
-            ) : (
-              models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name || m.id}
-                  {m.isDefault ? ' (default)' : ''}
-                </option>
-              ))
-            )}
+            <option value="">
+              {defaultModelName ? `Follow grok (${defaultModelName})` : 'Follow grok'}
+            </option>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name || m.id}
+              </option>
+            ))}
           </select>
           <p className="settings-hint">
-            Changing model restarts the agent for the current project (uses{' '}
-            <code>grok models</code>).
+            {settings?.model
+              ? 'New sessions are pinned to this model. Grok releasing a newer one will not change it until you choose Follow grok.'
+              : 'New sessions use whatever grok defaults to, so a newer model arrives on its own.'}{' '}
+            Switching model inside a conversation changes that conversation only.
           </p>
         </div>
 

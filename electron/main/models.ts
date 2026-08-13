@@ -30,7 +30,7 @@ async function probeModels(): Promise<ModelInfo[]> {
   const settings = getSettings()
   const binary = resolveGrokBinary(settings.grokBinary)
   if (!binary) {
-    return [{ id: 'grok-4.5', name: 'Grok 4.5', isDefault: true }]
+    return [{ id: 'grok-4.6', name: 'Grok 4.6', isDefault: true }]
   }
 
   return new Promise((resolve) => {
@@ -69,6 +69,11 @@ async function probeModels(): Promise<ModelInfo[]> {
   })
 }
 
+/**
+ * Shown when the CLI could not be asked. Display only — it is never sent as `-m`, because
+ * an unset `settings.model` means Gronk passes no model at all and the CLI picks. So this
+ * being one release behind makes a label wrong, not a session.
+ */
 export function defaultModels(): ModelInfo[] {
   return [{ id: 'grok-4.5', name: 'Grok 4.5', isDefault: true }]
 }

@@ -154,6 +154,18 @@ export function useAppSettings({
     setShowYoloConfirm(false)
   }, [])
 
+  /**
+   * Switch the model of the conversation in front of you. This session only.
+   *
+   * It used to write the stored default as well, and that is how an install ends up
+   * pinned: one switch inside one chat, months ago, and every session since has been
+   * started with `-m` naming a model the CLI has long stopped defaulting to. Nobody
+   * chose that, and nothing in the app said it had happened.
+   *
+   * So the two questions are two controls now. This one is "what is this conversation
+   * running", and the Settings dropdown is "what should new ones start with" — which is
+   * also the only place a pin can be created, deliberately, and seen afterwards.
+   */
   const changeModel = useCallback(
     async (modelId: string, runningModel?: string | null) => {
       // Picking the model already in use does nothing at all. It used to write the
@@ -161,24 +173,27 @@ export function useAppSettings({
       // were already on replaced the conversation with an empty session. Nothing about
       // that was asked for.
       if (modelId === (runningModel ?? settings?.model)) return
-
-      // Stored first, and stored either way: this is the model the NEXT session starts
-      // with, and that is true whether or not one is running now.
-      const next = await window.gronk.setSettings({ model: modelId })
-      setSettingsState(next)
-
-      // A live session switches in place. It used to restart here, and restarting means
-      // `forceNew` — so changing model from inside a conversation replaced it with an
-      // empty one, and the picker under the composer was unusable for the thing it is
-      // there to do.
-      if (await liveSwitchModel(modelId)) return
-
-      // Nothing live. A folder is open but idle, so the next start is the one that has
-      // to pick the change up.
-      if (cwd) await restartAgent()
+      await liveSwitchModel(modelId)
     },
-    [cwd, restartAgent, liveSwitchModel, settings?.model]
+    [liveSwitchModel, settings?.model]
   )
+
+  /**
+   * The model new sessions start with. `''` clears it, which is the shipped state.
+   *
+   * Cleared means Gronk passes no `-m` at all and the CLI uses its own default, so a
+   * newer model arrives on its own. A stored value overrides that until it is cleared
+   * again — which is the entire point of storing one, and was the entire problem when
+   * there was no way to.
+   *
+   * Deliberately does not touch a running session: this is a statement about the next
+   * one, and reaching into the current conversation to apply it would be answering a
+   * question nobody asked.
+   */
+  const setDefaultModel = useCallback(async (modelId: string) => {
+    const next = await window.gronk.setSettings({ model: modelId })
+    setSettingsState(next)
+  }, [])
 
   /**
    * Record that this version's notes have been read.
@@ -240,6 +255,7 @@ export function useAppSettings({
     confirmYolo,
     cancelYolo,
     changeModel,
+    setDefaultModel,
     markNotesSeen,
     changePermissionMode,
     pickBinary,

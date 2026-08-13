@@ -130,6 +130,9 @@ const EXPECTED_MEMBERS: string[] = [
   "sessionPermissionMode",
   "sessions",
   "setCliInstallResult",
+  // The stored model for new sessions. Separate from changeModel, which is the
+  // conversation in front of you — one control per question.
+  "setDefaultModel",
   "setDraft",
   "setError",
   "setPlanCollapsed",
