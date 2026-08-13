@@ -453,11 +453,30 @@ export function useGronk() {
     ...catalog
   } = useSessionCatalog()
 
+  /**
+   * Switch the model on the session in front of you, or say that there is none.
+   *
+   * Lives here rather than in useAppSettings because the session id and the model that
+   * session is running are this hook's state. `false` means nothing was live to switch,
+   * and the caller stores the choice for the next session instead.
+   */
+  const liveSwitchModel = useCallback(
+    async (modelId: string) => {
+      if (!sessionId) return false
+      const { model } = await window.gronk.setModel(modelId, sessionId)
+      // The agent's answer, not the request: it resolves what it was handed, and a
+      // picker showing the asked-for id would be describing a guess.
+      setSessionModel(model)
+      return true
+    },
+    [sessionId]
+  )
+
   const {
     hydrate: hydrateSettings,
     refreshAudit,
     ...settingsState
-  } = useAppSettings({ cwd, connection, restartAgent, setAuth })
+  } = useAppSettings({ cwd, connection, restartAgent, liveSwitchModel, setAuth })
 
   useEffect(() => {
     messagesRef.current = messages

@@ -16,10 +16,16 @@ interface SettingsDeps {
   connection: ConnectionState
   /**
    * Restart the agent on whichever surface is live, forcing a new session. The
-   * CLI reads its model and permission mode at spawn time, so changing either
-   * only reaches it through a fresh agent.
+   * CLI reads its permission mode at spawn time, so changing that only reaches it
+   * through a fresh agent.
    */
   restartAgent: () => Promise<void>
+  /**
+   * Switch the running session's model in place. Resolves `false` when there is no
+   * live session to switch, which is not a failure — it means the choice applies to
+   * the next one and only has to be stored.
+   */
+  liveSwitchModel: (modelId: string) => Promise<boolean>
   /** useAuth's setter: a health refresh returns an AuthStatus with it. */
   setAuth: (auth: AuthStatus) => void
 }
@@ -34,7 +40,13 @@ interface SettingsDeps {
  * The subscription is returned from the effect so it is torn down on unmount;
  * leaking it would make every later model push land twice.
  */
-export function useAppSettings({ cwd, connection, restartAgent, setAuth }: SettingsDeps) {
+export function useAppSettings({
+  cwd,
+  connection,
+  restartAgent,
+  liveSwitchModel,
+  setAuth
+}: SettingsDeps) {
   const [settings, setSettingsState] = useState<AppSettings | null>(null)
   const [grokPath, setGrokPath] = useState<string | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -149,11 +161,23 @@ export function useAppSettings({ cwd, connection, restartAgent, setAuth }: Setti
       // were already on replaced the conversation with an empty session. Nothing about
       // that was asked for.
       if (modelId === (runningModel ?? settings?.model)) return
+
+      // Stored first, and stored either way: this is the model the NEXT session starts
+      // with, and that is true whether or not one is running now.
       const next = await window.gronk.setSettings({ model: modelId })
       setSettingsState(next)
+
+      // A live session switches in place. It used to restart here, and restarting means
+      // `forceNew` — so changing model from inside a conversation replaced it with an
+      // empty one, and the picker under the composer was unusable for the thing it is
+      // there to do.
+      if (await liveSwitchModel(modelId)) return
+
+      // Nothing live. A folder is open but idle, so the next start is the one that has
+      // to pick the change up.
       if (cwd) await restartAgent()
     },
-    [cwd, restartAgent, settings?.model]
+    [cwd, restartAgent, liveSwitchModel, settings?.model]
   )
 
   /**

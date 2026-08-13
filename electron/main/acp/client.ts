@@ -57,6 +57,39 @@ type Pending = {
  * Gronk sending something wrong, -32603 is the agent failing inside a call we made
  * correctly.
  */
+/**
+ * Read the id the agent actually settled on out of a `session/set_model` reply.
+ *
+ * The result is a serde-serialized Rust `Result` under `_meta.model`: `{"Ok": "grok-4.5"}`
+ * on success, and the `Err` arm on refusal (the CLI has named failures for this call,
+ * `MODEL_SWITCH_REBUILD_FAILED` and an agent-type mismatch among them). Both arms are
+ * read rather than assuming success, because a switch that silently did nothing would
+ * leave the picker claiming a model the conversation is not running.
+ *
+ * The id is taken from the reply rather than echoed back from the request for the same
+ * reason: the agent resolves what it was given, and it is the one that knows.
+ */
+export function parseSetModelResult(
+  result: unknown
+): { ok: true; modelId: string } | { ok: false; message: string } {
+  const meta = (result as { _meta?: unknown } | null | undefined)?._meta
+  const model = (meta as { model?: unknown } | null | undefined)?.model
+  if (model && typeof model === 'object') {
+    const arm = model as { Ok?: unknown; Err?: unknown }
+    if (typeof arm.Ok === 'string' && arm.Ok.trim()) return { ok: true, modelId: arm.Ok }
+    if (arm.Err !== undefined) {
+      const said =
+        typeof arm.Err === 'string'
+          ? arm.Err
+          : typeof (arm.Err as { message?: unknown })?.message === 'string'
+            ? String((arm.Err as { message?: unknown }).message)
+            : ''
+      return { ok: false, message: said.trim() || 'The agent refused the model switch.' }
+    }
+  }
+  return { ok: false, message: 'The agent did not say which model it switched to.' }
+}
+
 export function rpcErrorMessage(
   method: string | undefined,
   error: { code?: number; message?: string; data?: unknown }
@@ -226,6 +259,16 @@ export class GrokAcpClient extends EventEmitter {
     prompt: Array<{ type: string; text?: string; [k: string]: unknown }>
   ): Promise<unknown> {
     return this.request('session/prompt', { sessionId, prompt })
+  }
+
+  /**
+   * Change the model on a session that is already running, conversation intact.
+   *
+   * The field is `modelId`. Sending `model` instead is rejected outright
+   * (-32602, "missing field `modelId`"), so there is no forgiving alias to fall back on.
+   */
+  async sessionSetModel(sessionId: string, modelId: string): Promise<unknown> {
+    return this.request('session/set_model', { sessionId, modelId })
   }
 
   async sessionCancel(sessionId: string): Promise<unknown> {
