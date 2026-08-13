@@ -164,3 +164,37 @@ test('WITH NOTHING TO SAY THE PANEL DOES NOT EXIST', async () => {
     view.unmount()
   }
 })
+
+// ── Retiring the explainer (#55, second half) ───────────────────────────────
+
+test('THE APP STOPS EXPLAINING ITSELF ONCE A TURN HAS BEEN COMPLETED', async () => {
+  // A turn, not a session: opening a project creates a session before anything is said in
+  // it, so a session count would say "clicked around" where this says "used it".
+  const { hasGotGoing } = await import('../src/lib/explainer')
+  const session = (over: Record<string, unknown> = {}) =>
+    ({ id: 's', cwd: '/w', title: 's', createdAt: 0, updatedAt: 0, ...over }) as never
+
+  assert.equal(hasGotGoing([]), false, 'nothing done yet')
+  assert.equal(hasGotGoing([session()]), false, 'a session with no turns is not "got going"')
+  assert.equal(hasGotGoing([session({ userTurns: 0 })]), false)
+  assert.equal(hasGotGoing([session({ userTurns: 1 })]), true)
+  assert.equal(
+    hasGotGoing([session({ userTurns: 0 }), session({ userTurns: 3 })]),
+    true,
+    'one conversation used is enough'
+  )
+})
+
+test('IT IS DERIVED, SO AN UPDATE CANNOT BRING THE EXPLANATION BACK', async () => {
+  // The requirement that made this one issue rather than two: whatever remembers "seen" has
+  // to survive an update, or every release re-explains the app to people who already know.
+  // Nothing is stored — the answer comes from their own sessions — so there is no flag to
+  // reset, no migration, and nothing for a release to clear.
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync(new URL('../src/lib/explainer.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(
+    source,
+    /setSettings|localStorage|seenNotesVersion|useState/,
+    'the explainer decision started storing something, which an update can clear'
+  )
+})

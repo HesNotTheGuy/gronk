@@ -7,6 +7,7 @@ import type {
   SessionLiveness
 } from '../../shared/types'
 import { SessionRow } from './SessionRow'
+import { hasGotGoing } from '../lib/explainer'
 import { folderName, isChatSession } from '../../shared/path'
 import { BrandMark } from './BrandMark'
 import {
@@ -224,6 +225,14 @@ export function Sidebar({
    * Build shows sessions immediately (flat recency by default). Chat keeps its
    * own list. Search still spans both and replaces the rails while active.
    */
+  /**
+   * The switcher's sublines say what Chat and Build are. Same reasoning as the header line
+   * they duplicate: once somebody has completed a turn they know, and this is a permanent
+   * two-line caption on the narrowest column in the app. Derived from the sessions already in
+   * scope rather than passed in, so there is no new prop to keep in step.
+   */
+  const gotGoing = hasGotGoing([...chatSessions, ...projectSessions])
+
   const showChatRail = surface === 'chat' && !searching
   const showProjectRails = surface === 'project' && !searching
 
@@ -266,7 +275,7 @@ export function Sidebar({
             title="Conversations with Grok. No project folder."
           >
             <span className="nav-item-label">Chat</span>
-            <span className="nav-item-sub">no project folder</span>
+            {gotGoing ? null : <span className="nav-item-sub">no project folder</span>}
           </button>
           <button
             type="button"
@@ -275,7 +284,7 @@ export function Sidebar({
             title="Grok working in a project on your computer"
           >
             <span className="nav-item-label">Build</span>
-            <span className="nav-item-sub">a folder on your computer</span>
+            {gotGoing ? null : <span className="nav-item-sub">a folder on your computer</span>}
           </button>
         </nav>
       </div>

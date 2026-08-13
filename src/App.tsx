@@ -19,6 +19,7 @@ import { StatusMenu } from './components/StatusMenu'
 import { WhatsNew } from './components/WhatsNew'
 import { YoloConfirm } from './components/YoloConfirm'
 import { decideWhatsNew } from './lib/whats-new'
+import { hasGotGoing } from './lib/explainer'
 import { CliInstall } from './components/CliInstall'
 import { PaneSplitter } from './components/PaneSplitter'
 import { PreviewPane } from './components/PreviewPane'
@@ -51,6 +52,11 @@ export function App() {
    * the button not working.
    */
   const [notesDismissed, setNotesDismissed] = useState(false)
+  /** Stop explaining the app once they have actually used it. */
+  const gotGoing = useMemo(
+    () => hasGotGoing([...g.chatSessions, ...g.projectOnlySessions]),
+    [g.chatSessions, g.projectOnlySessions]
+  )
   const whatsNew = useMemo(() => {
     // Settings not loaded yet: deciding now would treat every launch as a first run and
     // record the current version, so the update after this one would show nothing.
@@ -387,8 +393,17 @@ export function App() {
                 "in the app" for the same idea, none of which name the thing a
                 user actually wants to know: whether it touches their files.
               */}
+              {/*
+                The Home line explains what Chat and Build are, and it stops once the person
+                has completed a turn — see `hasGotGoing`. On their tenth session they were
+                still being told what Chat is, in the header, which on Windows is also most of
+                the titlebar. Either it worked and they no longer need it, or it did not and a
+                permanent line was never going to fix that.
+              */}
               {surface === 'home'
-                ? 'Chat is a conversation · Build gives Grok a folder to work in'
+                ? gotGoing
+                  ? ''
+                  : 'Chat is a conversation · Build gives Grok a folder to work in'
                 : surface === 'chat' && g.browsing
                   ? 'Conversations with Grok. No project folder.'
                   : surface === 'project' && g.browsing
