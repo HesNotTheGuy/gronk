@@ -17,7 +17,17 @@
     "types": [
       "node"
     ],
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    // The same two aliases the app builds with (electron.vite.config.ts,
+    // tsconfig.web.json). A test that mounts a component pulls that component's imports
+    // into this project, and a component reaching for `@shared/path` fails to typecheck
+    // here while compiling fine everywhere else. `tests/ts-loader.mjs` resolves the same
+    // pair at runtime.
+    "baseUrl": ".",
+    "paths": {
+      "@renderer/*": ["src/*"],
+      "@shared/*": ["shared/*"]
+    }
   },
   "include": [
     "tests/**/*.ts",

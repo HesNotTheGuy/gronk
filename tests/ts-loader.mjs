@@ -32,10 +32,31 @@ const ELECTRON_STUB = pathToFileURL(join(dirname(fileURLToPath(import.meta.url))
 /** Extensions tried for an extensionless relative import, in order. */
 const EXTENSIONS = ['.ts', '.tsx', '/index.ts', '/index.tsx']
 
+/**
+ * The two path aliases the app builds with, from `electron.vite.config.ts` and
+ * `tsconfig.web.json`. Without them a component that imports `@shared/path` cannot be
+ * mounted in a test at all — the import throws before the file is read, and the failure
+ * reads as a missing npm package rather than as a resolver gap.
+ */
+const ROOT = dirname(fileURLToPath(import.meta.url)).replace(/[\\/]tests$/, '')
+const ALIASES = [
+  ['@shared/', join(ROOT, 'shared')],
+  ['@renderer/', join(ROOT, 'src')]
+]
+
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === 'electron') {
       return { url: ELECTRON_STUB, shortCircuit: true }
+    }
+    for (const [prefix, dir] of ALIASES) {
+      if (!specifier.startsWith(prefix)) continue
+      const base = pathToFileURL(join(dir, specifier.slice(prefix.length))).href
+      for (const ext of ['', ...EXTENSIONS]) {
+        if (existsSync(fileURLToPath(`${base}${ext}`))) {
+          return { url: `${base}${ext}`, shortCircuit: true }
+        }
+      }
     }
     const relative = specifier.startsWith('./') || specifier.startsWith('../')
     const hasExtension = /\.[a-z0-9]+$/i.test(specifier)

@@ -83,7 +83,29 @@ test('THE PICKER FOLLOWS THE MODEL THE AGENT SETTLED ON', async () => {
   }
 })
 
-test('WITH NOTHING RUNNING THE CHOICE IS STORED AND NOTHING IS SWITCHED', async () => {
+test('SWITCHING A CONVERSATION DOES NOT REPIN THE APP', async () => {
+  // How an install ends up on a model the CLI stopped defaulting to: one switch inside
+  // one chat writes `settings.model`, every session after that is started with `-m`
+  // naming it, and nothing ever says so. The switch is about this conversation.
+  const h = await mountHook()
+  try {
+    await h.hook().selectSession(session('s1'))
+    await flush()
+
+    const mark = h.calls.length
+    await h.hook().changeModel('grok-4.5')
+    await flush()
+    const after = h.calls.slice(mark)
+
+    assert.ok(after.includes('setModel'), `the session was not switched: ${after}`)
+    assert.ok(!after.includes('setSettings'), `the switch wrote the stored default: ${after}`)
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('WITH NOTHING RUNNING THERE IS NOTHING TO SWITCH', async () => {
   const h = await mountHook()
   try {
     const mark = h.calls.length
@@ -91,8 +113,37 @@ test('WITH NOTHING RUNNING THE CHOICE IS STORED AND NOTHING IS SWITCHED', async 
     await flush()
     const after = h.calls.slice(mark)
 
-    assert.ok(after.includes('setSettings'), `the choice was not stored: ${after}`)
     assert.ok(!after.includes('setModel'), `it tried to switch a session that is not there: ${after}`)
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('THE STORED DEFAULT IS SET AND CLEARED FROM SETTINGS, AND TOUCHES NO SESSION', async () => {
+  // Cleared is the shipped state and the escape from a pin: no `-m` is sent at all, so
+  // the CLI uses its own default and a newer model arrives without anyone doing anything.
+  const stored: unknown[] = []
+  const h = await mountHook({
+    setSettings: async (patch: Record<string, unknown>) => {
+      stored.push(patch)
+      return { permissionMode: 'default', alwaysApprove: false, alwaysApproveAck: false, theme: 'dark', ...patch }
+    }
+  })
+  try {
+    await h.hook().selectSession(session('s1'))
+    await flush()
+
+    const mark = h.calls.length
+    await h.hook().setDefaultModel('grok-4.5')
+    await h.hook().setDefaultModel('')
+    await flush()
+
+    assert.deepEqual(stored.slice(-2), [{ model: 'grok-4.5' }, { model: '' }])
+    assert.ok(
+      !h.calls.slice(mark).includes('setModel'),
+      'changing the default reached into the running conversation'
+    )
   } finally {
     h.unmount()
     h.restore()
