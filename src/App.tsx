@@ -498,19 +498,19 @@ export function App() {
               statusClass={statusClass}
               accountLabel={g.auth?.accountLabel}
               authenticated={g.isAuthenticated}
-              model={g.settings?.model}
+              /* Same reading as the composer's picker: this menu is only shown inside a
+                 conversation, so it has to name that conversation's model rather than
+                 what the next session would start with. */
+              model={g.sessionModel ?? g.settings?.model}
               models={g.models}
               grokPath={g.grokPath}
               showModel={inConversation}
               onSignIn={() => setShowAuthModal(true)}
               onOpenSettings={() => g.setShowSettings(true)}
-              onChangeModel={
-                g.updateSettings
-                  ? (id) => {
-                      void g.updateSettings({ model: id })
-                    }
-                  : undefined
-              }
+              /* Through changeModel, not a bare settings write. Writing the setting alone
+                 left the running session on the old model while every picker claimed the
+                 new one — the choice looked applied and nothing had happened. */
+              onChangeModel={(id) => void g.changeModel(id, g.sessionModel)}
             />
           </div>
         </header>

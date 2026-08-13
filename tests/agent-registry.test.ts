@@ -115,6 +115,7 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
       state = 'idle'
     },
     sendPrompt: async () => ({ messageId: 'm1' }),
+    setModel: async (modelId: string) => ({ model: modelId }),
     cancelPrompt: async () => {},
     respondPermission: () => {}
   }
@@ -608,4 +609,32 @@ test('EVERY HISTORY EVENT CARRIES THE REQUEST IT ANSWERS', async () => {
     emits.length,
     'a history event is emitted without the request id it answers'
   )
+})
+
+test('A MODEL SWITCH WITH NOTHING RUNNING FAILS LOUDLY RATHER THAN QUIETLY', async () => {
+  // The renderer's fallback is to store the choice for the next session, and it only
+  // reaches that fallback if this call rejects. A silent no-op would leave the picker
+  // showing a model nothing is running on, with nothing stored either.
+  const { registry } = harness(fakeSession('s1'))
+
+  await assert.rejects(
+    () => registry.setModel('grok-4.5', 'not-a-session'),
+    /not running/i
+  )
+})
+
+test('A NAMED SESSION IS THE ONE SWITCHED', async () => {
+  const a = fakeSession('a')
+  const b = fakeSession('b')
+  const switched: string[] = []
+  b.setModel = async (modelId: string) => {
+    switched.push(modelId)
+    return { model: modelId }
+  }
+  const { registry } = harness(a, b)
+  await registry.start('/work/alpha')
+  await registry.start('/work/beta')
+
+  assert.deepEqual(await registry.setModel('grok-4.5', 'b'), { model: 'grok-4.5' })
+  assert.deepEqual(switched, ['grok-4.5'], 'the switch went to the wrong session')
 })

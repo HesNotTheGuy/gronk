@@ -37,6 +37,8 @@ const api: GronkApi = {
   getSessionLiveness: () => ipcRenderer.invoke('gronk:get-session-liveness'),
   sendPrompt: (text: string, options?: SendPromptOptions) =>
     ipcRenderer.invoke('gronk:send-prompt', text, options),
+  setModel: (model: string, sessionId?: string) =>
+    ipcRenderer.invoke('gronk:set-model', model, sessionId),
   cancelPrompt: (sessionId?: string) => ipcRenderer.invoke('gronk:cancel-prompt', sessionId),
   respondPermission: (
     requestId: number | string,

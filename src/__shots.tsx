@@ -642,6 +642,7 @@ const api: Record<string, unknown> = {
   startAgent: async () => ({ sessionId: 's-orbital-1' }),
   stopAgent: async () => undefined,
   sendPrompt: async () => ({ messageId: 'm-new' }),
+  setModel: async (model: string) => ({ model }),
   cancelPrompt: async () => undefined,
   respondPermission: async () => undefined,
   loadSession: async () => ({ sessionId: 's-orbital-1', restored: true }),

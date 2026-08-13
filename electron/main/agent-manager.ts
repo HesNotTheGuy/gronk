@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto'
 import {
   GrokAcpClient,
   isAllowedGrokBasename,
+  parseSetModelResult,
   probeGrokBinary,
   resolveGrokBinary,
   SessionUsageTracker,
@@ -899,6 +900,38 @@ export class AgentManager {
     this.liveMessages = this.liveMessages.map((m) => (m.id === messageId ? patch(m) : m))
   }
 
+  /**
+   * Switch the model on the running session, keeping the conversation.
+   *
+   * This used to be a restart. Picking a model wrote the setting and respawned the child
+   * with `forceNew`, which is a different session with an empty transcript — so the
+   * picker sitting under the composer could not be used from inside a conversation,
+   * which is the only place anyone wants it.
+   *
+   * The CLI supports the switch directly: `session/set_model` rebuilds the agent harness
+   * against the running session and carries the history across. Verified against grok
+   * 0.2.112 by giving 4.6 a codeword, switching the live session to 4.5, and asking 4.5
+   * for it — it answered.
+   *
+   * Refusal is reported rather than swallowed. The CLI can decline (an incompatible
+   * agent type, a failed harness rebuild), and a silent failure would leave the picker
+   * naming a model the conversation is not running on.
+   */
+  async setModel(modelId: string): Promise<{ model: string }> {
+    if (!this.client || !this.sessionId) throw new Error('Agent is not running')
+    if (modelId === this.currentModel) return { model: modelId }
+
+    const parsed = parseSetModelResult(await this.client.sessionSetModel(this.sessionId, modelId))
+    if (!parsed.ok) throw new Error(parsed.message)
+
+    this.currentModel = parsed.modelId
+    // `isDefault` is deliberately left alone: it marks the CLI's own default, which a
+    // user switching model has not changed. `current` is the field that says what this
+    // conversation is running, and it is the one the pickers read first.
+    this.emit({ type: 'models', models: this.models, current: this.currentModel })
+    return { model: this.currentModel }
+  }
+
   async cancelPrompt(): Promise<void> {
     if (!this.client || !this.sessionId) return
 
@@ -1376,6 +1409,7 @@ export interface ManagedSession {
   ): Promise<{ sessionId: string; restored: boolean }>
   stop(): Promise<void>
   sendPrompt(text: string, options?: unknown): Promise<{ messageId: string }>
+  setModel(modelId: string): Promise<{ model: string }>
   cancelPrompt(): Promise<void>
   respondPermission(requestId: number | string, decision: PermissionDecision): void
 }
@@ -1713,6 +1747,16 @@ export class AgentRegistry {
   async cancelPrompt(sessionId?: string | null): Promise<void> {
     const manager = sessionId ? this.sessions.get(sessionId) : this.focused()
     await manager?.cancelPrompt()
+  }
+
+  /**
+   * Switch a live session's model.
+   *
+   * `require` rather than a silent no-op: the caller needs to know a live switch did not
+   * happen, because its fallback is to store the choice for the next session instead.
+   */
+  async setModel(modelId: string, sessionId?: string | null): Promise<{ model: string }> {
+    return this.require(sessionId).setModel(modelId)
   }
 
   /**

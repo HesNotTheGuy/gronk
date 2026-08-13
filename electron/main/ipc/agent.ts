@@ -115,6 +115,23 @@ export function registerAgentIpc(): void {
     return agentManager.sendPrompt(text, { attachments }, sessionId ?? null)
   })
 
+  /**
+   * Change the model on a running session without restarting it.
+   *
+   * Validated with `assertCliName`, the same validator `gronk:start-agent` puts on the
+   * same value. This one reaches the CLI as a JSON field rather than an argv entry, so a
+   * leading dash cannot be read as a flag here — but the two paths carry the same string
+   * to the same program, and letting them disagree about what a model name may contain
+   * is how the argv path quietly becomes the lenient one later.
+   */
+  ipcMain.handle('gronk:set-model', async (e, model: unknown, sessionId?: unknown) => {
+    assertTrustedSender(e)
+    return agentManager.setModel(
+      assertCliName(model, 'model'),
+      assertOptionalString(sessionId, 'sessionId') ?? null
+    )
+  })
+
   ipcMain.handle('gronk:cancel-prompt', async (e, sessionId?: unknown) => {
     assertTrustedSender(e)
     return agentManager.cancelPrompt(assertOptionalString(sessionId, 'sessionId') ?? null)

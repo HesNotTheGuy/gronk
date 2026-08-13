@@ -859,6 +859,13 @@ export interface GronkApi {
     text: string,
     options?: SendPromptOptions
   ) => Promise<{ messageId: string }>
+  /**
+   * Switch a running session's model in place. Rejects when nothing is running, which
+   * is the caller's signal to store the choice for the next session instead.
+   *
+   * Resolves with the id the agent settled on, not the one asked for.
+   */
+  setModel: (model: string, sessionId?: string) => Promise<{ model: string }>
   cancelPrompt: (sessionId?: string) => Promise<void>
   /**
    * `sessionId` is part of the address rather than a hint: request ids are

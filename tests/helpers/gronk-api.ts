@@ -123,6 +123,7 @@ export function installFakeBridge(overrides: Record<string, unknown> = {}): Fake
     focusSession: async () => track('focusSession', undefined),
     getSessionLiveness: async () => track('getSessionLiveness', {}),
     sendPrompt: async () => track('sendPrompt', { messageId: 'm1' }),
+    setModel: async (model: string) => track('setModel', { model }),
     cancelPrompt: async () => track('cancelPrompt', undefined),
     respondPermission: async () => track('respondPermission', undefined),
     loadSession: async () => track('loadSession', { sessionId: 's1', restored: false }),
