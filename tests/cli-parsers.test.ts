@@ -185,3 +185,74 @@ test('A GENERIC RPC FAILURE NAMES THE CALL AND GUESSES AT NOTHING', async () => 
   })
   assert.match(detailed, /model overloaded/)
 })
+
+/**
+ * The one refusal that is not a fault.
+ *
+ * A real 429 arrived in the field as: "The agent failed on session/prompt (-32003): Rate
+ * limited". That describes a broken app to someone whose account had simply run out,
+ * names a protocol method they have no reason to know exists, and — worse — the reply
+ * carried the limit, the amount used and the reset window, none of which reached the
+ * screen. The person had to be told by hand what their own app already knew.
+ */
+test('A USAGE LIMIT IS REPORTED AS ONE, NOT AS A CRASH', async () => {
+  const { rpcErrorMessage } = await import('../electron/main/acp/client')
+
+  const real =
+    "API error (status 429 Too Many Requests): subscription:free-usage-exhausted: You've " +
+    'used all the included free usage for model grok-4.6 for now. Usage resets over a ' +
+    'rolling 24-hour window — tokens (actual/limit): 623806/500000.'
+
+  const out = rpcErrorMessage('session/prompt', { code: -32003, message: 'Rate limited', data: real })
+
+  assert.match(out, /usage limit/i, 'it does not say what happened')
+  assert.match(out, /623806\/500000/, 'the numbers that say when work resumes were dropped')
+  assert.match(out, /rolling 24-hour window/, 'the reset window was dropped')
+  // The framing that made this read as a bug in the app.
+  assert.doesNotMatch(out, /failed/i, 'a spent allowance is still described as a failure')
+  assert.doesNotMatch(out, /session\/prompt/, 'it names a protocol method at the user')
+})
+
+test('THE AGENT SAYS WHICH LIMIT — THIS DOES NOT GUESS', async () => {
+  const { rpcErrorMessage } = await import('../electron/main/acp/client')
+
+  // Nothing attached. The sentence must still be true, which means saying nothing about
+  // which limit, how long, or when. Guessing at a cause here is the exact mistake that
+  // shipped once already on -32603.
+  const bare = rpcErrorMessage('session/prompt', { code: -32003, message: 'Rate limited' })
+  assert.match(bare, /usage limit/i)
+  assert.doesNotMatch(bare, /week|day|hour|minute|reset|free|subscription|upgrade/i)
+})
+
+test('DETAIL IS READ WHETHER IT ARRIVES AS TEXT OR AS A FIELD', async () => {
+  const { rpcErrorMessage, errorDetailText } = await import('../electron/main/acp/client')
+
+  // The old check accepted strings only, so an object shape dropped the whole detail.
+  assert.equal(errorDetailText({ message: 'the useful part' }), 'the useful part')
+  assert.equal(errorDetailText({ detail: 'the useful part' }), 'the useful part')
+  assert.equal(errorDetailText('the useful part'), 'the useful part')
+  // No dump of the whole object: unreadable in a banner, and carries every field the
+  // agent felt like attaching.
+  assert.equal(errorDetailText({ retryAfter: 60 }), '')
+  assert.equal(errorDetailText(null), '')
+
+  const structured = rpcErrorMessage('session/prompt', {
+    code: -32602,
+    message: 'Invalid params',
+    data: { message: 'missing field `modelId`' }
+  })
+  assert.match(structured, /missing field/, 'a structured detail never reached the screen')
+})
+
+test('AN ERROR DETAIL IS REDACTED BEFORE IT IS SHOWN', async () => {
+  const { rpcErrorMessage } = await import('../electron/main/acp/client')
+
+  // An error detail is exactly where an echoed auth header ends up, and this text goes
+  // on screen, into screenshots, and into bug reports.
+  const leaky = rpcErrorMessage('session/prompt', {
+    code: -32003,
+    message: 'Rate limited',
+    data: 'rejected: Authorization: Bearer xai-abcdef0123456789'
+  })
+  assert.doesNotMatch(leaky, /xai-abcdef/, 'a token reached the error banner')
+})
