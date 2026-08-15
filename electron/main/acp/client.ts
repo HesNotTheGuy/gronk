@@ -90,6 +90,37 @@ export function parseSetModelResult(
   return { ok: false, message: 'The agent did not say which model it switched to.' }
 }
 
+/**
+ * The CLI's rate-limit code, set only for an HTTP 429 (`RATE_LIMITED_ERROR_CODE`,
+ * xai-org/grok-build). The one code whose meaning is documented rather than inferred,
+ * which is why it is the only one this file is willing to translate into a sentence.
+ */
+const RATE_LIMITED = -32003
+
+/**
+ * Whatever the agent said beyond the code and the message, as plain text.
+ *
+ * `data` is a string on most refusals and an object on others, and the old check took
+ * strings only. That silently dropped the single most useful sentence a person can get
+ * out of a refusal: a real rate-limit reply carries the limit, the amount used and the
+ * reset window in here, and the banner showed two words instead.
+ *
+ * Redacted on the way out. This is agent-supplied text heading for the screen, and an
+ * error detail is exactly where an echoed `Authorization:` header ends up.
+ */
+export function errorDetailText(data: unknown): string {
+  if (typeof data === 'string') return redactSecrets(data.trim())
+  if (!data || typeof data !== 'object') return ''
+  const bag = data as Record<string, unknown>
+  // Named fields only, never a JSON dump of the whole object: the dump would be
+  // unreadable in a banner and would carry every field the agent felt like attaching.
+  for (const key of ['message', 'detail', 'description', 'error']) {
+    const value = bag[key]
+    if (typeof value === 'string' && value.trim()) return redactSecrets(value.trim())
+  }
+  return ''
+}
+
 export function rpcErrorMessage(
   method: string | undefined,
   error: { code?: number; message?: string; data?: unknown }
@@ -98,8 +129,20 @@ export function rpcErrorMessage(
   const generic = !said || /^(internal|server|parse) error$/i.test(said)
   const code = error.code !== undefined ? ` (${error.code})` : ''
   const where = method ? `The agent failed on ${method}` : 'The agent failed'
-  const detail =
-    typeof error.data === 'string' && error.data.trim() ? `: ${error.data.trim()}` : ''
+  const detailText = errorDetailText(error.data)
+  const detail = detailText ? `: ${detailText}` : ''
+
+  // The one refusal that is not a fault. "The agent failed on session/prompt (-32003):
+  // Rate limited" describes a broken app to someone whose account simply ran out, names
+  // a protocol method they have no reason to know exists, and buries the numbers that
+  // say when they can work again. Nothing here guesses WHICH limit — the agent's own
+  // detail says that when it sends one, and this says nothing about it when it does not.
+  if (error.code === RATE_LIMITED) {
+    const lead = 'Your Grok account has hit a usage limit.'
+    return detailText
+      ? `${lead} ${detailText}`
+      : `${lead} Nothing about the app or the request caused it.`
+  }
 
   if (generic) {
     // No reason given, and deliberately no guess at one.
