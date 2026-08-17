@@ -109,3 +109,49 @@ test('THE COST FIGURE SAYS WHAT IT IS WHERE IT IS SHOWN', async () => {
     view.unmount()
   }
 })
+
+/**
+ * The context window, now that the agent reports one.
+ *
+ * This panel deliberately had no fullness gauge, for two stated reasons: the CLI
+ * reported no limit, and building one from published per-model figures would be a
+ * hand-maintained table that goes silently wrong when a model changes. The first reason
+ * is gone — `initialize._meta.modelState` carries `totalContextTokens` per model — so
+ * the number here is the agent's own answer rather than an invented one.
+ *
+ * The second reason stands, and these tests pin that it still does: the CLI compacts
+ * context by itself, so a bar approaching full would claim something about to break when
+ * nothing is.
+ */
+test('THE CONTEXT WINDOW IS STATED, NEVER DRAWN AS A BAR', async () => {
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync(new URL('../src/components/SessionTray.tsx', import.meta.url), 'utf8')
+
+  assert.match(source, /Context window/, 'the reported window is not shown at all')
+  // No percentage, no meter, no width-driven fill in the usage panel.
+  assert.doesNotMatch(source, /<progress|role="progressbar"|usage-bar|usage-fill/)
+  assert.doesNotMatch(
+    source,
+    /contextTokens[^\n]*[*/][^\n]*100|percent[A-Za-z]*\s*=\s*[^\n]*contextTokens/,
+    'a fullness percentage was derived from the window'
+  )
+})
+
+test('NO WINDOW REPORTED MEANS NOTHING IS CLAIMED', async () => {
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync(new URL('../src/components/SessionTray.tsx', import.meta.url), 'utf8')
+
+  // Guarded on the value: an agent that reports nothing must produce no row at all,
+  // rather than a fallback figure that looks equally authoritative.
+  assert.match(source, /\{contextTokens \? \(/)
+})
+
+test('THE WINDOW SHOWN BELONGS TO THE SESSION S MODEL', async () => {
+  const { readFileSync } = await import('node:fs')
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+
+  // A session started on another model has another window, so reading the app default
+  // would describe a different conversation — the same mistake the pickers made.
+  assert.match(app, /g\.sessionModel \?\? g\.settings\?\.model/)
+  assert.match(app, /contextTokens=\{/)
+})

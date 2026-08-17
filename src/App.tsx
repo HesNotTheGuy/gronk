@@ -782,6 +782,12 @@ export function App() {
                 messages={g.messages}
                 usage={g.usage}
                 auth={g.auth}
+                /* The window of the model THIS session is running, not the app default:
+                   a session started on another model has another window. */
+                contextTokens={
+                  g.models.find((m) => m.id === (g.sessionModel ?? g.settings?.model))?.contextTokens ??
+                  g.models.find((m) => m.isDefault)?.contextTokens
+                }
                 showChanges={inProject}
                 notesCwd={inProject ? g.cwd : null}
                 notes={g.projectNotes}
