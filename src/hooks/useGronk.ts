@@ -9,6 +9,7 @@ import type {
   PermissionMode,
   PermissionRequest,
   PromptAttachment,
+  ReasoningEffort,
   SessionInfo,
   SessionLiveness,
   SessionUsage,
@@ -158,6 +159,8 @@ export function useGronk() {
    * session will use.
    */
   const [sessionModel, setSessionModel] = useState<string | null>(null)
+  /** The effort the running session was spawned with; null when no flag was passed. */
+  const [sessionReasoningEffort, setSessionReasoningEffort] = useState<ReasoningEffort | null>(null)
   const [sessionPermissionMode, setSessionPermissionMode] = useState<PermissionMode | null>(
     null
   )
@@ -628,6 +631,7 @@ export function useGronk() {
           // the composer says nothing is happening, offers no way to stop it, and
           // takes a second prompt for a session that already has one open.
           setSessionModel(event.model ?? null)
+          setSessionReasoningEffort(event.reasoningEffort ?? null)
           setSessionPermissionMode(event.permissionMode)
           resyncTurn.current = { sessionId: event.sessionId, open: event.hasOpenTurn }
           setBusy(event.hasOpenTurn)
@@ -1721,6 +1725,7 @@ export function useGronk() {
     messages,
     ...draftState,
     sessionModel,
+    sessionReasoningEffort,
     sessionPermissionMode,
     ...queueState,
     ...catalog,

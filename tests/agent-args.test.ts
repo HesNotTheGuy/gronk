@@ -328,3 +328,84 @@ test('every flag in the argv is followed by a value, not another flag or the end
     assert.ok(!value.startsWith('-'), `${flag} value must not look like a flag`)
   }
 })
+
+// ── Reasoning effort ────────────────────────────────────────────────
+
+/**
+ * grok-4.6's headline knob, and a flag with a placement trap.
+ *
+ * `--reasoning-effort` is listed under BOTH `grok --help` and `grok agent --help`, and
+ * only one of the three plausible placements works. Verified against grok 0.2.112 by
+ * booting the agent and reading the session config back:
+ *
+ *   agent --reasoning-effort low stdio  -> session reports low
+ *   --reasoning-effort low agent stdio  -> silently ignored, session stays high
+ *   agent stdio --reasoning-effort low  -> `session/new` never answers
+ *
+ * The middle one is the dangerous one: it exits 0, looks right in a diff, and does
+ * nothing at all.
+ */
+test('THE EFFORT FLAG SITS AFTER `agent` AND BEFORE `stdio`', async () => {
+  const { buildAgentArgs } = await import('../electron/main/agent-args')
+
+  const { args } = buildAgentArgs({ permissionMode: 'default', reasoningEffort: 'xhigh' })
+  const flag = args.indexOf('--reasoning-effort')
+
+  assert.notEqual(flag, -1, 'the effort was dropped')
+  assert.equal(args[flag + 1], 'xhigh')
+  assert.ok(flag > args.indexOf('agent'), 'placed before `agent`, where grok ignores it')
+  assert.ok(flag < args.indexOf('stdio'), 'placed after `stdio`, where the agent never answers')
+})
+
+test('NO EFFORT MEANS NO FLAG, NOT A LEVEL WE PICKED', async () => {
+  const { buildAgentArgs } = await import('../electron/main/agent-args')
+
+  // Absent has a meaning of its own: the model uses its own default. Substituting a
+  // level here would be Gronk choosing a thinking budget nobody asked for — and the
+  // default differs per model, so there is no safe level to invent.
+  for (const effort of [undefined, '', null]) {
+    const { args, reasoningEffort } = buildAgentArgs({
+      permissionMode: 'default',
+      reasoningEffort: effort as never
+    })
+    assert.ok(!args.includes('--reasoning-effort'), `emitted a flag for ${JSON.stringify(effort)}`)
+    assert.equal(reasoningEffort, undefined)
+  }
+})
+
+test('ONLY A LEVEL GROK KNOWS REACHES ARGV', async () => {
+  const { buildAgentArgs, normalizeReasoningEffort } = await import('../electron/main/agent-args')
+
+  // This matters more than for most argv values: grok does NOT validate this flag.
+  // `--effort banana` parses and exits 0, so nothing downstream catches a corrupted or
+  // hand-edited store. This normalizer is the only gate.
+  assert.equal(normalizeReasoningEffort('banana'), undefined)
+  assert.equal(normalizeReasoningEffort('HIGH'), undefined, 'case is not normalised away')
+  assert.equal(normalizeReasoningEffort({ id: 'low' }), undefined)
+  assert.equal(normalizeReasoningEffort('xhigh'), 'xhigh')
+
+  const { args } = buildAgentArgs({
+    permissionMode: 'default',
+    reasoningEffort: '--always-approve' as never
+  })
+  assert.ok(!args.includes('--reasoning-effort'), 'an unknown level still emitted the flag')
+  // The specific horror: a value that is itself a flag must never be smuggled through.
+  assert.equal(args.filter((a) => a === '--always-approve').length, 0)
+})
+
+test('THE EFFORT DOES NOT DISTURB THE PERMISSION FLAGS', async () => {
+  const { buildAgentArgs } = await import('../electron/main/agent-args')
+
+  // --permission-mode is a top-level flag and must stay before `agent`; the effort is a
+  // subcommand flag and must stay after it. Adding one must not move the other.
+  const { args } = buildAgentArgs({
+    permissionMode: 'bypassPermissions',
+    alwaysApproveAck: true,
+    reasoningEffort: 'low',
+    model: 'grok-4.6'
+  })
+  assert.ok(args.indexOf('--permission-mode') < args.indexOf('agent'))
+  assert.ok(args.indexOf('--always-approve') > args.indexOf('agent'))
+  assert.ok(args.indexOf('-m') > args.indexOf('agent'))
+  assert.equal(args[args.length - 1], 'stdio')
+})

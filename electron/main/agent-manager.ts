@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto'
 import {
   GrokAcpClient,
   isAllowedGrokBasename,
+  parseModelState,
   parseSetModelResult,
   probeGrokBinary,
   resolveGrokBinary,
@@ -60,7 +61,8 @@ import type {
   ModelInfo,
   PermissionDecision,
   PermissionMode,
-  PermissionRequest
+  PermissionRequest,
+  ReasoningEffort
 } from '../../shared/types'
 
 /** Gronk app chat sandbox (same path as gronk:get-chat-workspace). */
@@ -137,6 +139,7 @@ export class AgentManager {
    * whenever a setting had been changed without restarting.
    */
   private bootPermissionMode: PermissionMode | null = null
+  private bootReasoningEffort: ReasoningEffort | null = null
   /** Running token/cost totals for the live session (in memory only, never persisted). */
   private usage = new SessionUsageTracker()
   /**
@@ -196,6 +199,11 @@ export class AgentManager {
   /** The mode the running child was started with, not the one settings would use next. */
   getPermissionMode(): PermissionMode | null {
     return this.bootPermissionMode
+  }
+
+  /** The effort the running child was spawned with, not the one settings would use next. */
+  getReasoningEffort(): ReasoningEffort | null {
+    return this.bootReasoningEffort
   }
 
   /**
@@ -265,7 +273,12 @@ export class AgentManager {
    */
   private async bootAgent(
     cwd: string,
-    options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project' }
+    options?: {
+      model?: string
+      reasoningEffort?: ReasoningEffort
+      alwaysApprove?: boolean
+      surface?: 'chat' | 'project'
+    }
   ): Promise<void> {
     await this.stopProcessOnly()
 
@@ -326,11 +339,18 @@ export class AgentManager {
       ),
       alwaysApproveAck: settings.alwaysApproveAck,
       model,
+      // Same shape as the model: a per-start override, else the stored default, else
+      // nothing at all — and nothing means the model picks its own level.
+      reasoningEffort: options?.reasoningEffort ?? settings.reasoningEffort,
       surface: options?.surface
     })
     this.surface = built.surface
     this.bootAlwaysApprove = built.alwaysApprove
     this.bootPermissionMode = built.permissionMode
+    // The level the RUNNING child was spawned with. Kept for the same reason as the
+    // permission mode: `--reasoning-effort` is read at spawn, so current settings
+    // describe the NEXT session, which is a different sentence.
+    this.bootReasoningEffort = built.reasoningEffort ?? null
     const agentArgs = built.args
     // The argv is what decides whether grok asks Gronk for permission at all,
     // so record the posture the child actually starts with.
@@ -377,22 +397,12 @@ export class AgentManager {
     this.client.start()
     const init = await this.client.initialize()
 
-    // Models from initialize meta when present
-    const meta = init._meta as Record<string, unknown> | undefined
-    const modelState = meta?.modelState as
-      | {
-          currentModelId?: string
-          availableModels?: Array<{ modelId?: string; name?: string; description?: string }>
-        }
-      | undefined
-    if (modelState?.availableModels?.length) {
-      this.models = modelState.availableModels.map((m) => ({
-        id: String(m.modelId || ''),
-        name: String(m.name || m.modelId || ''),
-        description: m.description,
-        isDefault: m.modelId === modelState.currentModelId
-      })).filter((m) => m.id)
-      this.currentModel = modelState.currentModelId || model
+    // Models from initialize meta when present, including each model's reasoning-effort
+    // levels — which differ per model, so the picker reads them rather than assuming.
+    const parsed = parseModelState(init._meta)
+    if (parsed.models.length) {
+      this.models = parsed.models
+      this.currentModel = parsed.current || model
     } else {
       this.models = await listModels()
       this.currentModel = model || this.models.find((m) => m.isDefault)?.id || this.models[0]?.id
@@ -402,7 +412,12 @@ export class AgentManager {
 
   async start(
     cwd: string,
-    options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project' }
+    options?: {
+      model?: string
+      reasoningEffort?: ReasoningEffort
+      alwaysApprove?: boolean
+      surface?: 'chat' | 'project'
+    }
   ): Promise<{ sessionId: string }> {
     await this.bootAgent(cwd, options)
     if (!this.client) throw new Error('Agent failed to boot')
@@ -489,7 +504,8 @@ export class AgentManager {
       // What this session is actually running, so the pickers under the composer
       // describe the conversation in front of you rather than the app's defaults.
       model: this.currentModel,
-      permissionMode: this.bootPermissionMode
+      permissionMode: this.bootPermissionMode,
+      reasoningEffort: this.bootReasoningEffort
     })
   }
 
@@ -1400,7 +1416,12 @@ export interface ManagedSession {
   reemitViewState(): void
   start(
     cwd: string,
-    options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project' }
+    options?: {
+      model?: string
+      reasoningEffort?: ReasoningEffort
+      alwaysApprove?: boolean
+      surface?: 'chat' | 'project'
+    }
   ): Promise<{ sessionId: string }>
   loadSession(
     sessionId: string,
@@ -1638,7 +1659,13 @@ export class AgentRegistry {
    */
   async start(
     cwd: string,
-    options?: { model?: string; alwaysApprove?: boolean; surface?: 'chat' | 'project'; forceNew?: boolean }
+    options?: {
+      model?: string
+      reasoningEffort?: ReasoningEffort
+      alwaysApprove?: boolean
+      surface?: 'chat' | 'project'
+      forceNew?: boolean
+    }
   ): Promise<{ sessionId: string }> {
     const surface = options?.surface ?? 'project'
     if (!options?.forceNew) {

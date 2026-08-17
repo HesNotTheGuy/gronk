@@ -74,6 +74,7 @@ interface Props {
   dataNotice: string | null
   onClose: () => void
   onChangeModel: (id: string) => void
+  onChangeReasoningEffort: (effort: string) => void
   onToggleYolo: () => void
   onChangeTheme: (theme: AppSettings['theme']) => void
   onPickBinary: () => void
@@ -104,6 +105,7 @@ export function SettingsPanel({
   dataNotice,
   onClose,
   onChangeModel,
+  onChangeReasoningEffort,
   onToggleYolo,
   onChangeTheme,
   onPickBinary,
@@ -123,6 +125,14 @@ export function SettingsPanel({
    * — it means "send no model", which does not depend on knowing the answer.
    */
   const defaultModelName = models.find((m) => m.isDefault)?.name
+  /**
+   * The model whose effort levels this screen should offer: the pinned one when there is
+   * one, otherwise the one grok defaults to — the same model the dropdown above resolves
+   * to, so the two controls describe the same future session.
+   */
+  const effortModel = models.find((m) => m.id === settings?.model) ?? models.find((m) => m.isDefault)
+  const effortOptions =
+    effortModel?.supportsReasoningEffort === false ? [] : (effortModel?.reasoningEfforts ?? [])
   /** Chosen destination awaiting confirmation. A move is never one click. */
   const [pendingTarget, setPendingTarget] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -369,6 +379,45 @@ export function SettingsPanel({
               </option>
             ))}
           </select>
+          {effortOptions.length ? (
+            <div className="settings-subblock">
+              <div className="section-label">Reasoning effort</div>
+              <select
+                className="model-select"
+                aria-label="Reasoning effort for new sessions"
+                value={settings?.reasoningEffort ?? ''}
+                onChange={(e) => onChangeReasoningEffort(e.target.value)}
+                disabled={!auth?.authenticated}
+              >
+                {/*
+                  Empty is the shipped state and means no flag is passed at all, so the
+                  model uses whatever it defaults to. That is not the same as naming the
+                  same level explicitly — the model's default can change under us, and
+                  this option follows it.
+                */}
+                <option value="">
+                  {effortModel?.defaultReasoningEffort
+                    ? `Model default (${effortModel.defaultReasoningEffort})`
+                    : 'Model default'}
+                </option>
+                {effortOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <p className="settings-hint">
+                {/*
+                  The levels come from the model, not from a fixed list: grok-4.5 offers
+                  three and grok-4.6 offers four. Naming the model is what stops "Extra
+                  High" looking like it vanished after switching back to 4.5.
+                */}
+                {effortModel ? `Levels offered by ${effortModel.name}. ` : ''}
+                Read when a session starts, so this applies to new sessions — a
+                conversation already open keeps the level it began with.
+              </p>
+            </div>
+          ) : null}
           <p className="settings-hint">
             {settings?.model
               ? 'New sessions are pinned to this model. Grok releasing a newer one will not change it until you choose Follow grok.'

@@ -2942,6 +2942,14 @@ button {
   color: color-mix(in srgb, var(--warn) 80%, var(--ink-3));
 }
 
+/* Nested under a settings block: a control that qualifies the one above it
+   (reasoning effort belongs to the chosen model, not to the panel). */
+.settings-subblock {
+  margin-top: 14px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line-2);
+}
+
 .model-select {
   width: 100%;
   padding: 9px 10px;

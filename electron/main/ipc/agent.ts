@@ -18,7 +18,7 @@ import {
   assertRequestId,
   assertString
 } from './validate'
-import type { PermissionDecision } from '../../../shared/types'
+import { REASONING_EFFORTS, type PermissionDecision } from '../../../shared/types'
 
 /** The four the agent understands. Anything else cannot answer a prompt. */
 const PERMISSION_DECISIONS: readonly PermissionDecision[] = [
@@ -36,6 +36,7 @@ export function registerAgentIpc(): void {
       cwd: string,
       options?: {
         model?: string
+        reasoningEffort?: string
         alwaysApprove?: boolean
         forceNew?: boolean
         surface?: 'chat' | 'project'
@@ -69,6 +70,13 @@ export function registerAgentIpc(): void {
       // disk and is not a trusted input either.
       const rawModel = options?.model ?? settings.model
       const model = rawModel ? assertCliName(rawModel, 'model') : undefined
+      // Closed set rather than assertCliName: the CLI does not validate this flag's
+      // value at all, so an unrecognised one would reach the child unchallenged. The
+      // stored setting is checked too — the store is a file on disk, not a trusted input.
+      const rawEffort = options?.reasoningEffort ?? settings.reasoningEffort
+      const reasoningEffort = rawEffort
+        ? assertOneOf(rawEffort, 'reasoningEffort', REASONING_EFFORTS)
+        : undefined
       // Forward the override as-is. Substituting settings.alwaysApprove here would
       // re-derive the stored posture in a second place; agent-manager folds an
       // absent override against the store itself via requestedPermissionMode.
@@ -79,6 +87,7 @@ export function registerAgentIpc(): void {
       // make room: a session the user walked away from goes on working.
       return agentManager.start(normalized, {
         model,
+        reasoningEffort,
         alwaysApprove,
         surface,
         forceNew: options?.forceNew === true

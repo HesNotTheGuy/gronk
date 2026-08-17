@@ -196,6 +196,23 @@ export function useAppSettings({
   }, [])
 
   /**
+   * How hard the model thinks, for sessions started from now on. `''` clears it.
+   *
+   * New-sessions-only is not a simplification, it is the mechanism: the level is the
+   * value of `--reasoning-effort`, which grok reads once when the child is spawned.
+   * There is no way to change it on a running session — `session/set_config_option`
+   * exists in the protocol and answers -32601 for this build — so applying it to the
+   * conversation in front of you would mean silently restarting it, and a restart is a
+   * new session with an empty transcript.
+   */
+  const setDefaultReasoningEffort = useCallback(async (effort: string) => {
+    const next = await window.gronk.setSettings({
+      reasoningEffort: effort as AppSettings['reasoningEffort']
+    })
+    setSettingsState(next)
+  }, [])
+
+  /**
    * Record that this version's notes have been read.
    *
    * One field, in the settings store rather than the transcript store — it is about the
@@ -256,6 +273,7 @@ export function useAppSettings({
     cancelYolo,
     changeModel,
     setDefaultModel,
+    setDefaultReasoningEffort,
     markNotesSeen,
     changePermissionMode,
     pickBinary,
