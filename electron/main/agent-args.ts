@@ -23,7 +23,34 @@
  *   the runtime auto-approve gate (see isAutoApproveActive).
  */
 
-import { PERMISSION_MODE_OPTIONS, type PermissionMode } from '../../shared/types'
+import {
+  PERMISSION_MODE_OPTIONS,
+  REASONING_EFFORTS,
+  type PermissionMode,
+  type ReasoningEffort
+} from '../../shared/types'
+
+/** The levels grok knows. REASONING_EFFORTS is the authoritative list. */
+const KNOWN_REASONING_EFFORTS: ReadonlySet<string> = new Set(REASONING_EFFORTS)
+
+/**
+ * Coerce an untrusted reasoning effort onto the known set, or drop it.
+ *
+ * Same shape of risk as the permission mode and the model: this is read back from a
+ * user-writable JSON file and becomes the value of `--reasoning-effort` verbatim. What
+ * makes it worth its own gate is that **the CLI does not check it** — `--effort banana`
+ * parses fine (verified against grok 0.2.112, which exits 0 on it), so nothing
+ * downstream will catch a corrupted or hand-edited value.
+ *
+ * Undefined rather than a substituted level when unrecognised: absent means no flag is
+ * emitted at all, and the model then uses its own default. Picking a level here would
+ * be Gronk inventing a thinking budget the user never chose.
+ */
+export function normalizeReasoningEffort(effort: unknown): ReasoningEffort | undefined {
+  return typeof effort === 'string' && KNOWN_REASONING_EFFORTS.has(effort)
+    ? (effort as ReasoningEffort)
+    : undefined
+}
 
 /** The modes grok accepts. PERMISSION_MODE_OPTIONS is the authoritative list. */
 const KNOWN_PERMISSION_MODES: ReadonlySet<string> = new Set(
@@ -96,6 +123,8 @@ export interface BuildAgentArgsOptions {
   alwaysApproveAck?: boolean
   /** Resolved model id. Falsy leaves model selection to the CLI. */
   model?: string
+  /** Resolved reasoning effort. Falsy leaves the level to the model's own default. */
+  reasoningEffort?: ReasoningEffort
   /** Booting surface. Anything other than 'chat' is treated as 'project'. */
   surface?: 'chat' | 'project'
 }
@@ -109,6 +138,8 @@ export interface AgentArgs {
   alwaysApprove: boolean
   /** Normalized surface. */
   surface: 'chat' | 'project'
+  /** The level actually handed to the CLI, or undefined when no flag was emitted. */
+  reasoningEffort?: ReasoningEffort
 }
 
 /**
@@ -132,6 +163,7 @@ export function buildAgentArgs(options: BuildAgentArgsOptions): AgentArgs {
 
   const surface = options.surface === 'chat' ? 'chat' : 'project'
   const model = options.model
+  const reasoningEffort = normalizeReasoningEffort(options.reasoningEffort)
 
   // Global flags before `agent` subcommand
   const args: string[] = []
@@ -152,7 +184,17 @@ export function buildAgentArgs(options: BuildAgentArgsOptions): AgentArgs {
   if (alwaysApprove) {
     args.push('--always-approve')
   }
+  // Between `agent` and `stdio`, and nowhere else. This flag is listed under both
+  // `grok --help` and `grok agent --help`, and only one placement works — verified
+  // against grok 0.2.112 by reading the session config back after boot:
+  //   agent --reasoning-effort low stdio  -> the session reports low
+  //   --reasoning-effort low agent stdio  -> silently ignored, session stays on high
+  //   agent stdio --reasoning-effort low  -> `session/new` never answers
+  // The middle one is the trap: it looks right, exits 0, and does nothing.
+  if (reasoningEffort) {
+    args.push('--reasoning-effort', reasoningEffort)
+  }
   args.push('stdio')
 
-  return { args, permissionMode, alwaysApprove, surface }
+  return { args, permissionMode, alwaysApprove, surface, reasoningEffort }
 }

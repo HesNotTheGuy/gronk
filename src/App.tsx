@@ -965,6 +965,7 @@ export function App() {
         /* The default for NEW sessions, not the running one. Settings is the only place a
            pin is made, and the only place it can be cleared. */
         onChangeModel={(id) => void g.setDefaultModel(id)}
+        onChangeReasoningEffort={(effort) => void g.setDefaultReasoningEffort(effort)}
         onToggleYolo={() => {
           if (g.yoloActive) void g.updateSettings({ alwaysApprove: false })
           else void g.updateSettings({ alwaysApprove: true })

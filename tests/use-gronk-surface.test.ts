@@ -127,12 +127,16 @@ const EXPECTED_MEMBERS: string[] = [
   // Two live sessions: what each one is doing, and stopping one without opening it.
   "sessionLiveness",
   "sessionModel",
+  // The effort the running session was spawned with. Spawn-time, so it is reported
+  // rather than changeable mid-conversation.
+  "sessionReasoningEffort",
   "sessionPermissionMode",
   "sessions",
   "setCliInstallResult",
   // The stored model for new sessions. Separate from changeModel, which is the
   // conversation in front of you — one control per question.
   "setDefaultModel",
+  "setDefaultReasoningEffort",
   "setDraft",
   "setError",
   "setPlanCollapsed",

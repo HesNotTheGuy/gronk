@@ -9,6 +9,7 @@
 import {
   NOTE_MAX_CHARS,
   PERMISSION_MODE_OPTIONS,
+  REASONING_EFFORTS,
   type McpTransport,
   type PromptAttachment
 } from '../../../shared/types'
@@ -207,6 +208,7 @@ export function assertOptionalStringArray(value: unknown, name: string): string[
 export function assertSettingsPatch(value: unknown): Record<string, unknown> {
   const raw = assertOnlyKeys(value, 'settings', [
     'model',
+    'reasoningEffort',
     'permissionMode',
     'alwaysApprove',
     'alwaysApproveAck',
@@ -216,6 +218,15 @@ export function assertSettingsPatch(value: unknown): Record<string, unknown> {
   ])
   const out: Record<string, unknown> = {}
   if ('model' in raw) out.model = assertClearableCliName(raw.model, 'model')
+  if ('reasoningEffort' in raw) {
+    // Clearable like the model: empty means no `--reasoning-effort` flag at all, and
+    // each model then uses its own default. A closed set otherwise, because the CLI
+    // accepts any string for that flag without checking it.
+    out.reasoningEffort =
+      raw.reasoningEffort === undefined || raw.reasoningEffort === null || raw.reasoningEffort === ''
+        ? ''
+        : assertOneOf(raw.reasoningEffort, 'reasoningEffort', REASONING_EFFORTS)
+  }
   if ('permissionMode' in raw) {
     out.permissionMode = assertOneOf(raw.permissionMode, 'permissionMode', PERMISSION_MODES)
   }

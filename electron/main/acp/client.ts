@@ -5,11 +5,15 @@ import path from 'node:path'
 import { grokHome } from '../grok-home'
 import os from 'node:os'
 import fs from 'node:fs'
-import type {
-  PermissionDecision,
-  SessionUsage,
-  ToolCallInfo,
-  TurnUsage
+import {
+  REASONING_EFFORTS,
+  type ModelInfo,
+  type PermissionDecision,
+  type ReasoningEffort,
+  type ReasoningEffortOption,
+  type SessionUsage,
+  type ToolCallInfo,
+  type TurnUsage
 } from '../../../shared/types'
 import { redactSecrets } from '../redact'
 
@@ -88,6 +92,77 @@ export function parseSetModelResult(
     }
   }
   return { ok: false, message: 'The agent did not say which model it switched to.' }
+}
+
+/**
+ * The model list out of `initialize._meta.modelState`, including what each model says
+ * about reasoning effort.
+ *
+ * The levels are per-model and differ between them — grok-4.5 offers three, grok-4.6
+ * offers four, `xhigh` being the new one — so a picker cannot hold a fixed list and has
+ * to read this. Everything here is optional on purpose: an agent that says nothing about
+ * effort leaves `supportsReasoningEffort` undefined, which reads as "we do not know"
+ * rather than "this model has none", and the UI shows no picker instead of a wrong one.
+ *
+ * Ids are checked against the known set rather than trusted, because they end up as the
+ * value of `--reasoning-effort`, which the CLI itself does not validate.
+ */
+export function parseModelState(meta: unknown): { models: ModelInfo[]; current?: string } {
+  const state = (meta as { modelState?: unknown } | null | undefined)?.modelState as
+    | { currentModelId?: string; availableModels?: unknown[] }
+    | undefined
+  const list = Array.isArray(state?.availableModels) ? state.availableModels : []
+
+  const models: ModelInfo[] = []
+  for (const raw of list) {
+    const entry = (raw ?? {}) as Record<string, unknown>
+    const id = String(entry.modelId || '')
+    if (!id) continue
+    const modelMeta = (entry._meta ?? {}) as Record<string, unknown>
+
+    const efforts: ReasoningEffortOption[] = []
+    const offered = Array.isArray(modelMeta.reasoningEfforts) ? modelMeta.reasoningEfforts : []
+    for (const item of offered) {
+      const option = (item ?? {}) as Record<string, unknown>
+      const effortId = normalizeEffortId(option.id ?? option.value)
+      // Deduped: 4.6 currently reports two entries flagged `default: true`, so a list
+      // built straight from the payload can repeat a level.
+      if (!effortId || efforts.some((e) => e.id === effortId)) continue
+      efforts.push({
+        id: effortId,
+        label: typeof option.label === 'string' && option.label.trim() ? option.label : effortId,
+        description: typeof option.description === 'string' ? option.description : undefined
+      })
+    }
+
+    const contextTokens =
+      typeof modelMeta.totalContextTokens === 'number' && modelMeta.totalContextTokens > 0
+        ? modelMeta.totalContextTokens
+        : undefined
+
+    models.push({
+      id,
+      name: String(entry.name || id),
+      description: typeof entry.description === 'string' ? entry.description : undefined,
+      isDefault: id === state?.currentModelId,
+      ...(typeof modelMeta.supportsReasoningEffort === 'boolean'
+        ? { supportsReasoningEffort: modelMeta.supportsReasoningEffort }
+        : {}),
+      ...(efforts.length ? { reasoningEfforts: efforts } : {}),
+      ...(normalizeEffortId(modelMeta.reasoningEffort)
+        ? { defaultReasoningEffort: normalizeEffortId(modelMeta.reasoningEffort) }
+        : {}),
+      ...(contextTokens ? { contextTokens } : {})
+    })
+  }
+
+  return { models, current: state?.currentModelId || undefined }
+}
+
+function normalizeEffortId(value: unknown): ReasoningEffort | undefined {
+  return typeof value === 'string' && (REASONING_EFFORTS as readonly string[]).includes(value)
+    ? (value as ReasoningEffort)
+    : undefined
 }
 
 /**

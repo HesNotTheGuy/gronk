@@ -257,11 +257,44 @@ export interface PermissionAuditEntry {
   rawInputPreview?: string
 }
 
+/**
+ * How hard the model thinks before answering.
+ *
+ * The set is closed here because the value becomes the argument of
+ * `--reasoning-effort`, and the CLI does not validate it: `--effort banana` is accepted
+ * at parse time and the session simply runs with whatever that meant. So this list is
+ * the only gate.
+ *
+ * `xhigh` is new with grok-4.6 — 4.5 offers three levels, 4.6 offers four — which is
+ * why the levels a picker may show come from the model rather than from this type.
+ */
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
+
+export const REASONING_EFFORTS: readonly ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh']
+
+/** One level as the agent describes it. Label and description are the agent's own words. */
+export interface ReasoningEffortOption {
+  id: ReasoningEffort
+  label: string
+  description?: string
+}
+
 export interface ModelInfo {
   id: string
   name: string
   description?: string
   isDefault?: boolean
+  /**
+   * Levels THIS model offers, in the agent's own order, and whether it offers any.
+   * Absent means the agent said nothing about effort for this model, which is not the
+   * same as "supports none" — it is "we do not know", and a picker shows nothing.
+   */
+  supportsReasoningEffort?: boolean
+  reasoningEfforts?: ReasoningEffortOption[]
+  /** The level this model uses when nothing is chosen. */
+  defaultReasoningEffort?: ReasoningEffort
+  /** Context window in tokens, as reported by the agent. */
+  contextTokens?: number
 }
 
 export interface PlanItem {
@@ -321,6 +354,14 @@ export interface HealthStatus {
 
 export interface AppSettings {
   model?: string
+  /**
+   * How hard the model thinks, for sessions started from now on.
+   *
+   * Absent means no `--reasoning-effort` flag is passed at all and each model uses its
+   * own default, which is the shipped state. Read at spawn, so changing it does not
+   * reach a session already running.
+   */
+  reasoningEffort?: ReasoningEffort
   /**
    * Grok CLI permission mode (`--permission-mode`) — the only permission fact
    * Gronk stores. `bypassPermissions` is YOLO and requires alwaysApproveAck.
@@ -612,6 +653,8 @@ export type MainToRendererEvent =
       /** What this session is running — not what settings would start next. */
       model?: string
       permissionMode: PermissionMode | null
+      /** The level this session was spawned with; null when no flag was passed. */
+      reasoningEffort?: ReasoningEffort | null
     }
   | {
       type: 'history-done'

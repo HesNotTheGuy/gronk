@@ -745,6 +745,11 @@ export function setSettings(partial: Partial<AppSettings>): AppSettings {
   if ('model' in partial && !partial.model) {
     delete merged.model
   }
+  // Absent is a real state, not a missing value: no flag is emitted and each model
+  // uses its own default. Storing '' instead would put an empty string on the argv.
+  if ('reasoningEffort' in partial && !partial.reasoningEffort) {
+    delete merged.reasoningEffort
+  }
 
   data.settings = merged
   writeStore(data)
