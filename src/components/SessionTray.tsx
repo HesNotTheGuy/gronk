@@ -86,6 +86,11 @@ interface Props {
   usage: SessionUsage | null
   auth?: AuthStatus | null
   /**
+   * The context window of the model this session is running, as the agent reported it.
+   * Undefined when the agent said nothing, which is left blank rather than guessed.
+   */
+  contextTokens?: number
+  /**
    * The project folder this scratchpad belongs to, or null for no scratchpad.
    *
    * Null on the Chat surface deliberately. Chat runs in an app-local sandbox
@@ -115,6 +120,7 @@ export function SessionTray({
   messages,
   usage,
   auth,
+  contextTokens,
   showChanges,
   notesCwd,
   notes,
@@ -539,19 +545,27 @@ export function SessionTray({
             {usage!.last ? <UsageCol label="Last turn" usage={usage!.last} auth={auth} /> : null}
           </div>
           {/*
-            There is no fullness gauge here, and that is a decision rather than an
-            omission. The reasoning used to live on UsageMeter, which was deleted once
-            nothing rendered it (#85), so it is restored here where the panel actually is.
+            Still no fullness gauge, but for one reason now instead of two.
 
-            A percentage needs a context limit, and the CLI reports none. xAI publishes
-            one per model — 500k for grok-4.5 — so a gauge is now buildable from a table
-            of published numbers, which is exactly the problem: it would be right until a
-            model changed, wrong silently after, and it would have to be maintained by
-            hand for every model the CLI offers. The CLI also compacts context on its own,
-            so a bar filling up would not mean what a reader assumes it means. If the CLI
-            ever reports the limit for the model in use, revisit it; until then a number
-            here would be invented.
+            The first reason has gone: the CLI DOES report a limit, per model, in
+            `initialize._meta.modelState` as `totalContextTokens` — so the number below is
+            the agent's own answer for the model this session is running, not a table of
+            published figures maintained by hand. That table was the thing this comment
+            refused to build, and it is no longer what is on offer.
+
+            The second reason stands, and it is why this is a stated fact rather than a
+            bar: the CLI compacts context on its own. A bar approaching full would read as
+            "about to break" when what actually happens is that the CLI compacts and
+            carries on, so the shape would tell a story the app cannot back up.
           */}
+          {contextTokens ? (
+            <dl className="usage-grid">
+              <div className="usage-cell">
+                <dt>Context window</dt>
+                <dd title={formatExact(contextTokens)}>{formatTokens(contextTokens)}</dd>
+              </div>
+            </dl>
+          ) : null}
           <p className="usage-note session-tray-note">
             Reported by the Grok CLI. {costNote(auth)} The CLI compacts context on its own, so
             there is nothing here to manage.
