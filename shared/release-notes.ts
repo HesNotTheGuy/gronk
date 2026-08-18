@@ -47,6 +47,23 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '0.5.0',
+    changed: [
+      'Changing the model no longer starts a new conversation. Pick a different model mid-chat and the conversation carries on with it — before, it opened an empty session and left the old one behind.',
+      'Settings has a Reasoning effort control. Grok 4.6 can think harder or faster on request, and the levels offered are the ones the model you picked actually has. It applies to new conversations, because the level is chosen when a conversation starts.',
+      'Settings now says which model new conversations will use, and offers Follow grok. Following means a newer model reaches you on its own; picking one pins it until you change it back. The screen says which of the two you are on.',
+      'The model menu under the message box changes only the conversation in front of you. What new conversations start with is set in Settings.',
+      'The usage panel shows the context window of the model in use, as the app is told it.',
+      'After an update, a short note appears once saying what changed. It does not come back until the next release.',
+      'The app stops explaining itself once you have used it. The introductory text retires after your first completed conversation.'
+    ],
+    fixed: [
+      'Running out of Grok usage now says so. It used to appear as though the app had failed, and the part of the reply that says how much you have used and when it resets was being dropped before it reached the screen.',
+      'Choosing the model you are already using does nothing, instead of replacing the conversation with an empty one.'
+    ],
+    security: true
+  },
+  {
     version: '0.4.1',
     changed: [],
     fixed: [

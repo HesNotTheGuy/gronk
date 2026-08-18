@@ -4,6 +4,49 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-16
+
+Model handling, end to end: switching one no longer costs you the conversation,
+the app can follow grok's default instead of pinning a model forever, and grok
+4.6's reasoning effort is exposed. Plus the app now tells you what changed after
+an update, and stops explaining itself once you have used it.
+
+### Added
+
+- **Reasoning effort, from grok 4.6.** Settings offers the levels the chosen
+  model actually reports — four on 4.6 including Extra High, three on 4.5 — so
+  the list follows the model rather than a table maintained by hand. Leaving it
+  unset passes no flag at all and lets the model use its own default. Applies to
+  new sessions: the level is read when the agent starts.
+- **A "Follow grok" option for the model.** New sessions use whatever grok
+  defaults to, so a newer model arrives without anyone doing anything. Settings
+  states which of the two you are on, which it previously could not.
+- **The context window of the model in use**, in the usage panel, as the agent
+  reports it. Stated as a number rather than a gauge: the CLI compacts context on
+  its own, so a bar approaching full would imply a failure that does not come.
+- **A What's New note after an update**, shown once per version and written by
+  hand. A fresh install sees nothing.
+
+### Changed
+
+- **Switching model keeps the conversation.** It used to write the setting and
+  restart the agent, and a restart is a new session with an empty transcript — so
+  the picker under the message box could not be used from inside a conversation.
+- **The model menu and Settings answer different questions.** The menu changes
+  the conversation in front of you and stores nothing; Settings is what new
+  sessions start with. Any picker used to write the stored default, which is how
+  an install ends up pinned to a model nobody chose.
+- **The app retires its own introduction** once a turn has been completed.
+  Derived from your sessions, so an update cannot bring it back.
+
+### Fixed
+
+- **A usage limit reads as a usage limit**, not as a crash. The reply carries the
+  limit, the amount used and the reset window, and none of it was reaching the
+  screen — the app read that detail only in one of the two shapes it arrives in.
+- **Choosing the model already in use does nothing.** It used to replace the
+  conversation with an empty session.
+
 ## [0.4.1] - 2026-08-11
 
 A correction and a fix. 0.4.0 gave wrong advice when a turn failed, and this replaces it.
