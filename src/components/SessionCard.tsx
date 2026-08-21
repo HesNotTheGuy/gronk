@@ -89,7 +89,9 @@ export function SessionCard({
             else setMenuOpen(true)
           }}
         >
-          ⋯
+          {/* Vertical, matching MenuButton: a horizontal '⋯' beside a title that
+              truncates with an ellipsis reads as two of the same control (#67). */}
+          ⋮
         </button>
         {menuOpen ? (
           <>
