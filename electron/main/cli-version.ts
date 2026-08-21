@@ -32,7 +32,7 @@ import type { CliVersionInfo, CliVersionStatus } from '../../shared/types'
  * RE-RUN THAT SUITE BEFORE BUMPING THIS. Editing the constant on its own only
  * silences the warning; it does not make the shapes match.
  */
-export const VERIFIED_CLI_VERSION = '0.2.112'
+export const VERIFIED_CLI_VERSION = '1.0.5'
 
 export interface Semver {
   major: number

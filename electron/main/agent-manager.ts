@@ -1208,6 +1208,24 @@ export class AgentManager {
       return
     }
 
+    // The agent pushes model-list changes live (new in the CLI's 1.0 line). This is the
+    // mechanism that was missing when the default moved to 4.6 and nothing said so: the
+    // list is read once at boot, so an entitlement change — a model arriving, or one
+    // vanishing from the account mid-session — was invisible until a restart. The
+    // payload is the same modelState shape initialize carries, parsed by the same
+    // function, and pickers already rerender off the `models` event.
+    if (method === '_x.ai/models/update' || method === 'x.ai/models/update') {
+      const parsed = parseModelState({ modelState: p })
+      if (parsed.models.length) {
+        this.models = parsed.models
+        // The push says what the CLI now defaults to, not what this session runs.
+        // A live session keeps its model; only an empty current adopts the report.
+        if (!this.currentModel) this.currentModel = parsed.current
+        this.emit({ type: 'models', models: this.models, current: this.currentModel })
+      }
+      return
+    }
+
     if (method.startsWith('session/') || method.startsWith('x.ai/') || method.startsWith('_x.ai/')) {
       if (p.update || p.sessionUpdate) {
         this.handleSessionUpdate(p)
