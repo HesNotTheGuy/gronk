@@ -54,6 +54,7 @@ export const RELEASE_NOTES: ReleaseNote[] = [
       'Settings now says which model new conversations will use, and offers Follow grok. Following means a newer model reaches you on its own; picking one pins it until you change it back. The screen says which of the two you are on.',
       'The model menu under the message box changes only the conversation in front of you. What new conversations start with is set in Settings.',
       'The usage panel shows the context window of the model in use, as the app is told it.',
+      'The list of models stays current while the app is open. When a model is added to or removed from your account, the menus follow without a restart.',
       'After an update, a short note appears once saying what changed. It does not come back until the next release.',
       'The app stops explaining itself once you have used it. The introductory text retires after your first completed conversation.'
     ],
