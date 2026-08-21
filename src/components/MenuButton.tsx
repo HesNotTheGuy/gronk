@@ -26,7 +26,17 @@ interface Props {
   trigger?: 'labelled' | 'icon'
   /** Composer menus open upward; a row near the top of a list must open down. */
   placement?: 'up' | 'down'
-  /** Glyph for the icon trigger. */
+  /**
+   * Glyph for the icon trigger.
+   *
+   * Vertical (U+22EE), not horizontal. The horizontal '⋯' sat to the right of a title
+   * that truncates with `text-overflow: ellipsis`, and the two are the same three dots
+   * at row size — so a hovered row with a clipped title showed what read as two menu
+   * buttons (#67's sighting: one "inside the row's background", the title's own
+   * ellipsis, and one outside it, this control fading in on hover). A vertical glyph
+   * cannot be produced by text truncation, so if two ever appear again it is a real
+   * duplicate control and worth reporting.
+   */
   glyph?: string
 }
 
@@ -46,7 +56,7 @@ export function MenuButton({
   title,
   trigger = 'labelled',
   placement = 'up',
-  glyph = '⋯'
+  glyph = '⋮'
 }: Props) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{
