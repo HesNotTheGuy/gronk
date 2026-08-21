@@ -4,7 +4,7 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - 2026-08-16
+## [0.5.0] - 2026-08-21
 
 Model handling, end to end: switching one no longer costs you the conversation,
 the app can follow grok's default instead of pinning a model forever, and grok
@@ -26,6 +26,11 @@ an update, and stops explaining itself once you have used it.
   its own, so a bar approaching full would imply a failure that does not come.
 - **A What's New note after an update**, shown once per version and written by
   hand. A fresh install sees nothing.
+- **The model list stays current while the app runs.** The agent announces when
+  a model is added or removed from the account, and every picker follows —
+  previously the list was read once at startup, which is how a new model could
+  exist for weeks without the app showing it. Verified against the Grok CLI's
+  1.0 line, which the app's checks now expect.
 
 ### Changed
 
