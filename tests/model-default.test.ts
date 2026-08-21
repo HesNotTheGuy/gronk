@@ -320,3 +320,30 @@ test('THE MODEL DEFAULT IS AN OPTION, AND IS NOT THE SAME AS NAMING THAT LEVEL',
     view.unmount()
   }
 })
+
+/**
+ * The live model push, new in the CLI's 1.0 line.
+ *
+ * The list used to be read once at boot, which is how an install sat on a model the
+ * account had stopped defaulting to with nothing on screen saying so. The agent now
+ * pushes `_x.ai/models/update` whenever the list changes — a model arriving, or one
+ * vanishing from the account mid-session, both observed live against 1.0.5.
+ *
+ * Read from source: nothing in the suite constructs an AgentManager (it owns a CLI
+ * child), so this pins the wiring the way the history-stamp test does.
+ */
+test('A MODEL-LIST PUSH FROM THE AGENT REACHES THE PICKERS', async () => {
+  const { readFileSync } = await import('node:fs')
+  const source = readFileSync(new URL('../electron/main/agent-manager.ts', import.meta.url), 'utf8')
+
+  assert.match(source, /_x\.ai\/models\/update/, 'the push notification is not handled')
+  // Parsed by the same function as the boot payload — a second parser would drift.
+  assert.match(source, /parseModelState\(\{ modelState: p \}\)/)
+  // The push says what the CLI now defaults to, not what this session runs. A live
+  // session keeping its model is the property #97 exists for.
+  assert.match(
+    source,
+    /if \(!this\.currentModel\) this\.currentModel = parsed\.current/,
+    'a push would overwrite the model a running conversation is on'
+  )
+})
