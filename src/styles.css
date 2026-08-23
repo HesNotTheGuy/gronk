@@ -1515,10 +1515,29 @@ button {
   text-overflow: ellipsis;
 }
 
-.browse-card-menu-wrap {
-  position: relative;
-  padding-top: 6px;
-  padding-right: 4px;
+/* The card's menu is the shared MenuButton. Strip the composer chrome the base
+   class carries, and keep it always visible: unlike the sidebar rows, a card is
+   the primary surface for these actions and has the room. */
+.browse-card .menu-btn.icon {
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.browse-card .menu-btn.icon:hover,
+.browse-card .menu-btn.icon.active {
+  color: var(--ink);
+}
+
+/* Delete confirmation, in the card like the sidebar row: the native dialog this
+   replaces blocked the whole app. */
+.browse-card.confirming {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
 }
 
 .browse-rename {
@@ -5004,28 +5023,7 @@ html[data-theme='light'] .session-search {
    `.session-item .name` and `.session-item .meta` were always styled
    independently, so nothing else here was load-bearing. */
 
-.session-menu-btn {
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  color: var(--ink-3);
-  font-size: 14px;
-  line-height: 1;
-  opacity: 0.55;
-  transition:
-    opacity var(--dur) var(--ease),
-    border-color var(--dur) var(--ease),
-    background var(--dur) var(--ease);
-}
-
-.session-menu-btn:hover {
-  border-color: var(--line-2);
-  background: var(--hover);
-  color: var(--ink);
-}
+/* .session-menu-btn removed: the browse card now uses the shared MenuButton. */
 
 .session-menu-backdrop {
   /* A full-window overlay does not carve a hole in a drag region beneath it:

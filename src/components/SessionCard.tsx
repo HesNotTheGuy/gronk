@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { MenuButton } from './MenuButton'
+import type { MenuOption } from './MenuButton'
 import type { SessionInfo } from '../../shared/types'
 
 interface Props {
@@ -17,6 +19,22 @@ interface Props {
   onDelete: () => void
 }
 
+/**
+ * A session in the browse views (Chat home, project cards, the archived list).
+ *
+ * The menu is the shared `MenuButton`, the same control the sidebar rows use. This
+ * card used to carry its own hand-rolled menu — a third implementation beside
+ * MenuButton and the topbar's export menu — and being separate is what let it hide
+ * during three investigations of #67: every audit counted MenuButtons and found the
+ * right number. One implementation means one place to look, and one look.
+ *
+ * Two behaviours changed deliberately in the consolidation:
+ * - Export is two flat items rather than a submenu, matching the sidebar. A
+ *   two-entry submenu cost a click and a second implementation of menu navigation.
+ * - Delete confirms in the card, matching the sidebar, instead of `window.confirm`.
+ *   The native dialog blocks the whole app and cannot be styled, and this was the
+ *   last caller.
+ */
 export function SessionCard({
   session,
   active,
@@ -28,10 +46,8 @@ export function SessionCard({
   onExport,
   onDelete
 }: Props) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  /** Second level of the same menu. Keeps format choice out of the top list */
-  const [pickingFormat, setPickingFormat] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [titleDraft, setTitleDraft] = useState(session.title || '')
   const title = (session.title || session.id.slice(0, 8)).trim()
 
@@ -41,14 +57,59 @@ export function SessionCard({
     setRenaming(false)
   }
 
-  const closeMenu = () => {
-    setMenuOpen(false)
-    setPickingFormat(false)
+  // Built per render rather than hoisted: which items exist depends on props
+  // (Export optional, Archive vs Restore on archived state), and a menu this
+  // small costs nothing to rebuild.
+  const menuOptions: MenuOption[] = [
+    { id: 'rename', label: 'Rename' },
+    ...(onExport
+      ? [
+          { id: 'export-md', label: 'Export as Markdown' },
+          { id: 'export-json', label: 'Export as JSON' }
+        ]
+      : []),
+    ...(session.archived
+      ? onUnarchive
+        ? [{ id: 'restore', label: 'Restore', description: 'Back into the main list' }]
+        : []
+      : onArchive
+        ? [{ id: 'archive', label: 'Archive', description: 'Hide it without deleting' }]
+        : []),
+    { id: 'delete', label: 'Delete', description: 'Permanent', dangerous: true }
+  ]
+
+  const choose = (id: string): void => {
+    if (id === 'rename') {
+      setTitleDraft(session.title || title)
+      setRenaming(true)
+    } else if (id === 'export-md') onExport?.('md')
+    else if (id === 'export-json') onExport?.('json')
+    else if (id === 'restore') onUnarchive?.()
+    else if (id === 'archive') onArchive?.()
+    else if (id === 'delete') setConfirmingDelete(true)
   }
 
-  const exportAs = (format: 'md' | 'json') => {
-    closeMenu()
-    onExport?.(format)
+  if (confirmingDelete) {
+    return (
+      <div className={`browse-card session-card confirming ${active ? 'active' : ''}`}>
+        <div className="session-confirm-text">Delete “{title}”?</div>
+        <div className="session-confirm-actions">
+          <button type="button" className="btn-mini" onClick={() => setConfirmingDelete(false)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn-mini danger"
+            onClick={() => {
+              setConfirmingDelete(false)
+              onDelete()
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -58,7 +119,11 @@ export function SessionCard({
           className="browse-rename"
           value={titleDraft}
           autoFocus
-          onChange={(e) => setTitleDraft(e.target.value)}
+          /* onInput, not onChange: identical for text inputs in a real browser, and
+             the difference is documented on the composer textarea — jsdom never
+             synthesizes onChange from a dispatched input event, so onChange here is
+             untestable and its rename guard went unexercised. */
+          onInput={(e) => setTitleDraft((e.target as HTMLInputElement).value)}
           onBlur={commitRename}
           onKeyDown={(e) => {
             if (e.key === 'Enter') commitRename()
@@ -76,125 +141,14 @@ export function SessionCard({
         </button>
       )}
 
-      <div className="browse-card-menu-wrap">
-        <button
-          type="button"
-          className="session-menu-btn"
-          aria-label="Session actions"
-          aria-expanded={menuOpen}
-          title="Rename, export, archive, or delete"
-          onClick={(e) => {
-            e.stopPropagation()
-            if (menuOpen) closeMenu()
-            else setMenuOpen(true)
-          }}
-        >
-          {/* Vertical, matching MenuButton: a horizontal '⋯' beside a title that
-              truncates with an ellipsis reads as two of the same control (#67). */}
-          ⋮
-        </button>
-        {menuOpen ? (
-          <>
-            <button
-              type="button"
-              className="session-menu-backdrop"
-              aria-label="Close menu"
-              onClick={closeMenu}
-            />
-            <div className="session-menu" role="menu">
-              {pickingFormat ? (
-                <>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="session-menu-back"
-                    onClick={() => setPickingFormat(false)}
-                  >
-                    <span className="session-menu-ico">‹</span>
-                    Export as
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => exportAs('md')}>
-                    <span className="session-menu-ico">↧</span>
-                    Markdown
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => exportAs('json')}>
-                    <span className="session-menu-ico">↧</span>
-                    JSON
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      closeMenu()
-                      setTitleDraft(session.title || title)
-                      setRenaming(true)
-                    }}
-                  >
-                    <span className="session-menu-ico">✎</span>
-                    Rename
-                  </button>
-                  {onExport ? (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      aria-haspopup="menu"
-                      onClick={() => setPickingFormat(true)}
-                    >
-                      <span className="session-menu-ico">↧</span>
-                      Export
-                      <span className="session-menu-more" aria-hidden>
-                        ›
-                      </span>
-                    </button>
-                  ) : null}
-                  {session.archived ? (
-                    onUnarchive ? (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          closeMenu()
-                          onUnarchive()
-                        }}
-                      >
-                        <span className="session-menu-ico">↩</span>
-                        Restore
-                      </button>
-                    ) : null
-                  ) : onArchive ? (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        closeMenu()
-                        onArchive()
-                      }}
-                    >
-                      <span className="session-menu-ico">▤</span>
-                      Archive
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="danger"
-                    onClick={() => {
-                      closeMenu()
-                      if (confirm('Permanently delete this session?')) onDelete()
-                    }}
-                  >
-                    <span className="session-menu-ico">⌫</span>
-                    Delete
-                  </button>
-                </>
-              )}
-            </div>
-          </>
-        ) : null}
-      </div>
+      <MenuButton
+        label="Session actions"
+        title={`Actions for ${title}`}
+        trigger="icon"
+        placement="down"
+        options={menuOptions}
+        onSelect={choose}
+      />
     </div>
   )
 }

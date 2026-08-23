@@ -67,6 +67,8 @@ export function MenuButton({
   } | null>(null)
   const btnRef = useRef<HTMLButtonElement | null>(null)
   const popRef = useRef<HTMLDivElement | null>(null)
+  /** When the outside mousedown closed the menu, so the click it becomes is not an action. */
+  const closedByOutsideAt = useRef(0)
 
   const place = (): void => {
     const r = btnRef.current?.getBoundingClientRect()
@@ -99,9 +101,29 @@ export function MenuButton({
       const t = e.target as Node
       if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return
       setOpen(false)
+      // The click this mousedown becomes must not land. The old card menu put a
+      // full-window backdrop under its popup so a dismissing click hit the shield;
+      // this control just closed on mousedown and let the click through, so
+      // dismissing a menu by clicking another card SELECTED that card — and in the
+      // archived list, opening restores too, so a dismissal un-archived a session.
+      // The swallow is armed imperatively because this effect tears down the moment
+      // `open` flips false, before the click arrives.
+      closedByOutsideAt.current = Date.now()
+      const swallow = (click: MouseEvent): void => {
+        // A click that arrives much later is a new intention, not the dismissal.
+        if (Date.now() - closedByOutsideAt.current > 700) return
+        click.stopPropagation()
+        click.preventDefault()
+      }
+      document.addEventListener('click', swallow, { capture: true, once: true })
     }
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') {
+        setOpen(false)
+        // Focus went into the portal; leaving it at the end of document.body
+        // strands keyboard users.
+        btnRef.current?.focus()
+      }
     }
     const onReflow = (): void => setOpen(false)
     document.addEventListener('mousedown', onDoc)
@@ -113,6 +135,47 @@ export function MenuButton({
       window.removeEventListener('resize', onReflow)
     }
   }, [open])
+
+  /**
+   * Keyboard access. The popup portals to the end of document.body, so without
+   * moving focus the items sit after everything else in tab order — reachable in
+   * principle, unreachable in practice, and invisible to assistive tech inside an
+   * aria-modal dialog (the archived list) that the portal renders outside of.
+   * Focus follows the menu in, arrows move it, and every way out puts it back on
+   * the trigger.
+   */
+  useEffect(() => {
+    if (!open) return
+    const pop = popRef.current
+    if (!pop) return
+    const items = (): HTMLButtonElement[] =>
+      Array.from(pop.querySelectorAll<HTMLButtonElement>('.menu-pop-item'))
+    // The one in force, else the first: matches where a native select opens.
+    const start = items().find((b) => b.classList.contains('current')) ?? items()[0]
+    start?.focus()
+
+    const onKey = (e: KeyboardEvent): void => {
+      const list = items()
+      const at = list.indexOf(document.activeElement as HTMLButtonElement)
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const delta = e.key === 'ArrowDown' ? 1 : -1
+        const next = list[(at + delta + list.length) % list.length]
+        next?.focus()
+      } else if (e.key === 'Home' || e.key === 'End') {
+        e.preventDefault()
+        ;(e.key === 'Home' ? list[0] : list[list.length - 1])?.focus()
+      } else if (e.key === 'Tab') {
+        // Tabbing from the end of document.body goes nowhere useful. Close and
+        // hand focus back so the next Tab continues from the trigger.
+        e.preventDefault()
+        setOpen(false)
+        btnRef.current?.focus()
+      }
+    }
+    pop.addEventListener('keydown', onKey)
+    return () => pop.removeEventListener('keydown', onKey)
+  }, [open, pos])
 
   const current = valueLabel || options.find((o) => o.id === value)?.label || value || '—'
 
@@ -180,6 +243,9 @@ export function MenuButton({
                   onClick={() => {
                     if (o.id !== value) onSelect(o.id)
                     setOpen(false)
+                    // Selection moved focus into the portal; put it back where the
+                    // keyboard left off.
+                    btnRef.current?.focus()
                   }}
                 >
                   <span className="menu-pop-name">{o.label}</span>
