@@ -8,16 +8,9 @@ import { parseSetModelResult } from '../electron/main/acp/client'
 import type { SessionInfo } from '../shared/types'
 
 /**
- * Changing the model from inside a conversation.
- *
- * Reported: "when i click a new model it opens in a new session". It did. Selecting a
- * model wrote the setting and restarted the agent, and a restart is `forceNew` — a
- * different session with an empty transcript. So the picker that sits under the composer,
- * inside a conversation, could not be used from inside a conversation.
- *
- * The CLI does not require that. `session/set_model` changes the model on the running
- * session and carries the history across; verified against grok 0.2.112 by handing 4.6 a
- * codeword, switching the live session to 4.5, and asking 4.5 for it.
+ * Changing the model from inside a conversation must keep the conversation:
+ * `session/set_model` switches the running session in place, and a restart —
+ * which is always a new, empty session — must never be the mechanism.
  */
 
 beforeEach(() => {

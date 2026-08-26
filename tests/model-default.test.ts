@@ -7,17 +7,10 @@ import { SettingsPanel } from '../src/components/SettingsPanel'
 import type { AppSettings, ModelInfo } from '../shared/types'
 
 /**
- * The model an install starts new sessions with, and the way back out of one.
- *
- * How this went wrong in the field: the CLI moved its default to 4.6 and the app kept
- * starting every session on 4.5, because `settings.model` held that id and Gronk passes
- * it as `-m` on every spawn. Nothing had gone wrong mechanically. There was simply no
- * option meaning "no stored model", so once a value was written — by any picker, once,
- * at any point in the past — it outlived every model release after it.
- *
- * Two properties, and the dropdown is worth mounting for both: an empty value must be
- * offered and must be reachable, and a pinned install must be distinguishable from an
- * unpinned one by looking at this screen.
+ * The model an install starts new sessions with. Two properties: an empty value
+ * ("no stored model" — without it, one past pick outlives every model release)
+ * must be offered and reachable, and a pinned install must look different from an
+ * unpinned one on this screen.
  */
 
 const MODELS: ModelInfo[] = [
@@ -322,13 +315,8 @@ test('THE MODEL DEFAULT IS AN OPTION, AND IS NOT THE SAME AS NAMING THAT LEVEL',
 })
 
 /**
- * The live model push, new in the CLI's 1.0 line.
- *
- * The list used to be read once at boot, which is how an install sat on a model the
- * account had stopped defaulting to with nothing on screen saying so. The agent now
- * pushes `_x.ai/models/update` whenever the list changes — a model arriving, or one
- * vanishing from the account mid-session, both observed live against 1.0.5.
- *
+ * The agent pushes `_x.ai/models/update` when the list changes (a model arriving, or
+ * vanishing from the account mid-session); the pickers must follow without a restart.
  * Read from source: nothing in the suite constructs an AgentManager (it owns a CLI
  * child), so this pins the wiring the way the history-stamp test does.
  */

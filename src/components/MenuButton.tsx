@@ -27,15 +27,10 @@ interface Props {
   /** Composer menus open upward; a row near the top of a list must open down. */
   placement?: 'up' | 'down'
   /**
-   * Glyph for the icon trigger.
-   *
-   * Vertical (U+22EE), not horizontal. The horizontal '⋯' sat to the right of a title
-   * that truncates with `text-overflow: ellipsis`, and the two are the same three dots
-   * at row size — so a hovered row with a clipped title showed what read as two menu
-   * buttons (#67's sighting: one "inside the row's background", the title's own
-   * ellipsis, and one outside it, this control fading in on hover). A vertical glyph
-   * cannot be produced by text truncation, so if two ever appear again it is a real
-   * duplicate control and worth reporting.
+   * Glyph for the icon trigger. Vertical (U+22EE), never horizontal: titles truncate
+   * with `text-overflow: ellipsis`, and a horizontal '⋯' beside a clipped title reads
+   * as two menu buttons. Truncation cannot produce a vertical glyph, so two of these
+   * on one row is always a real duplicate control.
    */
   glyph?: string
 }
@@ -101,13 +96,10 @@ export function MenuButton({
       const t = e.target as Node
       if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return
       setOpen(false)
-      // The click this mousedown becomes must not land. The old card menu put a
-      // full-window backdrop under its popup so a dismissing click hit the shield;
-      // this control just closed on mousedown and let the click through, so
-      // dismissing a menu by clicking another card SELECTED that card — and in the
-      // archived list, opening restores too, so a dismissal un-archived a session.
-      // The swallow is armed imperatively because this effect tears down the moment
-      // `open` flips false, before the click arrives.
+      // The click this mousedown becomes must not land: letting it through makes a
+      // dismissal activate whatever sits under the pointer (selecting — or in the
+      // archived list, restoring — another session). Armed imperatively because this
+      // effect tears down the moment `open` flips false, before the click arrives.
       closedByOutsideAt.current = Date.now()
       const swallow = (click: MouseEvent): void => {
         // A click that arrives much later is a new intention, not the dismissal.
@@ -137,12 +129,10 @@ export function MenuButton({
   }, [open])
 
   /**
-   * Keyboard access. The popup portals to the end of document.body, so without
-   * moving focus the items sit after everything else in tab order — reachable in
-   * principle, unreachable in practice, and invisible to assistive tech inside an
-   * aria-modal dialog (the archived list) that the portal renders outside of.
-   * Focus follows the menu in, arrows move it, and every way out puts it back on
-   * the trigger.
+   * Keyboard access. The popup portals to the end of document.body, which puts its
+   * items after everything else in tab order and outside any aria-modal dialog's
+   * subtree — so focus must follow the menu in, and every way out must put it back
+   * on the trigger.
    */
   useEffect(() => {
     if (!open) return

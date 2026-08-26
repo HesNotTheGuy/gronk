@@ -5,17 +5,11 @@ import { ensureDom, flush, mount } from './helpers/render'
 import { MenuButton } from '../src/components/MenuButton'
 
 /**
- * The shared menu's two escape hatches, added when the browse card adopted it.
- *
- * Both were found by adversarial review of that consolidation, not by a user:
- *
- * - The card's old hand-rolled menu put a full-window backdrop under its popup, so a
- *   dismissing click hit the shield. MenuButton closed on mousedown and let the click
- *   through — so dismissing a menu by clicking another card SELECTED it, and in the
- *   archived list (where opening restores too) a dismissal un-archived a session.
- * - The popup portals to the end of document.body. Without moving focus, its items sit
- *   after everything else in the tab order — unreachable in practice, and invisible to
- *   assistive tech inside an aria-modal dialog the portal renders outside of.
+ * Two properties of the shared menu:
+ * - a dismissing click closes the menu and activates nothing (letting it land selects
+ *   — or in the archived list, restores — whatever sits under the pointer)
+ * - focus follows the menu into its portal and returns to the trigger on every exit,
+ *   or the items sit at the end of the document's tab order, unreachable
  */
 
 const OPTIONS = [
