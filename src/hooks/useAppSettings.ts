@@ -155,23 +155,14 @@ export function useAppSettings({
   }, [])
 
   /**
-   * Switch the model of the conversation in front of you. This session only.
-   *
-   * It used to write the stored default as well, and that is how an install ends up
-   * pinned: one switch inside one chat, months ago, and every session since has been
-   * started with `-m` naming a model the CLI has long stopped defaulting to. Nobody
-   * chose that, and nothing in the app said it had happened.
-   *
-   * So the two questions are two controls now. This one is "what is this conversation
-   * running", and the Settings dropdown is "what should new ones start with" — which is
-   * also the only place a pin can be created, deliberately, and seen afterwards.
+   * Switch the model of the conversation in front of you. This session only: it must
+   * never write the stored default, or one in-chat switch silently pins every future
+   * session. Settings is the only place a pin is created.
    */
   const changeModel = useCallback(
     async (modelId: string, runningModel?: string | null) => {
-      // Picking the model already in use does nothing at all. It used to write the
-      // setting and restart, and restarting means `forceNew` — so choosing the model you
-      // were already on replaced the conversation with an empty session. Nothing about
-      // that was asked for.
+      // Picking the model already in use does nothing: acting on it would restart, and
+      // a restart replaces the conversation with an empty session.
       if (modelId === (runningModel ?? settings?.model)) return
       await liveSwitchModel(modelId)
     },
@@ -179,16 +170,9 @@ export function useAppSettings({
   )
 
   /**
-   * The model new sessions start with. `''` clears it, which is the shipped state.
-   *
-   * Cleared means Gronk passes no `-m` at all and the CLI uses its own default, so a
-   * newer model arrives on its own. A stored value overrides that until it is cleared
-   * again — which is the entire point of storing one, and was the entire problem when
-   * there was no way to.
-   *
-   * Deliberately does not touch a running session: this is a statement about the next
-   * one, and reaching into the current conversation to apply it would be answering a
-   * question nobody asked.
+   * The model new sessions start with. `''` clears it: no `-m` is passed and the CLI
+   * uses its own default, so a newer model arrives on its own. Never touches a running
+   * session — this is a statement about the next one.
    */
   const setDefaultModel = useCallback(async (modelId: string) => {
     const next = await window.gronk.setSettings({ model: modelId })
@@ -197,13 +181,9 @@ export function useAppSettings({
 
   /**
    * How hard the model thinks, for sessions started from now on. `''` clears it.
-   *
-   * New-sessions-only is not a simplification, it is the mechanism: the level is the
-   * value of `--reasoning-effort`, which grok reads once when the child is spawned.
-   * There is no way to change it on a running session — `session/set_config_option`
-   * exists in the protocol and answers -32601 for this build — so applying it to the
-   * conversation in front of you would mean silently restarting it, and a restart is a
-   * new session with an empty transcript.
+   * New-sessions-only is the mechanism, not a shortcut: `--reasoning-effort` is read
+   * once at spawn and the CLI has no working mid-session config call, so applying it
+   * to the open conversation would mean silently restarting it.
    */
   const setDefaultReasoningEffort = useCallback(async (effort: string) => {
     const next = await window.gronk.setSettings({

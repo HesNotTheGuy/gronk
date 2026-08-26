@@ -918,20 +918,10 @@ export class AgentManager {
 
   /**
    * Switch the model on the running session, keeping the conversation.
-   *
-   * This used to be a restart. Picking a model wrote the setting and respawned the child
-   * with `forceNew`, which is a different session with an empty transcript — so the
-   * picker sitting under the composer could not be used from inside a conversation,
-   * which is the only place anyone wants it.
-   *
-   * The CLI supports the switch directly: `session/set_model` rebuilds the agent harness
-   * against the running session and carries the history across. Verified against grok
-   * 0.2.112 by giving 4.6 a codeword, switching the live session to 4.5, and asking 4.5
-   * for it — it answered.
-   *
-   * Refusal is reported rather than swallowed. The CLI can decline (an incompatible
-   * agent type, a failed harness rebuild), and a silent failure would leave the picker
-   * naming a model the conversation is not running on.
+   * `session/set_model` rebuilds the agent harness against the live session and
+   * carries the history across (verified live). Refusal is reported, never
+   * swallowed: the CLI can decline, and a silent failure leaves the picker naming
+   * a model the conversation is not running on.
    */
   async setModel(modelId: string): Promise<{ model: string }> {
     if (!this.client || !this.sessionId) throw new Error('Agent is not running')
@@ -1208,12 +1198,9 @@ export class AgentManager {
       return
     }
 
-    // The agent pushes model-list changes live (new in the CLI's 1.0 line). This is the
-    // mechanism that was missing when the default moved to 4.6 and nothing said so: the
-    // list is read once at boot, so an entitlement change — a model arriving, or one
-    // vanishing from the account mid-session — was invisible until a restart. The
-    // payload is the same modelState shape initialize carries, parsed by the same
-    // function, and pickers already rerender off the `models` event.
+    // The agent pushes model-list changes live (CLI 1.0+): a model arriving, or one
+    // vanishing from the account mid-session. Same modelState shape as initialize,
+    // parsed by the same function; pickers already rerender off the `models` event.
     if (method === '_x.ai/models/update' || method === 'x.ai/models/update') {
       const parsed = parseModelState({ modelState: p })
       if (parsed.models.length) {

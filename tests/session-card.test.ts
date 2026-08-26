@@ -6,13 +6,8 @@ import { SessionCard } from '../src/components/SessionCard'
 import type { SessionInfo } from '../shared/types'
 
 /**
- * The browse card's actions, written the day it adopted the shared MenuButton.
- *
- * This component had a hand-rolled menu and zero tests, which together are how it
- * stayed invisible to three investigations of #67: every audit counted MenuButtons,
- * found the right number, and never learned a third menu implementation existed.
- * Consolidating fixes the blind spot; these tests keep the behaviour that consolidation
- * could have silently dropped.
+ * The browse card's actions: the menu is the shared MenuButton, delete asks first,
+ * rename commits only a real change.
  */
 
 const session = (over: Partial<SessionInfo> = {}): SessionInfo =>
@@ -111,8 +106,7 @@ test('EXPORT FIRES WITH THE FORMAT THE ITEM NAMES', async () => {
 })
 
 test('DELETE ASKS IN THE CARD AND NOTHING IS DELETED UNTIL CONFIRMED', async () => {
-  // This replaced window.confirm, which blocked the whole app. The two properties
-  // that must hold: Delete alone destroys nothing, and Cancel really cancels.
+  // Delete alone destroys nothing, and Cancel really cancels.
   let deleted = 0
   const view = await card(session(), { onDelete: () => deleted++ })
   try {
@@ -151,10 +145,8 @@ test('DELETE ASKS IN THE CARD AND NOTHING IS DELETED UNTIL CONFIRMED', async () 
 async function typeInto(input: HTMLInputElement, text: string): Promise<void> {
   const win = ensureDom().window
   // React 19 watches focused text inputs through an IE-era polyfill whose teardown
-  // calls detachEvent, which jsdom does not implement — the first focus shift after
-  // typing throws. The stubs are no-ops for an API nothing real runs anymore. (The
-  // component uses onInput rather than onChange for the same jsdom reason, documented
-  // on the composer textarea.)
+  // calls detachEvent, which jsdom lacks — the first focus shift after typing throws.
+  // No-op stubs for an API nothing real runs anymore.
   const proto = win.HTMLElement.prototype as unknown as Record<string, unknown>
   proto.attachEvent ??= () => {}
   proto.detachEvent ??= () => {}
@@ -178,9 +170,8 @@ const key = async (el: Element, k: string): Promise<void> => {
 }
 
 test('RENAME COMMITS A CHANGED TITLE AND ONLY A CHANGED ONE', async () => {
-  // The guard under test: `if (t && t !== session.title) onRename(t)`. The first
-  // version of this file never reached it — Escape routes around commitRename — so
-  // deleting the guard entirely kept the suite green.
+  // The guard under test: `if (t && t !== session.title) onRename(t)`. Escape routes
+  // around commitRename, so only the Enter path exercises it.
   const renames: string[] = []
   const view = await card(session(), { onRename: (t) => renames.push(t) })
   try {

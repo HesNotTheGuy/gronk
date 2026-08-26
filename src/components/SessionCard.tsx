@@ -22,18 +22,10 @@ interface Props {
 /**
  * A session in the browse views (Chat home, project cards, the archived list).
  *
- * The menu is the shared `MenuButton`, the same control the sidebar rows use. This
- * card used to carry its own hand-rolled menu — a third implementation beside
- * MenuButton and the topbar's export menu — and being separate is what let it hide
- * during three investigations of #67: every audit counted MenuButtons and found the
- * right number. One implementation means one place to look, and one look.
- *
- * Two behaviours changed deliberately in the consolidation:
- * - Export is two flat items rather than a submenu, matching the sidebar. A
- *   two-entry submenu cost a click and a second implementation of menu navigation.
- * - Delete confirms in the card, matching the sidebar, instead of `window.confirm`.
- *   The native dialog blocks the whole app and cannot be styled, and this was the
- *   last caller.
+ * The menu must stay the shared `MenuButton` — a second menu implementation here is
+ * invisible to anything auditing menus. Export is flat items, matching the sidebar.
+ * Delete confirms in the card: `window.confirm` blocks the whole app and must not
+ * return.
  */
 export function SessionCard({
   session,
@@ -57,9 +49,6 @@ export function SessionCard({
     setRenaming(false)
   }
 
-  // Built per render rather than hoisted: which items exist depends on props
-  // (Export optional, Archive vs Restore on archived state), and a menu this
-  // small costs nothing to rebuild.
   const menuOptions: MenuOption[] = [
     { id: 'rename', label: 'Rename' },
     ...(onExport
@@ -119,10 +108,9 @@ export function SessionCard({
           className="browse-rename"
           value={titleDraft}
           autoFocus
-          /* onInput, not onChange: identical for text inputs in a real browser, and
-             the difference is documented on the composer textarea — jsdom never
-             synthesizes onChange from a dispatched input event, so onChange here is
-             untestable and its rename guard went unexercised. */
+          /* onInput, not onChange: identical in a real browser, but jsdom never
+             synthesizes onChange from a dispatched input event, so onChange is
+             untestable here. */
           onInput={(e) => setTitleDraft((e.target as HTMLInputElement).value)}
           onBlur={commitRename}
           onKeyDown={(e) => {
