@@ -8,6 +8,7 @@ import {
   type KeyboardEvent
 } from 'react'
 import type {
+  AgentCommand,
   ConnectionState,
   FileEntry,
   ModelInfo,
@@ -22,6 +23,8 @@ import { QUEUE_LIMIT, type QueuedMessage } from '../hooks/useQueue'
 
 interface Props {
   connection: ConnectionState
+  /** Slash commands the live agent accepts; absent means no completion menu. */
+  commands?: AgentCommand[]
   /** A transcript is being restored onto the screen. */
   hydrating: boolean
   busy: boolean
@@ -94,6 +97,7 @@ function fileToAttachment(file: File): Promise<PromptAttachment | null> {
 
 export function Composer({
   connection,
+  commands,
   hydrating,
   busy,
   cwd,
@@ -163,6 +167,8 @@ export function Composer({
     }
   }
   const [mentionOpen, setMentionOpen] = useState(false)
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [slashDismissed, setSlashDismissed] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionItems, setMentionItems] = useState<FileEntry[]>([])
   const [mentionIndex, setMentionIndex] = useState(0)
@@ -332,7 +338,45 @@ export function Composer({
     setMentionOpen(false)
   }
 
+  // Open while the draft is a single half-typed command token. A trailing space ends
+  // completion (the argument has started), so Enter then sends as normal.
+  const slashQuery = /^\/(\S*)$/.exec(text)?.[1] ?? null
+  const slashItems =
+    slashQuery !== null && !slashDismissed && commands?.length
+      ? commands.filter((c) => c.name.toLowerCase().startsWith(slashQuery.toLowerCase()))
+      : []
+  const slashOpen = slashItems.length > 0
+  const slashAt = Math.min(slashIndex, slashItems.length - 1)
+
+  const completeSlash = (name: string): void => {
+    setText(`/${name} `)
+    setSlashIndex(0)
+    ref.current?.focus()
+  }
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSlashIndex((i) => (i + 1) % slashItems.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSlashIndex((i) => (i - 1 + slashItems.length) % slashItems.length)
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        completeSlash(slashItems[slashAt].name)
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setSlashDismissed(true)
+        return
+      }
+    }
     if (mentionOpen && mentionItems.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -435,6 +479,25 @@ export function Composer({
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
     >
+      {slashOpen ? (
+        <div className="mention-menu" role="listbox" aria-label="Commands">
+          {slashItems.map((c, i) => (
+            <button
+              key={c.name}
+              type="button"
+              className={`mention-item ${i === slashAt ? 'active' : ''}`}
+              title={c.hint ? `/${c.name} ${c.hint}` : `/${c.name}`}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                completeSlash(c.name)
+              }}
+            >
+              <span className="mention-name">/{c.name}</span>
+              {c.description ? <span className="mention-path">{c.description}</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {mentionOpen && mentionItems.length > 0 ? (
         <div className="mention-menu" role="listbox">
           {mentionItems.map((item, i) => (
@@ -546,6 +609,8 @@ export function Composer({
             reading before this.
           */
           onInput={(e) => {
+            setSlashDismissed(false)
+            setSlashIndex(0)
             const el = e.currentTarget
             setText(el.value)
             detectMention(el.value, el.selectionStart ?? el.value.length)

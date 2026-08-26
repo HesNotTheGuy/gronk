@@ -803,6 +803,7 @@ export function App() {
               onDraftChange={g.setDraft}
               onDraftSent={g.clearDraft}
               onQueue={g.enqueue}
+              commands={g.agentCommands}
               queued={g.queued}
               queueHeld={g.queueHeld}
               onRemoveQueued={g.removeQueued}

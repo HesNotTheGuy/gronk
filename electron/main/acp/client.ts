@@ -7,6 +7,7 @@ import os from 'node:os'
 import fs from 'node:fs'
 import {
   REASONING_EFFORTS,
+  type AgentCommand,
   type ModelInfo,
   type PermissionDecision,
   type ReasoningEffort,
@@ -163,6 +164,41 @@ function normalizeEffortId(value: unknown): ReasoningEffort | undefined {
   return typeof value === 'string' && (REASONING_EFFORTS as readonly string[]).includes(value)
     ? (value as ReasoningEffort)
     : undefined
+}
+
+/**
+ * Slash commands out of `initialize._meta.availableCommands`.
+ *
+ * Validated because they come from the agent and end up rendered in the composer's
+ * completion menu and echoed back as prompt text: a name is kept only when it looks
+ * like a command name, and free-text fields are length-capped. Unknown extra fields
+ * are dropped, not carried.
+ */
+const COMMAND_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i
+const MAX_COMMANDS = 64
+
+export function parseAvailableCommands(meta: unknown): AgentCommand[] {
+  const raw = (meta as { availableCommands?: unknown } | null | undefined)?.availableCommands
+  if (!Array.isArray(raw)) return []
+  const out: AgentCommand[] = []
+  for (const item of raw) {
+    if (out.length >= MAX_COMMANDS) break
+    const entry = (item ?? {}) as Record<string, unknown>
+    const name = typeof entry.name === 'string' ? entry.name : ''
+    if (!COMMAND_NAME_RE.test(name)) continue
+    if (out.some((c) => c.name === name)) continue
+    const input = (entry.input ?? {}) as Record<string, unknown>
+    out.push({
+      name,
+      ...(typeof entry.description === 'string' && entry.description.trim()
+        ? { description: entry.description.slice(0, 200) }
+        : {}),
+      ...(typeof input.hint === 'string' && input.hint.trim()
+        ? { hint: input.hint.slice(0, 120) }
+        : {})
+    })
+  }
+  return out
 }
 
 /**

@@ -1,6 +1,7 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ActivePlan,
+  AgentCommand,
   AgentSurface,
   AppSurface,
   ChatMessage,
@@ -161,6 +162,8 @@ export function useGronk() {
   const [sessionModel, setSessionModel] = useState<string | null>(null)
   /** The effort the running session was spawned with; null when no flag was passed. */
   const [sessionReasoningEffort, setSessionReasoningEffort] = useState<ReasoningEffort | null>(null)
+  /** Slash commands the live agent accepts, for the composer's completion menu. */
+  const [agentCommands, setAgentCommands] = useState<AgentCommand[]>([])
   const [sessionPermissionMode, setSessionPermissionMode] = useState<PermissionMode | null>(
     null
   )
@@ -632,6 +635,7 @@ export function useGronk() {
           // takes a second prompt for a session that already has one open.
           setSessionModel(event.model ?? null)
           setSessionReasoningEffort(event.reasoningEffort ?? null)
+          setAgentCommands(event.commands ?? [])
           setSessionPermissionMode(event.permissionMode)
           resyncTurn.current = { sessionId: event.sessionId, open: event.hasOpenTurn }
           setBusy(event.hasOpenTurn)
@@ -855,6 +859,13 @@ export function useGronk() {
         }
         case 'usage':
           setUsage(event.usage)
+          break
+        case 'commands':
+          // Tagged, and background sessions forward everything except connection —
+          // a session booting behind the one on screen must not swap its menu.
+          if (belongsToFocus(focusRef.current, event.sessionId)) {
+            setAgentCommands(event.commands)
+          }
           break
         case 'error':
           failAttempt('agent', event.message)
@@ -1724,6 +1735,7 @@ export function useGronk() {
     sessionId,
     messages,
     ...draftState,
+    agentCommands,
     sessionModel,
     sessionReasoningEffort,
     sessionPermissionMode,

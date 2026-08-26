@@ -279,6 +279,18 @@ export interface ReasoningEffortOption {
   description?: string
 }
 
+/**
+ * One slash command the agent supports in this session, from
+ * `initialize._meta.availableCommands`. Agent-supplied text: render as plain text
+ * only, never as markdown or a link.
+ */
+export interface AgentCommand {
+  name: string
+  description?: string
+  /** Argument hint, e.g. "on|off" — display only, never parsed. */
+  hint?: string
+}
+
 export interface ModelInfo {
   id: string
   name: string
@@ -655,6 +667,8 @@ export type MainToRendererEvent =
       permissionMode: PermissionMode | null
       /** The level this session was spawned with; null when no flag was passed. */
       reasoningEffort?: ReasoningEffort | null
+      /** Slash commands this session's agent accepts. */
+      commands?: AgentCommand[]
     }
   | {
       type: 'history-done'
@@ -690,6 +704,7 @@ export type MainToRendererEvent =
   | { type: 'permission-request'; request: PermissionRequest | null; sessionId?: string }
   | { type: 'plan'; sessionId: string; messageId: string; plan: unknown }
   | { type: 'models'; models: ModelInfo[]; current?: string }
+  | { type: 'commands'; commands: AgentCommand[]; sessionId?: string }
   | { type: 'auth'; auth: AuthStatus }
   | { type: 'error'; message: string; sessionId?: string }
   | {
