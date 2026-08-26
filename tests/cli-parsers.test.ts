@@ -256,3 +256,34 @@ test('AN ERROR DETAIL IS REDACTED BEFORE IT IS SHOWN', async () => {
   })
   assert.doesNotMatch(leaky, /xai-abcdef/, 'a token reached the error banner')
 })
+
+test('COMMANDS FROM THE AGENT ARE VALIDATED, CAPPED AND DEDUPED', async () => {
+  // These render in the composer's completion menu and are echoed back as prompt
+  // text, and the agent is not a trusted input.
+  const { parseAvailableCommands } = await import('../electron/main/acp/client')
+
+  const parsed = parseAvailableCommands({
+    availableCommands: [
+      { name: 'compact', description: 'Compress history', input: { hint: 'what to keep' } },
+      { name: 'compact', description: 'again' },
+      { name: 'has spaces' },
+      { name: '--flag-shaped' },
+      { name: 'x'.repeat(80) },
+      { name: 'ok-name', description: 'd'.repeat(500), input: { hint: 'h'.repeat(500) } },
+      'not-an-object',
+      null
+    ]
+  })
+
+  assert.deepEqual(parsed.map((c) => c.name), ['compact', 'ok-name'])
+  assert.equal(parsed[0].hint, 'what to keep')
+  assert.ok((parsed[1].description ?? '').length <= 200, 'description is not length-capped')
+  assert.ok((parsed[1].hint ?? '').length <= 120, 'hint is not length-capped')
+
+  assert.deepEqual(parseAvailableCommands({}), [])
+  assert.deepEqual(parseAvailableCommands(undefined), [])
+  const many = parseAvailableCommands({
+    availableCommands: Array.from({ length: 200 }, (_, i) => ({ name: `c${i}` }))
+  })
+  assert.equal(many.length, 64, 'the list is not capped')
+})

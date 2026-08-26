@@ -20,6 +20,8 @@ import { installFakeBridge } from './helpers/gronk-api'
 const EXPECTED_MEMBERS: string[] = [
   "activePlan",
   "addMcpServer",
+  // Slash commands the live agent accepts, for the composer's completion menu.
+  "agentCommands",
   "agentSurface",
   "archiveSession",
   "archivedSessions",

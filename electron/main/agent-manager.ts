@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto'
 import {
   GrokAcpClient,
   isAllowedGrokBasename,
+  parseAvailableCommands,
   parseModelState,
   parseSetModelResult,
   probeGrokBinary,
@@ -54,6 +55,7 @@ import { isChatWorkspace } from '../../shared/path'
 import { appendTextPart, appendToolPart } from '../../shared/types'
 import { redactPreview } from './redact'
 import type {
+  AgentCommand,
   ChatMessage,
   ConnectionState,
   SessionLiveness,
@@ -122,6 +124,8 @@ export class AgentManager {
   private historyAssistantId: string | null = null
   private models: ModelInfo[] = []
   private currentModel?: string
+  /** Slash commands this session's agent accepts, for the composer's completion menu. */
+  private commands: AgentCommand[] = []
   /** Live transcript for the active session (mirrored to disk) */
   private liveMessages: ChatMessage[] = []
   /**
@@ -408,6 +412,9 @@ export class AgentManager {
       this.currentModel = model || this.models.find((m) => m.isDefault)?.id || this.models[0]?.id
     }
     this.emit({ type: 'models', models: this.models, current: this.currentModel })
+
+    this.commands = parseAvailableCommands(init._meta)
+    this.emit({ type: 'commands', commands: this.commands, ...this.sessionTag() })
   }
 
   async start(
@@ -505,7 +512,8 @@ export class AgentManager {
       // describe the conversation in front of you rather than the app's defaults.
       model: this.currentModel,
       permissionMode: this.bootPermissionMode,
-      reasoningEffort: this.bootReasoningEffort
+      reasoningEffort: this.bootReasoningEffort,
+      commands: this.commands
     })
   }
 
