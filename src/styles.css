@@ -4664,6 +4664,43 @@ html[data-theme='light'] .session-tray {
   position: relative;
 }
 
+/* What is about to be dropped, and how it will actually be sent. */
+.drop-hint {
+  margin: 0 2px 6px;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  border: 1px dashed var(--line-hot);
+  background: var(--panel-2);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.drop-hint-image {
+  border-color: color-mix(in srgb, var(--ignite) 55%, transparent);
+  color: var(--ink);
+}
+
+.composer-attach {
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 9px;
+}
+
+/* An attachment the agent will not be allowed to open. Not an error — the file is
+   attached and the path is still sent — so it warns rather than refusing. */
+.attach-chip.unreachable {
+  border-color: color-mix(in srgb, var(--abort) 45%, var(--line-2));
+}
+
+.attach-warn {
+  margin-left: 6px;
+  color: var(--abort);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .composer-wrap.drag-over .composer {
   border-color: var(--ignite);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--ignite) 30%, transparent);

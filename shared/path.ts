@@ -160,3 +160,34 @@ export function isWorkspaceSession(
 ): boolean {
   return !isChatSession(session, chatRoot)
 }
+
+/**
+ * Is `file` inside `root`, for telling someone whether the agent will be able to
+ * open an attachment?
+ *
+ * A display-only judgement. The real gate is `resolveInsideJail` in the main
+ * process, which realpaths first because a symlink inside the root can point
+ * anywhere; this cannot see the filesystem and must never be relied on for
+ * containment. It exists so the composer can warn BEFORE a turn is spent finding
+ * out — the agent is handed a path and refused when it tries to read it, which
+ * otherwise looks like the agent ignoring the attachment.
+ *
+ * Trailing separator, and case-folded on win32, for the same reasons the real
+ * check does it: without them `/data/project-secrets` reads as inside
+ * `/data/project`, and two spellings of a drive letter compare unequal.
+ */
+export function looksInsideProject(root: string | null | undefined, file: string): boolean {
+  if (!root || !file) return false
+  const norm = (p: string) => {
+    const clean = normalizePath(p).replace(/\/+$/, '')
+    return isWindowsPath(clean) ? clean.toLowerCase() : clean
+  }
+  const r = norm(root)
+  const f = norm(file)
+  return f === r || f.startsWith(r + '/')
+}
+
+/** A drive-letter or UNC path, which is where case-insensitive comparison applies. */
+function isWindowsPath(p: string): boolean {
+  return /^[a-zA-Z]:\//.test(p) || p.startsWith('//')
+}
