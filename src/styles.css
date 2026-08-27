@@ -2183,12 +2183,27 @@ button {
 }
 
 /* ---------- Tool activity (compact brief + expand) ---------- */
+/*
+ * A finished, successful tool run is a footnote, not a card.
+ *
+ * Every run rendered as a full-width bordered box with the same visual weight as a
+ * paragraph of the reply, so a turn with two tool runs spent a third of its height
+ * saying tools were called — the least interesting thing in it. Collapsed and fine,
+ * it is now one quiet line. It takes the card back the moment it is worth looking
+ * at: expanded, still running, failed, or carrying images.
+ */
 .tool-activity {
   max-width: min(100%, 860px);
-  border: 1px solid var(--line);
-  background: var(--tool-pad);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   overflow: hidden;
+}
+
+.tool-activity.live,
+.tool-activity.expanded,
+.tool-activity.notable {
+  border-color: var(--line);
+  background: var(--tool-pad);
 }
 
 .tool-activity.live {
@@ -2201,9 +2216,22 @@ button {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 9px 12px;
+  padding: 3px 6px;
   text-align: left;
+  color: var(--ink-3);
   transition: background var(--dur) var(--ease);
+}
+
+.tool-activity.live > .tool-activity-bar,
+.tool-activity.expanded > .tool-activity-bar,
+.tool-activity.notable > .tool-activity-bar {
+  padding: 9px 12px;
+  color: inherit;
+}
+
+/* Quiet does not mean unclickable: the row still answers to a hover. */
+.tool-activity:not(.live):not(.expanded):not(.notable) > .tool-activity-bar:hover {
+  color: var(--ink);
 }
 
 .tool-activity-bar:hover {
@@ -2220,6 +2248,13 @@ button {
   border: 1px solid var(--line-2);
   background: var(--sunken);
   flex-shrink: 0;
+}
+
+/* The icon carries the box's height. Collapsed and fine, it shrinks with it. */
+.tool-activity:not(.live):not(.expanded):not(.notable) .tool-activity-icon {
+  width: 14px;
+  height: 14px;
+  font-size: 10px;
 }
 
 .tool-activity.live .tool-activity-icon {
