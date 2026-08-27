@@ -88,7 +88,13 @@ export function ToolActivity({
         : 'Used'
 
   return (
-    <div className={`tool-activity ${live ? 'live' : ''} ${expanded ? 'expanded' : ''}`}>
+    <div
+      className={`tool-activity ${live ? 'live' : ''} ${expanded ? 'expanded' : ''} ${
+        // Worth the card even when collapsed: a failure needs to be seen, and
+        // images are content rather than bookkeeping.
+        failed.length || images.length ? 'notable' : ''
+      }`}
+    >
       <button
         type="button"
         className="tool-activity-bar"
