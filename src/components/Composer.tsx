@@ -18,6 +18,7 @@ import type {
 import { PERMISSION_MODE_OPTIONS } from '../../shared/types'
 import { MenuButton } from './MenuButton'
 import { composerPermissions, composerPlaceholder } from '../lib/composer-state'
+import { looksInsideProject } from '../../shared/path'
 import type { Draft } from '../hooks/useDrafts'
 import { QUEUE_LIMIT, type QueuedMessage } from '../hooks/useQueue'
 
@@ -168,6 +169,12 @@ export function Composer({
   }
   const [mentionOpen, setMentionOpen] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
+  /**
+   * What is hovering, as far as a dragover event can tell: the spec exposes MIME
+   * types but not names or paths until the drop, so this can promise how a payload
+   * will be SENT and cannot yet know whether the agent will be allowed to open it.
+   */
+  const [dragKind, setDragKind] = useState<'image' | 'file' | 'none'>('none')
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionItems, setMentionItems] = useState<FileEntry[]>([])
@@ -425,6 +432,7 @@ export function Composer({
   const onDrop = (e: DragEvent) => {
     e.preventDefault()
     setDragOver(false)
+    setDragKind('none')
     const files = Array.from(e.dataTransfer.files || [])
     if (!files.length) return
 
@@ -475,10 +483,29 @@ export function Composer({
       onDragOver={(e) => {
         e.preventDefault()
         setDragOver(true)
+        const items = Array.from(e.dataTransfer?.items ?? [])
+        const files = items.filter((i) => i.kind === 'file')
+        if (!files.length) {
+          setDragKind('none')
+          return
+        }
+        setDragKind(files.some((i) => i.type.startsWith('image/')) ? 'image' : 'file')
       }}
-      onDragLeave={() => setDragOver(false)}
+      onDragLeave={() => {
+        setDragOver(false)
+        setDragKind('none')
+      }}
       onDrop={onDrop}
     >
+      {dragOver && dragKind !== 'none' ? (
+        <div className={`drop-hint drop-hint-${dragKind}`} role="status">
+          {dragKind === 'image'
+            ? 'Drop to attach — images are sent to the agent directly.'
+            : cwd
+              ? 'Drop to attach — the agent is sent the path and opens it itself, so it has to be inside this project.'
+              : 'Drop to attach — Chat has no project folder, so the agent cannot open files.'}
+        </div>
+      ) : null}
       {slashOpen ? (
         <div className="mention-menu" role="listbox" aria-label="Commands">
           {slashItems.map((c, i) => (
@@ -572,13 +599,36 @@ export function Composer({
         {attachments.length > 0 ? (
           <div className="attach-row">
             {attachments.map((a) => (
-              <div key={a.id} className={`attach-chip ${a.kind}`}>
+              <div
+                key={a.id}
+                className={`attach-chip ${a.kind} ${
+                  a.kind === 'file' && a.path && !looksInsideProject(cwd, a.path)
+                    ? 'unreachable'
+                    : ''
+                }`}
+              >
                 {a.kind === 'image' && a.previewUrl ? (
                   <img src={a.previewUrl} alt="" className="attach-thumb" />
                 ) : null}
                 <span className="attach-name" title={a.path || a.name}>
                   {a.name}
                 </span>
+                {/* A file attachment sends the PATH, and the agent's own file access is
+                    jailed to the project — so one from outside it produces a turn where
+                    the agent is refused and appears to have ignored the attachment.
+                    Said here, before the turn is spent. */}
+                {a.kind === 'file' && a.path && !looksInsideProject(cwd, a.path) ? (
+                  <span
+                    className="attach-warn"
+                    title={
+                      cwd
+                        ? 'Outside this project, so the agent will not be allowed to open it. Copy it into the project first.'
+                        : 'Chat has no project folder, so the agent cannot open files.'
+                    }
+                  >
+                    can’t be opened
+                  </span>
+                ) : null}
                 <button
                   type="button"
                   className="attach-x"
@@ -663,12 +713,13 @@ export function Composer({
             ) : null}
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
+              className="btn btn-ghost btn-sm composer-attach"
               disabled={!perms.canAttach}
               onClick={() => void pickFiles()}
-              title="Attach file"
+              title="Attach a file or image"
+              aria-label="Attach a file or image"
             >
-              Attach
+              +
             </button>
             {/* Restoring is not executing. `busy` is set both by a real send and
                 by opening a session, and this line used to read the same for

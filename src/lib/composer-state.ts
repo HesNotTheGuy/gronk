@@ -100,7 +100,9 @@ export function composerPlaceholder(
   if (input.hydrating || !perms.canSend) {
     if (input.hydrating) return 'Restoring the session… you can start typing'
   }
-  return input.cwd
-    ? 'Message the project agent  ·  @ files  ·  paste images  ·  Enter send'
-    : 'Message Grok  ·  paste images  ·  Enter send'
+  // Just the invitation. The instructions that used to be crammed in here —
+  // @ files, paste images, Enter send — are permanent chrome for something you
+  // learn once, and they made the box look busy before anything was typed. The
+  // affordances say it themselves: + attaches, @ opens the file menu.
+  return input.cwd ? 'Message the project agent' : 'Message Grok'
 }

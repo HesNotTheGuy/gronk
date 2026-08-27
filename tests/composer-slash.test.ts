@@ -168,3 +168,36 @@ test('WITHOUT A COMMAND LIST THERE IS NO MENU AND SLASH TEXT SENDS AS TYPED', as
     view.unmount()
   }
 })
+
+/**
+ * A file attachment sends the agent a PATH, not the bytes, and the agent's own file
+ * access is jailed to the project. A file from outside it therefore produces a turn
+ * where the agent is refused and looks like it ignored the attachment — so the
+ * composer says so before the turn is spent.
+ */
+test('AN ATTACHMENT THE AGENT CANNOT OPEN IS MARKED, AND ONE IT CAN IS NOT', async () => {
+  const { looksInsideProject } = await import('../shared/path')
+
+  assert.equal(looksInsideProject('/work/alpha', '/work/alpha/src/a.ts'), true)
+  assert.equal(looksInsideProject('/work/alpha', '/home/me/Downloads/a.png'), false)
+  // The sibling-prefix trap the real containment check also guards.
+  assert.equal(looksInsideProject('/work/alpha', '/work/alpha-secrets/a.ts'), false)
+  // Case folds on drive-letter paths, where the filesystem does too.
+  assert.equal(looksInsideProject('C:/Work/Proj', 'c:/work/proj/a.ts'), true)
+  // No project (Chat) means nothing is reachable, rather than everything.
+  assert.equal(looksInsideProject(null, '/anything'), false)
+
+  const { view, box } = await composer()
+  try {
+    assert.ok(box, 'no composer')
+    // The placeholder is the invitation only; the instructions that used to be
+    // crammed into it are the affordances' job now.
+    assert.equal(box.getAttribute('placeholder'), 'Message the project agent')
+    const attach = document.querySelector('.composer-attach')
+    assert.ok(attach, 'no attach control')
+    assert.equal(attach.textContent?.trim(), '+')
+    assert.match(attach.getAttribute('aria-label') ?? '', /attach/i)
+  } finally {
+    view.unmount()
+  }
+})
