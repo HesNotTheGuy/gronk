@@ -16,7 +16,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { resolveGrokBinary } from './acp/client'
-import { decideAuth } from './auth-decision'
+import { decideAuth, looksLikeNetworkFailure } from './auth-decision'
 import { cachedProbe } from './cache'
 import { grokHome } from './grok-home'
 import { getSettings } from './store'
@@ -139,6 +139,39 @@ export function looksUnauthenticated(stdout: string, stderr: string): boolean {
  */
 const AUTH_TTL_MS = 30_000
 
+/**
+ * Ask again before telling someone they are signed out.
+ *
+ * Reported: away from the machine for a while, sent a prompt, and got the
+ * full-screen sign-in — with the CLI's own output showing a timed-out request to
+ * auth.x.ai. Credentials were on disk the whole time. Two things can make a single
+ * probe say "no account" on a machine that has one: the CLI rewrites
+ * `~/.grok/auth.json` when it refreshes a token, so an existence check landing in
+ * that window sees nothing, and a network failure can stop it naming an account.
+ *
+ * Both are momentary, and the cost of believing them is not: it throws away the
+ * session on screen and demands a login the user does not need. So a negative
+ * result, from a machine that was signed in a moment ago, is confirmed once before
+ * it is believed. A positive is never delayed — nobody needs protecting from being
+ * told they are signed in.
+ */
+const CONFIRM_DELAY_MS = 700
+
+async function probeAuthStatus(): Promise<AuthStatus> {
+  const first = await observeAuth()
+  if (first.authenticated) {
+    lastKnownAuthenticated = true
+    return first
+  }
+  // Never signed in as far as we know, or the CLI is missing: nothing to protect.
+  if (!lastKnownAuthenticated || first.state === 'cli_missing') return first
+
+  await new Promise((resolve) => setTimeout(resolve, CONFIRM_DELAY_MS))
+  const second = await observeAuth()
+  lastKnownAuthenticated = second.authenticated
+  return second
+}
+
 const authProbe = cachedProbe(() => probeAuthStatus(), { ttlMs: AUTH_TTL_MS })
 
 export function getAuthStatus(): Promise<AuthStatus> {
@@ -163,7 +196,17 @@ export function looksLikeModelList(stdout: string): boolean {
  * judgement of its own, because the judgement is the part that was wrong and the
  * part that has to stay tested.
  */
-async function probeAuthStatus(): Promise<AuthStatus> {
+/**
+ * Whether the last settled probe found an account.
+ *
+ * Only used to decide whether a NEGATIVE result deserves a second look. Never
+ * reported: a stale yes must not keep someone signed in on screen after they sign
+ * out, which is why the confirmation below re-probes rather than trusting this.
+ */
+let lastKnownAuthenticated = false
+
+/** One observation of the CLI and the disk. No judgement, no retry. */
+async function observeAuth(): Promise<AuthStatus> {
   const binary = resolveBinary()
   if (!binary) {
     return {
@@ -186,7 +229,8 @@ async function probeAuthStatus(): Promise<AuthStatus> {
     modelsListed: looksLikeModelList(stdout),
     saysUnauthenticated: looksUnauthenticated(stdout, stderr),
     filePresent,
-    envKey
+    envKey,
+    networkError: looksLikeNetworkFailure(combined)
   })
 
   // The one thing the pure decision cannot supply: the CLI's own words, for the
