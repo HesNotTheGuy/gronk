@@ -862,6 +862,9 @@ export function parseToolCallFromUpdate(update: Record<string, unknown>): ToolCa
   return {
     toolCallId,
     title: title as string,
+    // Kept alongside the title, not folded into it: classification needs the
+    // stable name, and the title is prose containing paths and command lines.
+    name: meta && typeof meta.name === 'string' ? meta.name : undefined,
     kind: kind || undefined,
     status: normalizeStatus(update.status),
     rawInput: update.rawInput ?? update.input ?? update.arguments,
@@ -880,6 +883,7 @@ export function mergeToolCall(prev: ToolCallInfo | undefined, next: ToolCallInfo
   return {
     toolCallId: next.toolCallId || prev.toolCallId,
     title: !isGenericToolTitle(next.title) ? next.title : prev.title,
+    name: next.name || prev.name,
     kind: next.kind || prev.kind,
     status: next.status || prev.status,
     rawInput: next.rawInput ?? prev.rawInput,

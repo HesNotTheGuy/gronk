@@ -95,6 +95,17 @@ export type ToolCallStatus =
 export interface ToolCallInfo {
   toolCallId: string
   title: string
+  /**
+   * The tool's own name from the agent (`spawn_subagent`, `shell`, `read_file`).
+   *
+   * Distinct from `title`, which is a rendered description and contains whatever
+   * the call was about — file paths, whole command lines. Anything classifying a
+   * call must match on this: matching the title made every `Read` of a file whose
+   * path contained "workflow" register as a running workflow.
+   *
+   * Optional permanently: transcripts written before this field exist on disk.
+   */
+  name?: string
   kind?: string
   status: ToolCallStatus
   rawInput?: unknown
