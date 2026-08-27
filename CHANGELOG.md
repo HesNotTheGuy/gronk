@@ -4,6 +4,38 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-08-25
+
+Follow-ups to 0.5.0, and one message that was actively misleading.
+
+### Added
+
+- **Slash-command completion.** Typing `/` offers the commands the running
+  session accepts, filtered as you type, with arrows and Enter or Tab to
+  complete. The list is the agent's own, so a TUI-only command cannot be
+  offered here and then read as prose. Completion is scoped to an unfinished
+  command token: an argument or a space leaves Enter sending as before.
+- **AGENTS.md**, so any agent picking the repo up starts with the rules rather
+  than discovering them by breaking something.
+
+### Changed
+
+- **Menu buttons are vertical dots.** A title clipped with an ellipsis ends in
+  three dots of its own, which sat beside the old horizontal glyph and read as
+  a second menu button — the likely explanation for a long-standing report.
+- **The browse cards use the shared menu**, so there is one menu implementation
+  in the app rather than three. It is keyboard-reachable for the first time,
+  and dismissing it no longer activates whatever sits under the pointer.
+
+### Fixed
+
+- **A spent Grok Build balance says so.** It arrives under the same error code
+  as a genuine internal fault, so the app called it a crash and advised
+  retrying — which never clears a 402. Recognised from the payload rather than
+  the code, and a real fault still says retry.
+- **Deleting from a browse list confirms in place** instead of opening a native
+  dialog that blocked the whole app.
+
 ## [0.5.0] - 2026-08-21
 
 Model handling, end to end: switching one no longer costs you the conversation,
