@@ -20,6 +20,7 @@ import {
   orderUnitsForDisplay
 } from '../lib/agent-activity'
 import { statusToDot } from '../lib/agent-dots'
+import { contextPressure } from '../lib/context-pressure'
 import { costNote, detailCostLabel, summaryCostLabel } from '../lib/cost'
 import { toolActivitySignature } from '../lib/tool-activity-sig'
 import { shortenForDisplay } from '../lib/tool-format'
@@ -259,6 +260,9 @@ export function SessionTray({
   const hasNotes = !!notesCwd
   const hasPlan = showPlan && !!plan && plan.entries.length > 0
   // Tab stays for the whole session once any agent has been seen, until ×.
+  // Cost, not danger: the CLI compacts by itself, so this never claims a session
+  // is about to break — only that carrying on here is the expensive way to do it.
+  const pressure = contextPressure(usage, contextTokens)
   const hasAgents = !agentsDismissed && units.length > 0
   const hasUsage = !!usage && usage.turns > 0
 
@@ -369,7 +373,9 @@ export function SessionTray({
             type="button"
             role="tab"
             aria-selected={tab === 'usage'}
-            className={`session-tray-tab ${tab === 'usage' ? 'active' : ''}`}
+            className={`session-tray-tab ${tab === 'usage' ? 'active' : ''} ${
+              pressure.level !== 'fine' ? 'costly' : ''
+            }`}
             onClick={() => select('usage')}
             title="Token use reported by the Grok CLI for this session"
           >
@@ -565,6 +571,9 @@ export function SessionTray({
                 <dd title={formatExact(contextTokens)}>{formatTokens(contextTokens)}</dd>
               </div>
             </dl>
+          ) : null}
+          {pressure.advice ? (
+            <p className={`usage-pressure ${pressure.level}`}>{pressure.advice}</p>
           ) : null}
           <p className="usage-note session-tray-note">
             Reported by the Grok CLI. {costNote(auth)} The CLI compacts context on its own, so
