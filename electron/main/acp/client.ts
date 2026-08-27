@@ -209,6 +209,33 @@ export function parseAvailableCommands(meta: unknown): AgentCommand[] {
 const RATE_LIMITED = -32003
 
 /**
+ * Is this refusal about money rather than machinery?
+ *
+ * Read off the payload, never inferred from the JSON-RPC code. A spent Grok Build
+ * balance arrives as a generic -32603 "Internal error" — the same code the agent uses
+ * for real internal faults — with the actual reason only in `data`:
+ *
+ *   { "message": "API error (status 402 Payment Required): Grok Build usage
+ *      balance exhausted", "http_status": 402 }
+ *
+ * That distinction decides what to tell someone. -32603 otherwise means "retry, it is
+ * not you", which is exactly wrong here: retrying a 402 fails forever, and the account
+ * is the only thing that can change. Keying on the code would repeat the mistake this
+ * file already has history with; keying on what the agent actually said does not.
+ */
+export function isBillingRefusal(error: {
+  data?: unknown
+  message?: string
+}): boolean {
+  const bag = error.data && typeof error.data === 'object' ? (error.data as Record<string, unknown>) : {}
+  if (bag.http_status === 402 || bag.status === 402) return true
+  const text = `${typeof error.data === 'string' ? error.data : ''} ${
+    typeof bag.message === 'string' ? bag.message : ''
+  } ${error.message ?? ''}`
+  return /payment required|balance exhausted|insufficient (credit|balance|funds)/i.test(text)
+}
+
+/**
  * Whatever the agent said beyond the code and the message, as plain text.
  *
  * `data` is a string on most refusals and an object on others, and the old check took
@@ -253,6 +280,16 @@ export function rpcErrorMessage(
     return detailText
       ? `${lead} ${detailText}`
       : `${lead} Nothing about the app or the request caused it.`
+  }
+
+  // Money, not machinery. Recognised from the payload rather than the code, because the
+  // code it arrives under also means "retry, the agent broke" — advice that wastes
+  // someone's afternoon when the truth is that the account has to change.
+  if (isBillingRefusal(error)) {
+    const lead = 'Your Grok Build usage balance is spent, so the agent will not run.'
+    return detailText
+      ? `${lead} ${detailText}`
+      : `${lead} Retrying will not help; this is billing on the account rather than anything in the app.`
   }
 
   if (generic) {

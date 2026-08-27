@@ -287,3 +287,43 @@ test('COMMANDS FROM THE AGENT ARE VALIDATED, CAPPED AND DEDUPED', async () => {
   })
   assert.equal(many.length, 64, 'the list is not capped')
 })
+
+test('A SPENT BALANCE IS NOT REPORTED AS A CRASH TO RETRY', async () => {
+  const { rpcErrorMessage, isBillingRefusal } = await import('../electron/main/acp/client')
+
+  // Captured verbatim from the CLI: a spent Grok Build balance arrives under the same
+  // generic -32603 the agent uses for real internal faults.
+  const spent = {
+    code: -32603,
+    message: 'Internal error',
+    data: {
+      message: 'API error (status 402 Payment Required): Grok Build usage balance exhausted',
+      http_status: 402
+    }
+  }
+  const out = rpcErrorMessage('session/prompt', spent)
+
+  assert.match(out, /balance is spent/i, 'it does not say what actually happened')
+  assert.match(out, /402 Payment Required/, "the agent's own words were dropped")
+  // The specific harm: -32603 otherwise advises retrying, and a 402 never clears by
+  // retrying. Nothing about this may read as a transient fault.
+  assert.doesNotMatch(out, /worth retrying/i)
+  assert.doesNotMatch(out, /fault inside the agent/i)
+
+  // Recognised from the payload, never from the code — a code-keyed rule is the
+  // mistake this file has history with.
+  assert.equal(isBillingRefusal({ data: { http_status: 402 } }), true)
+  assert.equal(isBillingRefusal({ data: 'API error (status 402 Payment Required): x' }), true)
+  assert.equal(isBillingRefusal({ data: { message: 'insufficient credit' } }), true)
+  assert.equal(isBillingRefusal({ code: -32603, message: 'Internal error' } as never), false)
+  assert.equal(isBillingRefusal({ data: { http_status: 500 } }), false)
+})
+
+test('A GENUINE INTERNAL FAULT STILL SAYS RETRY', async () => {
+  const { rpcErrorMessage } = await import('../electron/main/acp/client')
+
+  // The billing branch must not swallow the case it sits next to.
+  const fault = rpcErrorMessage('session/prompt', { code: -32603, message: 'Internal error' })
+  assert.match(fault, /worth retrying/i)
+  assert.doesNotMatch(fault, /balance/i)
+})
