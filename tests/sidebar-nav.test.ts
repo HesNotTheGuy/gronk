@@ -359,3 +359,38 @@ test('HOME NO LONGER OFFERS IT, WHICH IS THE COST OF THE MOVE', async () => {
     view.unmount()
   }
 })
+
+test('THE ACCOUNT CHIP GOES TO USAGE WHEN SIGNED IN, AND SIGNS IN WHEN NOT', async () => {
+  // The chip showed the account label and re-ran authentication, so it read as a link
+  // to grok.com and did something else. Signed in it is a way out to the account;
+  // signed out it must never be a link, or the one control someone reaches for when
+  // they cannot use the app sends them to a site instead of signing them in.
+  const signedIn = await mount(sidebar({ authenticated: true, authLabel: 'grok.com' }))
+  try {
+    const chip = document.querySelector('.account-chip') as HTMLAnchorElement | null
+    assert.ok(chip, 'no account chip')
+    assert.equal(chip.tagName, 'A')
+    // The CLI's own usage deep link, not a guessed path.
+    assert.equal(chip.getAttribute('href'), 'https://grok.com/?_s=usage')
+    assert.equal(chip.getAttribute('target'), '_blank')
+    assert.match(chip.textContent ?? '', /grok\.com/)
+  } finally {
+    signedIn.unmount()
+  }
+
+  let signInCalls = 0
+  const signedOut = await mount(
+    sidebar({ authenticated: false, onSignIn: () => signInCalls++ })
+  )
+  try {
+    const chip = document.querySelector('.account-chip') as HTMLElement | null
+    assert.ok(chip, 'no account chip')
+    assert.equal(chip.tagName, 'BUTTON', 'a signed-out user was offered a link, not sign-in')
+    assert.equal(chip.getAttribute('href'), null)
+    await signedOut.click(chip)
+    await flush()
+    assert.equal(signInCalls, 1, 'the chip did not start sign-in')
+  } finally {
+    signedOut.unmount()
+  }
+})

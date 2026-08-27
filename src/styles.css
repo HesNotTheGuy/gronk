@@ -441,14 +441,18 @@ button {
   margin-top: 2px;
 }
 
+/* Reads as a heading, not as another dim line. At --ink-4 it sat between the
+   bright title above it and the dim meta below, so a group boundary looked like
+   more of the same list. Space does the separating; no divider rule, because the
+   rail is dense and a line per group is a lot of ink for one bit of structure. */
 .session-nav-group-head {
-  padding: 8px 12px 2px;
+  padding: 16px 12px 3px;
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--ink-4);
+  color: var(--ink-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -721,7 +725,9 @@ button {
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.2;
-  color: var(--ink-3);
+  /* --ink-3 is 3.95:1 on the rail, under AA for text this small. --ink-4 is 5.57:1
+     and still clearly subordinate to the 16:1 title. */
+  color: var(--ink-4);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5492,6 +5498,23 @@ html[data-theme='light'] .auth-card {
   text-align: center;
   cursor: pointer;
   -webkit-app-region: no-drag;
+}
+
+/* The chip is an anchor when signed in; keep it looking like the button it replaced. */
+a.account-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.account-chip-go {
+  opacity: 0.55;
+}
+
+a.account-chip:hover .account-chip-go {
+  opacity: 1;
 }
 
 .account-chip.ok {
