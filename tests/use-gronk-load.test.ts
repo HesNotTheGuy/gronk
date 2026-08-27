@@ -35,7 +35,13 @@ async function mountHook(overrides: Record<string, unknown> = {}) {
   }
   const view = await mount(createElement(Probe))
   await flush()
-  return { hook: () => latest, emit: bridge.emit, unmount: view.unmount, restore: bridge.restore }
+  return {
+    hook: () => latest,
+    emit: bridge.emit,
+    calls: bridge.calls,
+    unmount: view.unmount,
+    restore: bridge.restore
+  }
 }
 
 const session = (id: string, cwd = '/work/alpha'): SessionInfo =>
@@ -157,6 +163,26 @@ test('A FAILING BRIDGE DOES NOT WEDGE THE UI', async () => {
     assert.ok(h.hook().error, 'a total bridge failure said nothing to the user')
     assert.equal(h.hook().hydrating, false, 'left showing a skeleton forever')
     assert.equal(h.hook().busy, false, 'left with the composer disabled forever')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A LOAD THAT LANDS ON A DIFFERENT SESSION IS ADOPTED, NOT IGNORED', async () => {
+  // Behind the reported "highlight flashes then disappears": when a conversation
+  // cannot be resumed, main starts a fresh session and answers with ITS id while
+  // keeping the old transcript on screen. The app follows the agent, which is
+  // correct — you are in that new session — and the sidebar highlights nothing
+  // because the row that was clicked is no longer where you are.
+  const h = await mountHook({
+    loadSession: async () => ({ sessionId: 'a-brand-new-id', restored: true })
+  })
+  try {
+    await h.hook().selectSession(session('sess-clicked'))
+    await flush()
+    await flush()
+    assert.equal(h.hook().sessionId, 'a-brand-new-id', 'the resolved session was not adopted')
   } finally {
     h.unmount()
     h.restore()
