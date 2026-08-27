@@ -18,6 +18,9 @@ import {
 } from '../lib/session-nav'
 import { filterSessionsByLocalDay } from '../lib/session-day'
 
+/** The CLI's own usage deep link; `_s=usage` opens the usage panel directly. */
+const GROK_USAGE_URL = 'https://grok.com/?_s=usage'
+
 interface Props {
   authLabel?: string
   authenticated: boolean
@@ -614,14 +617,40 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-footer">
-        <button
-          type="button"
-          className={`account-chip ${authenticated ? 'ok' : 'bad'}`}
-          onClick={onSignIn}
-          title={authenticated ? 'Account / sign in again' : 'Sign in'}
-        >
-          {authenticated ? authLabel || 'Signed in' : 'Not signed in'}
-        </button>
+        {authenticated ? (
+          /*
+            Signed in, the chip is a way OUT to the account, not a second sign-in
+            button: it read as a link to grok.com and re-ran authentication instead.
+            `?_s=usage` opens the usage panel, which is the thing anyone clicking an
+            account chip mid-session actually wants — the app cannot show usage
+            itself, and a spent balance is invisible until the agent refuses. The
+            query is the CLI's own deep link, not one guessed here.
+            Signing in again lives in Settings, where the sign-out beside it is.
+            A plain external link: the window-open handler routes target=_blank
+            through openExternalSafely, which allows only http/https/mailto.
+          */
+          <a
+            className="account-chip ok"
+            href={`${GROK_USAGE_URL}`}
+            target="_blank"
+            rel="noreferrer"
+            title={`${authLabel || 'Signed in'} — open your usage on grok.com`}
+          >
+            {authLabel || 'Signed in'}
+            <span className="account-chip-go" aria-hidden>
+              ↗
+            </span>
+          </a>
+        ) : (
+          <button
+            type="button"
+            className="account-chip bad"
+            onClick={onSignIn}
+            title="Sign in"
+          >
+            Not signed in
+          </button>
+        )}
         {!authenticated ? (
           <button type="button" className="btn btn-primary btn-block" onClick={onSignIn}>
             Sign in
