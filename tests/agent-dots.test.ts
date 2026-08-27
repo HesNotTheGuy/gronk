@@ -125,3 +125,28 @@ test('nothing is truncated and no overflow marker appears', () => {
   assert.equal(view.dots[39], 'failed', 'including the last one')
   assert.equal(view.failed, 1)
 })
+
+test('THE STRIP SAYS NOTHING WHEN THERE IS NOTHING TO SAY', () => {
+  // Reported: the squares "seem like normal UI instead of indicators". They were —
+  // one per unit regardless of state, so a turn that ran a dozen background
+  // commands to completion painted a dozen identical marks.
+  const allDone = agentDots(
+    [unit('a', 'completed'), unit('b', 'completed'), unit('c', 'completed')],
+    {}
+  )
+  assert.equal(allDone.live, 0)
+  assert.equal(allDone.failed, 0)
+
+  // A failure still has to be visible without reading anything, and live work
+  // still has to pulse — those are the two cases the strip exists for.
+  assert.equal(agentDots([unit('a', 'completed'), unit('b', 'failed')], {}).failed, 1)
+  assert.equal(agentDots([unit('a', 'in_progress')], {}).live, 1)
+})
+
+test('THE COMPONENT HIDES THE ALL-DONE STRIP, AND ONLY THAT ONE', async () => {
+  const { readFileSync } = await import('node:fs')
+  const src = readFileSync(new URL('../src/components/AgentDots.tsx', import.meta.url), 'utf8')
+  // Read from source: the suite has no DOM for this component, and the rule is one
+  // line that is easy to drop.
+  assert.match(src, /view\.live === 0 && view\.failed === 0\) return null/)
+})

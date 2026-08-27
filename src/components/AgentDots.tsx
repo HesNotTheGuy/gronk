@@ -30,6 +30,11 @@ export function AgentDots({
   )
 
   if (view.dots.length === 0) return null
+  // Nothing running and nothing broken means nothing to glance at, and a row of
+  // identical squares reads as decoration rather than telemetry — a dozen finished
+  // background commands painted a dozen identical marks. The strip exists to catch
+  // an eye; when there is nothing to catch it, the tray holds the detail.
+  if (view.live === 0 && view.failed === 0) return null
 
   return (
     <div
