@@ -47,6 +47,18 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '0.5.1',
+    changed: [
+      'Typing / in the message box now offers the commands this session accepts, and finishes them for you. The list comes from the agent itself, so it only ever shows commands that work here.',
+      'Menu buttons use vertical dots. A long title that gets cut off ends in three dots of its own, which sat right beside the old horizontal menu dots and read as two buttons.',
+      'The menus in the browse lists are the same control as everywhere else: reachable by keyboard, and dismissing one no longer opens whatever was underneath it.'
+    ],
+    fixed: [
+      'Running out of Grok Build usage now says so, instead of looking like the app crashed and suggesting you try again — which never worked, because a spent balance does not clear by retrying.',
+      'Deleting a session from the browse lists asks first, in place, instead of opening a dialog that froze the rest of the app.'
+    ]
+  },
+  {
     version: '0.5.0',
     changed: [
       'Changing the model no longer starts a new conversation. Pick a different model mid-chat and the conversation carries on with it — before, it opened an empty session and left the old one behind.',
