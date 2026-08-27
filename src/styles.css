@@ -6462,6 +6462,28 @@ a.account-chip:hover .account-chip-go {
 }/* No html[data-theme='light'] block: every colour above is a variable the light
    theme already redefines, so an override would only be a second copy of the
    same rule waiting to drift. */
+/* Says a conversation has grown expensive. Deliberately not an alarm colour at
+   the lower level: nothing is broken, and treating cost as a fault would train
+   people to dismiss it. */
+.usage-pressure {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--line-hot);
+  background: var(--panel-2);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.usage-pressure.expensive {
+  border-left-color: var(--warn);
+  color: var(--ink);
+}
+
+.session-tray-tab.costly .session-tray-value {
+  color: var(--warn);
+}
+
 .usage-note {
   margin: 8px 0 0;
   font-size: 10px;
