@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   decideAuth,
   hasCredentialEvidence,
+  looksLikeNetworkFailure,
   shouldRefreshOnFocus,
   type ProbeFacts
 } from '../electron/main/auth-decision'
@@ -181,4 +182,74 @@ test('focus refresh is throttled, and the first focus always runs', () => {
   assert.equal(shouldRefreshOnFocus(1_000, 5_999, 5_000), false)
   assert.equal(shouldRefreshOnFocus(1_000, 6_000, 5_000), true, 'the interval is inclusive')
   assert.equal(shouldRefreshOnFocus(1_000, 60_000, 5_000), true)
+})
+
+// ── A machine that cannot reach xAI still has its credentials ──────────
+
+const FACTS = {
+  code: 0,
+  label: undefined,
+  modelsListed: true,
+  saysUnauthenticated: false,
+  filePresent: false,
+  envKey: false
+}
+
+test('A NETWORK FAILURE IS NOT REPORTED AS A MISSING ACCOUNT', () => {
+  // The reported case, reconstructed: away from the machine, sent a prompt, got the
+  // full-screen sign-in — the CLI's output carrying a timed-out request to auth.x.ai,
+  // and the existence check landing while the CLI was rewriting auth.json, so it saw
+  // no file. Every fact absent, and the honest answer is "could not check", not
+  // "you have no account".
+  const offline = decideAuth({ ...FACTS, networkError: true })
+
+  assert.equal(offline.state, 'unknown', 'a transport failure was read as a verdict on the account')
+  assert.match(offline.message ?? '', /could not reach/i)
+  // The exact sentence that was wrong on screen.
+  assert.doesNotMatch(offline.message ?? '', /nothing on this machine shows an account/i)
+  assert.doesNotMatch(offline.message ?? '', /^not signed in/i)
+})
+
+test('A NETWORK BLIP DOES NOT DISTURB A MACHINE THAT IS CLEARLY SIGNED IN', () => {
+  // Credentials on disk and a CLI that answered: that is signed in, and unrelated
+  // transport noise in the same output must not downgrade it to "could not check".
+  const fine = decideAuth({ ...FACTS, filePresent: true, networkError: true })
+  assert.equal(fine.authenticated, true)
+  assert.equal(fine.hasAuthFile, true)
+})
+
+test('THE CLI SAYING SO STILL BEATS A NETWORK ERROR', () => {
+  // A real sign-out must not be softened by a transport message in the same output.
+  // With nothing on disk and the CLI saying it plainly, the answer is signed out.
+  const out = decideAuth({
+    ...FACTS,
+    code: 1,
+    modelsListed: false,
+    saysUnauthenticated: true,
+    networkError: true
+  })
+  assert.equal(out.authenticated, false)
+  assert.notEqual(out.state, 'unknown', 'an explicit sign-out was softened into "unknown"')
+})
+
+test('THE NO-ACCOUNT BRANCH REPORTS THE FACTS IT WAS GIVEN', () => {
+  // It used to hardcode `hasAuthFile: false`. Only reachable when all three are
+  // absent, so the constants were true — and a constant that restates a fact is
+  // one edit away from lying.
+  const none = decideAuth({ ...FACTS })
+  assert.equal(none.hasAuthFile, false)
+  assert.equal(none.hasEnvApiKey, false)
+  assert.match(none.message ?? '', /nothing on this machine shows an account/i)
+})
+
+test('A TRANSPORT FAILURE IS RECOGNISED FROM WHAT THE CLI ACTUALLY PRINTS', () => {
+  // The exact string from the report, plus the other shapes a transport failure
+  // takes. Narrow on purpose: matching too eagerly would mask a real sign-out.
+  const real =
+    'Error: error sending request for url (https://auth.x.ai/.well-known/openid-configuration): operation timed out'
+  assert.equal(looksLikeNetworkFailure(real), true)
+  assert.equal(looksLikeNetworkFailure('connection refused'), true)
+  assert.equal(looksLikeNetworkFailure('failed to lookup address information'), true)
+  assert.equal(looksLikeNetworkFailure('You are not authenticated.'), false)
+  assert.equal(looksLikeNetworkFailure('Available models:\n  * grok-4.6'), false)
 })

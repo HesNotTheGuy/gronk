@@ -44,6 +44,28 @@ export interface ProbeFacts {
   filePresent: boolean
   /** XAI_API_KEY is set and non-empty. Presence only; the value never leaves env. */
   envKey: boolean
+  /**
+   * The CLI could not reach xAI — a timeout, a refused connection, a DNS failure.
+   *
+   * Kept apart from every other fact because it answers a different question. The
+   * others describe what this machine HAS; this one says the check could not be
+   * made. Folding it in produced the report this exists to prevent: a machine with
+   * valid credentials, briefly offline, told that nothing here shows an account.
+   */
+  networkError?: boolean
+}
+
+/**
+ * Did the CLI fail to reach xAI rather than answer about an account?
+ *
+ * Matched on the shapes a transport failure actually takes. Deliberately narrow:
+ * a false positive here would mask a real sign-out, which is the opposite and
+ * equally bad error.
+ */
+export function looksLikeNetworkFailure(output: string): boolean {
+  return /error sending request|operation timed out|connection (refused|reset|timed out)|dns error|failed to lookup address|network is unreachable|temporary failure in name resolution/i.test(
+    output
+  )
 }
 
 /**
@@ -96,17 +118,36 @@ export function decideAuth(facts: ProbeFacts): AuthStatus {
     }
   }
 
+  // Could not reach xAI. Not the same as having no account, and saying so sends
+  // someone to re-authenticate over what is usually a sleeping laptop's network
+  // coming back. Reported before the account branches so a transport failure can
+  // never be read as evidence about credentials.
+  if (facts.networkError && !saysUnauthenticated) {
+    return {
+      state: 'unknown',
+      authenticated: false,
+      method: 'none',
+      hasAuthFile: filePresent,
+      hasEnvApiKey: envKey,
+      message: filePresent
+        ? 'Could not reach xAI to check your sign-in. Your credentials are still on this machine — this is usually the network, not your account. Re-check when you are back online.'
+        : 'Could not reach xAI to check your sign-in. Re-check when you are back online.'
+    }
+  }
+
   if (cliAnswered) {
-    // The whole bug, in one branch. The command worked and told us nothing about
-    // an account, which is precisely the never-signed-in machine and precisely
-    // the state right after a successful sign-out. Reporting it as signed in is
-    // what let agent boot get as far as the CLI's own auth error.
+    // The command worked and told us nothing about an account, which is precisely
+    // the never-signed-in machine and precisely the state right after a successful
+    // sign-out. Reporting it as signed in is what let agent boot get as far as the
+    // CLI's own auth error.
     return {
       state: 'unauthenticated',
       authenticated: false,
       method: 'none',
-      hasAuthFile: false,
-      hasEnvApiKey: false,
+      // The facts, not literals: this branch is only reached when all three are
+      // absent, and restating them as constants makes a future change here lie.
+      hasAuthFile: filePresent,
+      hasEnvApiKey: envKey,
       message:
         'The Grok CLI answered, but nothing on this machine shows an account: no session, no cached credentials, and no XAI_API_KEY. Listing models does not need one. Sign in to continue.'
     }
