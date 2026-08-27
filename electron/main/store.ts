@@ -1062,6 +1062,10 @@ export function getTranscript(sessionId: string): ChatMessage[] {
 const TOOL_CALL_POLICY: RedactionPolicy<ToolCallInfo> = {
   toolCallId: 'keep',
   title: 'keep',
+  // A bounded identifier the agent chose for its own tool (`spawn_subagent`), not
+  // anything a tool produced. Strictly less revealing than `title`, which is kept
+  // and carries the paths and command lines.
+  name: 'keep',
   kind: 'keep',
   status: 'keep',
   rawInput: 'redact',

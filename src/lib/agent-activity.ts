@@ -18,6 +18,15 @@ export type AgentUnitKind =
 export interface AgentUnit {
   /** Stable key (toolCallId) */
   id: string
+  /**
+   * The work this call is about, when the agent named one.
+   *
+   * The merge key, and the reason the list is readable. A background task is
+   * spawned once and then polled — each poll is its own tool call, so keying on
+   * the call id turned 60 status checks of two tasks into 60 separate "agents".
+   * Keyed on the task, a poll updates the row it is about.
+   */
+  taskId?: string
   kind: AgentUnitKind
   /** Human label from Grok fields only (description, subagent_type, etc.) */
   label: string
@@ -28,8 +37,17 @@ export interface AgentUnit {
   source: string
 }
 
+/**
+ * What a call may be classified by: the agent's own tool name, plus the coarse kind.
+ *
+ * NEVER the title. The title is a rendered description — `Read \`C:/…/workflows.md\``,
+ * a whole PowerShell command — so matching it counted every file read whose path
+ * contained "workflow" as a running workflow, and every backgrounded shell command as
+ * an agent. On one real session that turned 1 subagent into 68 "agents", which is a
+ * count nobody can act on.
+ */
 function toolBlob(tool: ToolCallInfo): string {
-  return `${tool.title || ''} ${tool.kind || ''}`.toLowerCase()
+  return `${tool.name || ''} ${tool.kind || ''}`.toLowerCase()
 }
 
 /** True if this tool call is about a child agent, background task, workflow, etc. */
@@ -140,6 +158,7 @@ export function toolToAgentUnit(tool: ToolCallInfo): AgentUnit | null {
 
   return {
     id: tool.toolCallId,
+    taskId,
     kind,
     label,
     detail: detailParts.length ? detailParts.join(' · ') : undefined,
@@ -167,10 +186,33 @@ export function collectAgentUnitsFromMessages(
   const byId = new Map<string, AgentUnit>()
   for (const m of slice) {
     for (const u of extractAgentUnits(m.toolCalls || [])) {
-      byId.set(u.id, u) // later updates win
+      // Keyed on the task when there is one: a spawn and every later poll of it are
+      // one unit of work, and only the status is news.
+      const key = u.taskId || u.id
+      const prev = byId.get(key)
+      byId.set(key, prev ? mergeUnit(prev, u) : u)
     }
   }
   return [...byId.values()]
+}
+
+/**
+ * Fold a later observation into the unit it is about.
+ *
+ * Status is always the newer one — that is what a poll is for. The label is not:
+ * the spawn call carries the description and a poll carries the polling tool's own
+ * name, so taking the newer label renames "Diff Claude vs Grok skill" to something
+ * like "get_command". The more specific label wins regardless of order.
+ */
+function mergeUnit(prev: AgentUnit, next: AgentUnit): AgentUnit {
+  const prevSpecific = prev.kind !== 'other' && !!prev.detail
+  return {
+    ...prev,
+    status: next.status,
+    kind: prev.kind === 'other' ? next.kind : prev.kind,
+    label: prevSpecific || next.kind === 'other' ? prev.label : next.label,
+    detail: prev.detail || next.detail
+  }
 }
 
 export function agentActivitySummary(units: AgentUnit[]): {
