@@ -7,6 +7,7 @@ import { shouldRefreshOnFocus } from './auth-decision'
 import { repairStoreOnStartup } from './store'
 import { invalidateCliVersionCache } from './cli-version'
 import { installContextMenu } from './context-menu'
+import { installCrashGuard } from './crash-guard'
 import { isAllowedExternalUrl, isAppUrl } from './ipc-guard'
 import { initPreview, stopPreview } from './preview'
 import { registerAgentIpc } from './ipc/agent'
@@ -164,11 +165,17 @@ function createWindow(): void {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    void mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
-  }
+  // Caught, because a rejection here is fatal and this is the likeliest one to
+  // happen: in dev the renderer URL is a server that may not be up yet, and a
+  // packaged build can fail to read its own bundle. Unhandled, either ends the
+  // process before there is a window to say so, which reads as the app silently
+  // refusing to start.
+  const load = process.env.ELECTRON_RENDERER_URL
+    ? mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+    : mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  void load.catch((err: unknown) => {
+    console.error('[gronk] renderer failed to load', err)
+  })
 
   mainWindow.on('closed', () => {
     stopPreview()
@@ -319,6 +326,16 @@ function setupApplicationMenu(): void {
 }
 
 app.whenReady().then(() => {
+  // First, so it covers everything after it. An unhandled rejection is fatal in
+  // this process and would take every running agent with it.
+  installCrashGuard((report) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.webContents.send('gronk:event', {
+      type: 'error',
+      message: `Something failed unexpectedly inside Gronk (${report.kind}): ${report.message}. Your sessions are still running — please report this if it repeats.`
+    })
+  })
+
   hardenSession()
   setupApplicationMenu()
 
@@ -358,12 +375,20 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    void agentManager.stopAll().finally(() => app.quit())
+    // Quit regardless: an agent that will not stop must not strand the app in a
+    // state with no windows and no way to reach it.
+    void agentManager
+      .stopAll()
+      .catch((err: unknown) => console.error('[gronk] stopAll on close', err))
+      .finally(() => app.quit())
   }
 })
 
 app.on('before-quit', () => {
-  void agentManager.stopAll()
+  void agentManager.stopAll().catch((err: unknown) => {
+    // Already leaving; a failure to stop cleanly must not become a crash on exit.
+    console.error('[gronk] stopAll on quit', err)
+  })
 })
 
 app.on('second-instance', () => {
