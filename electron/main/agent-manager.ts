@@ -162,6 +162,8 @@ export class AgentManager {
    * has never heard, so it had to accept both.
    */
   private historyRequestId: string | undefined
+  /** A save has failed and been reported; cleared by the next one that works. */
+  private persistFailed = false
 
   setWindow(win: BrowserWindow | null): void {
     this.window = win
@@ -250,9 +252,43 @@ export class AgentManager {
     }
   }
 
+  /**
+   * Mirror the live transcript to disk.
+   *
+   * Never throws. The write itself is atomic — a temp file, fsynced, renamed — so a
+   * failure here cannot corrupt what is already stored; it means the newest turn did
+   * not land. Reasons are real and mundane: a full disk, a data directory on a drive
+   * that went away, a sync client holding the file.
+   *
+   * Letting that throw would take the conversation with it. This runs on the
+   * streaming path, so the exception would surface mid-turn, out of an event handler,
+   * with the reply still arriving — losing the turn on screen to protect a copy of it
+   * on disk. Same reasoning as the usage tracker above: persisting is secondary to
+   * the conversation working.
+   *
+   * Reported once per session rather than silently, because the consequence is
+   * delayed: everything keeps working until the app closes, and then the conversation
+   * is gone. Once, because this can run on every chunk.
+   */
   private persistLiveTranscript(): void {
     if (!this.sessionId) return
-    saveTranscript(this.sessionId, this.liveMessages)
+    try {
+      saveTranscript(this.sessionId, this.liveMessages)
+      this.persistFailed = false
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      this.log('transcript save failed', message)
+      if (this.persistFailed) return
+      this.persistFailed = true
+      this.emit({
+        type: 'error',
+        message:
+          `This conversation could not be saved to disk (${redactPreview(message, 160)}). ` +
+          `It is still on screen and the agent is unaffected, but it will not survive closing ` +
+          `Gronk until this is fixed — check free space and that your data folder is reachable.`,
+        ...this.sessionTag()
+      })
+    }
   }
 
   /**

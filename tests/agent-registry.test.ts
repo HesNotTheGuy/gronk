@@ -638,3 +638,29 @@ test('A NAMED SESSION IS THE ONE SWITCHED', async () => {
   assert.deepEqual(await registry.setModel('grok-4.5', 'b'), { model: 'grok-4.5' })
   assert.deepEqual(switched, ['grok-4.5'], 'the switch went to the wrong session')
 })
+
+test('A TRANSCRIPT THAT WILL NOT SAVE DOES NOT TAKE THE TURN WITH IT', async () => {
+  // persistLiveTranscript runs on the streaming path, so a throw would surface
+  // mid-turn out of an event handler, with the reply still arriving — losing the
+  // conversation on screen to protect a copy of it on disk. A full disk, a data
+  // folder on a drive that went away, and a sync client holding the file are all
+  // ordinary. Read from source: no test constructs an AgentManager.
+  const source = readFileSync(new URL('../electron/main/agent-manager.ts', import.meta.url), 'utf8')
+  const body = source.slice(
+    source.indexOf('private persistLiveTranscript'),
+    source.indexOf('private autoApproveActive')
+  )
+
+  assert.match(body, /try \{/, 'the save is unguarded on the streaming path')
+  assert.match(body, /catch \(err\)/)
+  // Reported, not swallowed: everything keeps working until the app closes, and
+  // then the conversation is gone.
+  assert.match(body, /type: 'error'/, 'a failed save says nothing to the user')
+  // Once per session — this can run on every chunk.
+  assert.match(body, /if \(this\.persistFailed\) return/)
+  // And cleared by a save that works, or one bad write silences every later one.
+  assert.match(body, /this\.persistFailed = false/)
+  // The reason reaches the screen redacted, like every other subprocess-adjacent
+  // string that crosses IPC.
+  assert.match(body, /redactPreview\(message/)
+})
