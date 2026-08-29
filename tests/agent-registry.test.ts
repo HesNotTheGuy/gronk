@@ -664,3 +664,44 @@ test('A TRANSCRIPT THAT WILL NOT SAVE DOES NOT TAKE THE TURN WITH IT', async () 
   // string that crosses IPC.
   assert.match(body, /redactPreview\(message/)
 })
+
+test('A PROJECT FOLDER THAT IS NOT HERE IS NAMED, NOT BLAMED ON THE CLI', async () => {
+  const { missingProjectFolder } = await import('../electron/main/agent-manager')
+  const os = await import('node:os')
+  const fsp = await import('node:fs')
+  const path = await import('node:path')
+
+  // The discovery this replaces is a lie: spawning into a missing directory fails
+  // with `spawn <binary> ENOENT`, naming the executable — which is fine. A moved
+  // project therefore read as a broken Grok install, and reinstalling the CLI fixes
+  // nothing. It is also the ordinary state after carrying a store between machines.
+  const gone = missingProjectFolder(path.join(os.tmpdir(), 'gronk-not-here-' + Date.now()))
+  assert.ok(gone, 'a missing folder was treated as workable')
+  assert.match(gone, /not on this machine/i)
+  assert.match(gone, /another computer/i, 'the port case is not mentioned')
+  assert.doesNotMatch(gone, /ENOENT|spawn/i, 'it still speaks in spawn errors')
+
+  // A real folder is workable, and the check must not become a spurious blocker.
+  assert.equal(missingProjectFolder(os.tmpdir()), null)
+
+  // A path that exists but is a file is its own mistake, said plainly.
+  const file = path.join(os.tmpdir(), 'gronk-a-file-' + Date.now() + '.txt')
+  fsp.writeFileSync(file, 'x')
+  try {
+    assert.match(missingProjectFolder(file) ?? '', /is a file, not a folder/i)
+  } finally {
+    fsp.rmSync(file, { force: true })
+  }
+
+  assert.ok(missingProjectFolder(''), 'an empty path was treated as workable')
+})
+
+test('THE FOLDER IS CHECKED BEFORE ANYTHING IS SPAWNED', () => {
+  // Order is the point: after the spawn, the misleading ENOENT has already happened.
+  const source = readFileSync(new URL('../electron/main/agent-manager.ts', import.meta.url), 'utf8')
+  const boot = source.slice(source.indexOf('private async bootAgent'))
+  const check = boot.indexOf('missingProjectFolder(cwd)')
+  const spawn = boot.indexOf('new GrokAcpClient')
+  assert.ok(check > 0, 'the boot path does not check the folder')
+  assert.ok(spawn > 0 && check < spawn, 'the folder is checked after the child is spawned')
+})
