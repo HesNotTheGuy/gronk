@@ -20,6 +20,19 @@ import { redactSecrets } from '../redact'
 
 const MAX_ACP_LINE_BYTES = 8 * 1024 * 1024 // 8 MB
 
+/**
+ * How long a control-plane call may go unanswered before it is treated as wedged.
+ *
+ * Generous on purpose: these calls are fast in practice (a set_model round trip is
+ * under a second against a live agent) and this is a last resort, not a latency
+ * budget. Too tight and a slow machine looks broken; too loose and the app sits on a
+ * skeleton. A minute is far past anything healthy and far short of "I gave up on it".
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 60_000
+
+/** Explicitly no clock. Only `session/prompt` may use this. */
+const PROMPT_UNBOUNDED = null
+
 export type JsonRpcId = string | number
 
 export interface AcpInitializeResult {
@@ -449,7 +462,10 @@ export class GrokAcpClient extends EventEmitter {
     sessionId: string,
     prompt: Array<{ type: string; text?: string; [k: string]: unknown }>
   ): Promise<unknown> {
-    return this.request('session/prompt', { sessionId, prompt })
+    // PROMPT_UNBOUNDED. A turn runs as long as the work takes; the agent decides when
+    // it is done. Bounded instead by the child exiting (which rejects everything
+    // pending) and by the user pressing Stop.
+    return this.request('session/prompt', { sessionId, prompt }, PROMPT_UNBOUNDED)
   }
 
   /**
@@ -582,18 +598,63 @@ export class GrokAcpClient extends EventEmitter {
     })
   }
 
-  private request(method: string, params?: unknown): Promise<unknown> {
+  /**
+   * One JSON-RPC call.
+   *
+   * `timeoutMs` is not optional in spirit: a pending entry is only ever cleared by a
+   * reply or by the child exiting, so an agent that stays alive and stops answering
+   * left the promise unsettled forever. Every await upstream inherited that — a hung
+   * `initialize` meant the app sat on a loading skeleton with no error and no way out
+   * but a restart, which is precisely the state nobody can diagnose.
+   *
+   * `session/prompt` passes `null` and means it: a turn can legitimately run for many
+   * minutes, and a clock here would kill real work. That one is bounded by the agent
+   * exiting, by the user pressing Stop, and by nothing else — see PROMPT_UNBOUNDED.
+   */
+  private request(
+    method: string,
+    params?: unknown,
+    timeoutMs: number | null = DEFAULT_REQUEST_TIMEOUT_MS
+  ): Promise<unknown> {
     if (!this.proc || this.closed) {
       return Promise.reject(new Error('ACP client not running'))
     }
     const id = this.nextId++
     return new Promise((resolve, reject) => {
+      let timer: NodeJS.Timeout | undefined
+      const settle = (fn: () => void): void => {
+        if (timer) clearTimeout(timer)
+        this.pending.delete(id)
+        fn()
+      }
+      if (timeoutMs !== null) {
+        timer = setTimeout(() => {
+          settle(() =>
+            reject(
+              new Error(
+                `The agent did not answer ${method} within ${Math.round(timeoutMs / 1000)}s. ` +
+                  `It may be busy or wedged — try again, and restart the session if it repeats.`
+              )
+            )
+          )
+        }, timeoutMs)
+        // A timer must never be the reason the app will not quit.
+        timer.unref?.()
+      }
       // The method travels with the request so a failure can name it. Without it the
       // renderer showed whatever the agent put in `message`, and for a JSON-RPC -32603
       // that is the literal words "Internal error" — a banner that tells the user
       // nothing about which call failed or where to look.
-      this.pending.set(id, { resolve, reject, method })
-      this.write({ jsonrpc: '2.0', id, method, params })
+      this.pending.set(id, {
+        method,
+        resolve: (value) => settle(() => resolve(value)),
+        reject: (err) => settle(() => reject(err))
+      })
+      try {
+        this.write({ jsonrpc: '2.0', id, method, params })
+      } catch (err) {
+        settle(() => reject(err instanceof Error ? err : new Error(String(err))))
+      }
     })
   }
 
