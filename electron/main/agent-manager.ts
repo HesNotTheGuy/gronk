@@ -78,6 +78,32 @@ function isChatPadCwd(cwd: string): boolean {
 }
 
 /**
+ * Why this folder cannot be worked in, or null when it can.
+ *
+ * Checked rather than discovered, because the discovery is a lie: spawning into a
+ * missing directory reports ENOENT against the executable, and the executable is
+ * fine. The message names the folder and the two things that actually cause this —
+ * it moved, or the session came from another machine.
+ */
+export function missingProjectFolder(cwd: string): string | null {
+  if (!cwd) return 'This session has no project folder.'
+  let stat: fs.Stats
+  try {
+    stat = fs.statSync(cwd)
+  } catch {
+    return (
+      `That project folder is not on this machine: ${cwd}. ` +
+      `It may have been moved or renamed, or this session was started on another computer. ` +
+      `Open the folder from its new location, or remove the session.`
+    )
+  }
+  if (!stat.isDirectory()) {
+    return `That project path is a file, not a folder: ${cwd}.`
+  }
+  return null
+}
+
+/**
  * Owns the lifecycle of one `grok agent stdio` process and maps ACP events → renderer IPC.
  *
  * Coordinator only: the decisions it used to make inline now live in `./agent/*`
@@ -321,6 +347,17 @@ export class AgentManager {
     }
   ): Promise<void> {
     await this.stopProcessOnly()
+
+    // Before anything is spawned. A child started in a folder that is not there fails
+    // with `spawn <binary> ENOENT`, which names the BINARY — so a moved or renamed
+    // project reads as a broken Grok install, and the obvious response is to reinstall
+    // the CLI, which fixes nothing. This is also the ordinary state after carrying a
+    // store between machines, where every session points at someone else's paths.
+    const missing = missingProjectFolder(cwd)
+    if (missing) {
+      this.setState('error', missing)
+      throw new Error(missing)
+    }
 
     // Per-install: never start an agent without local CLI credentials.
     // Auth is this OS user's Grok session only — not shared across machines/users.
