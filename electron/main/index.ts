@@ -331,7 +331,7 @@ app.whenReady().then(() => {
   installCrashGuard((report) => {
     if (!mainWindow || mainWindow.isDestroyed()) return
     mainWindow.webContents.send('gronk:event', {
-      type: 'error',
+      type: 'app-error',
       message: `Something failed unexpectedly inside Gronk (${report.kind}): ${report.message}. Your sessions are still running — please report this if it repeats.`
     })
   })

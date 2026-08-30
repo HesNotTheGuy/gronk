@@ -42,8 +42,17 @@ export function contextPressure(
   usage: SessionUsage | null | undefined,
   contextTokens: number | undefined
 ): ContextPressure {
-  const used = usage?.last?.inputTokens
-  if (!used || !contextTokens || contextTokens <= 0) return { level: 'fine', advice: null }
+  const sent = usage?.last?.inputTokens
+  if (!sent || !contextTokens || contextTokens <= 0) return { level: 'fine', advice: null }
+
+  // A turn's input is reported summed across every model round trip it made, not
+  // the size of the conversation it sent. A turn that runs ten tools reports ten
+  // conversations' worth, so dividing the sum by the window printed percentages
+  // in the thousands: the repo's own captured session has 390 round trips across
+  // 3 turns, which is 29.7M input for one turn against a 500k window.
+  // Per round trip is the quantity the window actually bounds.
+  const roundTrips = Math.max(1, usage?.last?.modelCalls || 1)
+  const used = sent / roundTrips
 
   const share = used / contextTokens
   if (share < COSTLY_AT) return { level: 'fine', share, advice: null }
@@ -52,7 +61,10 @@ export function contextPressure(
   // only the problem. `/compact` is the agent's own command — Gronk does not
   // summarise anything itself — and starting a session is free.
   const level: PressureLevel = share >= EXPENSIVE_AT ? 'expensive' : 'costly'
-  const pct = Math.round(share * 100)
+  // Capped: the CLI compacts on its own, so a conversation cannot actually sit
+  // above its window, and a number over 100 reads as a bug in the panel rather
+  // than a fact about the session.
+  const pct = Math.min(100, Math.round(share * 100))
   return {
     level,
     share,

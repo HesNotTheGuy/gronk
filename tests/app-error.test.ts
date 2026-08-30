@@ -93,3 +93,28 @@ test('neither function mutates what it was given', () => {
   resolve(original, 'export')
   assert.deepEqual(original, copy)
 })
+
+/**
+ * `app` carries a failure of the process, not of a turn. It exists because
+ * routing one through `agent` told the user their sessions were still running
+ * while re-opening the composer underneath a streaming agent.
+ */
+test('A NEW TURN SUPERSEDES A PROCESS FAILURE THE USER HAS ALREADY SEEN', () => {
+  // Otherwise the banner is permanent: nothing in the app begins an `app` attempt,
+  // so nothing else would ever clear it.
+  assert.equal(retire({ message: 'BOOM', scope: 'app' }, 'agent'), null)
+  assert.equal(retire({ message: 'BOOM', scope: 'app' }, 'prompt'), null)
+})
+
+test('EXPORTING SOMETHING SAYS NOTHING ABOUT A PROCESS FAILURE', () => {
+  const err = { message: 'BOOM', scope: 'app' } as const
+  assert.deepEqual(retire(err, 'export'), err)
+  assert.deepEqual(resolve(err, 'export'), err)
+})
+
+test('A TURN SUCCEEDING DOES NOT PROVE THE PROCESS IS WELL', () => {
+  // `resolve` is evidence about its own scope only. A reply arriving does not
+  // unmake an unhandled rejection that already happened.
+  const err = { message: 'BOOM', scope: 'app' } as const
+  assert.deepEqual(resolve(err, 'agent'), err)
+})

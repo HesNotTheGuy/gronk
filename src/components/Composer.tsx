@@ -491,7 +491,15 @@ export function Composer({
         }
         setDragKind(files.some((i) => i.type.startsWith('image/')) ? 'image' : 'file')
       }}
-      onDragLeave={() => {
+      onDragLeave={(e) => {
+        // `dragleave` fires and bubbles when the pointer crosses onto a CHILD —
+        // the textarea, a button, the queue — so an unconditional reset tore the
+        // hint down and the next `dragover` put it straight back. The hint is an
+        // in-flow block, so that flicker moved the transcript above it on every
+        // crossing, and `role="status"` re-announced the whole sentence each time.
+        // Leaving for something still inside the wrap is not leaving.
+        const to = e.relatedTarget
+        if (to instanceof Node && e.currentTarget.contains(to)) return
         setDragOver(false)
         setDragKind('none')
       }}

@@ -4734,6 +4734,14 @@ html[data-theme='light'] .session-tray {
   color: var(--abort);
   font-size: 10px;
   white-space: nowrap;
+  /* The chip is capped at 200px and the name is the only item that can shrink,
+     so a nowrap badge at its full min-content width ate the filename down to
+     about six characters — in the one case the badge exists to explain. The
+     badge gives way first now; the name is what identifies the attachment. */
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .composer-wrap.drag-over .composer {

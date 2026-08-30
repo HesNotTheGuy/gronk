@@ -24,8 +24,14 @@
  * that proved nothing.
  */
 
-/** What a banner error is about. */
-export type ErrorScope = 'agent' | 'prompt' | 'export'
+/**
+ * What a banner error is about.
+ *
+ * `app` is the odd one: it is the only scope no attempt in this app starts. It
+ * carries a failure of the process itself, which is not a verdict on the turn
+ * that happened to be running, and must not be reported as one.
+ */
+export type ErrorScope = 'agent' | 'prompt' | 'export' | 'app'
 
 export interface AppError {
   message: string
@@ -40,9 +46,13 @@ export interface AppError {
  * is describing a state the app has since left.
  */
 const RETIRES: Record<ErrorScope, readonly ErrorScope[]> = {
-  agent: ['agent', 'prompt', 'export'],
-  prompt: ['agent', 'prompt', 'export'],
-  export: ['export']
+  agent: ['agent', 'prompt', 'export', 'app'],
+  prompt: ['agent', 'prompt', 'export', 'app'],
+  export: ['export'],
+  // Nothing begins an `app` attempt, so this is never consulted. It exists
+  // because the record is exhaustive, which is what makes a new scope a
+  // decision here rather than a silent omission.
+  app: ['app']
 }
 
 /**

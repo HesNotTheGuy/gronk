@@ -871,6 +871,12 @@ export function useGronk() {
           failAttempt('agent', event.message)
           setBusy(false)
           break
+        case 'app-error':
+          // No `setBusy(false)`: the process stumbled, the turn did not. Clearing
+          // busy here would re-open the composer while the agent is still
+          // streaming, and let a second prompt into a session already running one.
+          failAttempt('app', event.message)
+          break
         // 'models' is useAppSettings', 'auth' is useAuth's, and both preview
         // events are usePreview's. Each of those hooks subscribes to onEvent
         // itself, and onEvent hands out independent subscriptions, so this

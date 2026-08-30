@@ -66,3 +66,65 @@ test('THE MEASURE IS THE LAST TURN, NOT THE RUNNING TOTAL', () => {
   }
   assert.equal(contextPressure(bigTotalSmallContext, WINDOW).level, 'fine')
 })
+
+/**
+ * A turn's reported input is summed across every model round trip it made. That is
+ * not the size of the conversation, and dividing it by the window printed a
+ * percentage in the thousands on any tool-heavy turn — a number that reads as a
+ * broken panel rather than a fact about the session.
+ */
+
+const turn = (inputTokens: number, modelCalls: number): any => ({
+  sessionId: 's1',
+  turns: 1,
+  totals: { inputTokens, outputTokens: 0, cachedReadTokens: 0, reasoningTokens: 0, modelCalls, apiDurationMs: 0, costUsd: 0 },
+  last: { inputTokens, outputTokens: 0, cachedReadTokens: 0, reasoningTokens: 0, modelCalls, apiDurationMs: 0, costUsd: 0 }
+})
+
+test('A TURN IS MEASURED PER ROUND TRIP, NOT BY ITS SUMMED INPUT', () => {
+  // Ten round trips over a window that is 40% full is an ordinary tool-heavy turn.
+  // Summed it is four whole windows; per round trip it is what was really sent.
+  const r = contextPressure(turn(2_000_000, 10), 500_000)
+  assert.equal(r.level, 'fine', `a 40%-full conversation reported ${r.level}`)
+  assert.equal(r.advice, null)
+})
+
+test('THE SHARE STILL RISES WHEN THE CONVERSATION REALLY IS LONG', () => {
+  // Same input as a single round trip: that one genuinely did send 400k.
+  const r = contextPressure(turn(400_000, 1), 500_000)
+  assert.equal(r.level, 'expensive')
+  assert.match(r.advice ?? '', /about 80%/)
+})
+
+test('NO PERCENTAGE ABOVE 100 EVER REACHES THE SCREEN', () => {
+  // What printed four figures before: a turn's summed input taken as its size.
+  for (const [input, calls, window] of [
+    [29_700_000, 1, 500_000],
+    [10_000_000, 2, 128_000],
+    [700_000, 1, 500_000]
+  ] as const) {
+    const r = contextPressure(turn(input, calls), window)
+    const pct = Number((r.advice ?? '').match(/about (\d+)%/)?.[1] ?? 0)
+    assert.ok(pct > 0, `no percentage in the advice for ${input}/${calls}`)
+    assert.ok(pct <= 100, `printed ${pct}% — a share over the window reads as a broken panel`)
+  }
+})
+
+test('THE REPO OWN CAPTURED SESSION NO LONGER READS AS FOUR FIGURES', () => {
+  // 390 round trips across 3 turns, 89.1M input: one turn is 29.7M over 130 calls.
+  // Taken whole that is 5940% of a 500k window. Per round trip it is 46%, which is
+  // a conversation not yet worth warning about — and it says nothing at all.
+  const r = contextPressure(turn(29_700_000, 130), 500_000)
+  assert.equal(r.level, 'fine')
+  assert.equal(r.advice, null)
+})
+
+test('A MISSING OR ZERO ROUND-TRIP COUNT CANNOT DIVIDE BY ZERO', () => {
+  for (const calls of [0, undefined as any, -3]) {
+    const r = contextPressure(turn(400_000, calls), 500_000)
+    assert.ok(Number.isFinite(r.share ?? 0), `share was ${r.share} for modelCalls=${calls}`)
+    // Falls back to the raw input rather than vanishing: an unusable count must
+    // not turn a full conversation into silence.
+    assert.equal(r.level, 'expensive')
+  }
+})

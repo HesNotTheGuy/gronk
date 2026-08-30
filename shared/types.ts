@@ -718,6 +718,14 @@ export type MainToRendererEvent =
   | { type: 'commands'; commands: AgentCommand[]; sessionId?: string }
   | { type: 'auth'; auth: AuthStatus }
   | { type: 'error'; message: string; sessionId?: string }
+  /**
+   * Something failed in the main process outside any turn.
+   *
+   * Deliberately not `error`: that one is a turn's failure and clears `busy`, so
+   * routing a stray rejection through it re-opens the composer under an agent
+   * that is still streaming, and contradicts the banner standing beside it.
+   */
+  | { type: 'app-error'; message: string }
   | {
       type: 'preview-status'
       running: boolean
