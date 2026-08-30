@@ -47,6 +47,25 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '0.5.2',
+    changed: [
+      'The sidebar makes it clear where one project’s sessions end and the next begins, and the small print under each session is legible — it was below the readable contrast for text that size.',
+      'The account button opens your usage page. It used to say grok.com and quietly re-run sign-in, so it read as a link and did something else. Signing in again lives in Settings, beside sign-out.',
+      'The message box is an invitation again rather than a permanent tutorial. Dragging something onto it now says what will happen: an image goes to the agent, a file sends its location — and a file the agent is not allowed to open is marked as such the moment you attach it, instead of after a wasted turn.',
+      'A tool run that has finished collapses to a single line instead of a full card. It takes the card back the moment it is worth looking at: still running, failed, expanded, or carrying images.',
+      'The row of squares under a turn appears only when something is running or has failed. It used to draw one per step whatever its state, and a row that always looks the same tells you nothing.',
+      'A long conversation now says when it has become the expensive way to work. Every turn resends the whole conversation, so cost climbs with length even when nothing is wrong — the same work split across a few sessions is usually far cheaper.'
+    ],
+    fixed: [
+      'Being away from the machine no longer signs you out. A slow network, or the routine moment when your login is refreshed, could make a single check report no account at all — and the app believed it, throwing away the session on screen and demanding a login nobody needed.',
+      'The agent count counts agents. Reading a file and checking on a background task were both counted too, so a session with one subagent could read as dozens.',
+      'The app no longer disappears when something unexpected goes wrong out of sight. It stays up, your running agents keep going, and it tells you what happened.',
+      'An agent that stops responding now gives up and explains itself, instead of leaving the app on a loading screen with no way out but a restart. A turn in progress is never cut off — it takes as long as the work takes.',
+      'A conversation that cannot be written to disk says so. Before, everything kept working and the conversation was simply gone at the next launch.',
+      'A project folder that was moved, renamed, or carried over from another computer now says so. It used to report that the Grok CLI was missing, sending you to reinstall something that was never broken.'
+    ]
+  },
+  {
     version: '0.5.1',
     changed: [
       'Typing / in the message box now offers the commands this session accepts, and finishes them for you. The list comes from the agent itself, so it only ever shows commands that work here.',
