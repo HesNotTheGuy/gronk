@@ -13,12 +13,12 @@ export interface ProjectActivity {
   frequencyLabel: string
 }
 
-function daysAgo(ts: number): number {
-  return Math.max(0, (Date.now() - ts) / (1000 * 60 * 60 * 24))
+function daysAgo(ts: number, now = Date.now()): number {
+  return Math.max(0, (now - ts) / (1000 * 60 * 60 * 24))
 }
 
-function formatRelative(ts: number): string {
-  const d = daysAgo(ts)
+function formatRelative(ts: number, now = Date.now()): string {
+  const d = daysAgo(ts, now)
   if (d < 1 / 24) return 'just now'
   if (d < 1) return `${Math.max(1, Math.round(d * 24))}h ago`
   if (d < 7) return `${Math.round(d)}d ago`
@@ -27,14 +27,19 @@ function formatRelative(ts: number): string {
 }
 
 /** Combine recency (0–1) and volume (0–1) into a single heat score. */
-export function computeHeat(lastActive: number, userTurns: number): number {
-  const recency = Math.max(0, 1 - daysAgo(lastActive) / 30)
+export function computeHeat(lastActive: number, userTurns: number, now = Date.now()): number {
+  const recency = Math.max(0, 1 - daysAgo(lastActive, now) / 30)
   const volume = Math.min(1, userTurns / 24)
   return Math.min(1, recency * 0.55 + volume * 0.45)
 }
 
-export function frequencyLabel(lastActive: number, userTurns: number, heat: number): string {
-  const when = formatRelative(lastActive)
+export function frequencyLabel(
+  lastActive: number,
+  userTurns: number,
+  heat: number,
+  now = Date.now()
+): string {
+  const when = formatRelative(lastActive, now)
   let band = 'Light'
   if (heat >= 0.72) band = 'Heavy'
   else if (heat >= 0.4) band = 'Steady'
@@ -74,14 +79,14 @@ export function buildProjectActivity(
     .sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0))
 }
 
-export function sessionFrequencyLabel(s: SessionInfo): string {
+export function sessionFrequencyLabel(s: SessionInfo, now = Date.now()): string {
   const turns = s.userTurns ?? 0
-  const heat = computeHeat(s.updatedAt, turns)
-  return frequencyLabel(s.updatedAt, turns, heat)
+  const heat = computeHeat(s.updatedAt, turns, now)
+  return frequencyLabel(s.updatedAt, turns, heat, now)
 }
 
-export function sessionHeat(s: SessionInfo): number {
-  return computeHeat(s.updatedAt, s.userTurns ?? 0)
+export function sessionHeat(s: SessionInfo, now = Date.now()): number {
+  return computeHeat(s.updatedAt, s.userTurns ?? 0, now)
 }
 
 /** One workspace folder + its sessions (for nested Workspace home). */

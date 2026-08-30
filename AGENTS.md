@@ -77,8 +77,10 @@ and a focused field. Copy the helpers in `tests/composer-slash.test.ts` rather
 than rediscovering this.
 
 `npm run test:visual` renders 38 app states and compares screenshots. It is not
-run in CI (it needs a display). **Read the diff before re-recording** — see
-issue #111 for a known false positive that drifts red on its own.
+run in CI (it needs a display). **Read the diff before re-recording.** Session
+ages that show as "Nd ago" must be offsets from `Date.now()` (`LIVE` in
+`src/__shots.tsx`), not from the heatmap's fixed `NOW` — pinning both to one
+clock made baselines drift a week at a time (issue #111).
 
 ## Talking to the maintainer
 

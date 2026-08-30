@@ -33,6 +33,11 @@ const DAY = 24 * HOUR
 // column for anyone west of Greenwich. Do not "simplify" this back to Date.now()
 // or to a date-only literal — both have already broken this harness once.
 const NOW = new Date('2026-08-02T12:00:00').getTime()
+// Session ages that render as "Nd ago" / "Nw ago" must be offsets from the
+// capture clock. Pinning them to NOW made labels walk (3w → 4w) as the real
+// calendar moved while the heatmap stayed put — issue #111. Two clocks on
+// purpose: NOW stabilises the grid; LIVE stabilises relative labels.
+const LIVE = Date.now()
 
 const SCENARIO = new URLSearchParams(location.search).get('state') || 'default'
 
@@ -96,8 +101,8 @@ const SESSIONS = [
     id: 's-orbital-1',
     cwd: PROJECTS[0].cwd,
     title: 'Rate limiter drops bursts under load',
-    createdAt: NOW - 2 * HOUR,
-    updatedAt: NOW - 18 * 60_000,
+    createdAt: LIVE - 2 * HOUR,
+    updatedAt: LIVE - 18 * 60_000,
     surface: 'project' as const,
     messageCount: 24,
     userTurns: 9
@@ -106,8 +111,8 @@ const SESSIONS = [
     id: 's-flux-1',
     cwd: PROJECTS[1].cwd,
     title: 'Migrate charts to the new theme tokens',
-    createdAt: NOW - 2 * DAY,
-    updatedAt: NOW - 26 * HOUR,
+    createdAt: LIVE - 2 * DAY,
+    updatedAt: LIVE - 26 * HOUR,
     surface: 'project' as const,
     messageCount: 41,
     userTurns: 15
@@ -116,8 +121,8 @@ const SESSIONS = [
     id: 's-packet-1',
     cwd: PROJECTS[2].cwd,
     title: 'Retry backoff never resets after success',
-    createdAt: NOW - 4 * DAY,
-    updatedAt: NOW - 3 * DAY,
+    createdAt: LIVE - 4 * DAY,
+    updatedAt: LIVE - 3 * DAY,
     surface: 'project' as const,
     messageCount: 12,
     userTurns: 5
@@ -126,8 +131,8 @@ const SESSIONS = [
     id: 's-chat-1',
     cwd: CHAT_WORKSPACE,
     title: 'Difference between a mutex and a semaphore',
-    createdAt: NOW - 5 * HOUR,
-    updatedAt: NOW - 4 * HOUR,
+    createdAt: LIVE - 5 * HOUR,
+    updatedAt: LIVE - 4 * HOUR,
     surface: 'chat' as const,
     messageCount: 8,
     userTurns: 3
@@ -136,8 +141,8 @@ const SESSIONS = [
     id: 's-chat-2',
     cwd: CHAT_WORKSPACE,
     title: 'Explain CRDTs without the maths',
-    createdAt: NOW - 6 * DAY,
-    updatedAt: NOW - 6 * DAY,
+    createdAt: LIVE - 6 * DAY,
+    updatedAt: LIVE - 6 * DAY,
     surface: 'chat' as const,
     messageCount: 14,
     userTurns: 6
