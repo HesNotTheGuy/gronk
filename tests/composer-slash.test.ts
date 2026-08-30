@@ -211,7 +211,7 @@ test('AN ATTACHMENT THE AGENT CANNOT OPEN IS MARKED, AND ONE IT CAN IS NOT', asy
  * every crossing, and its `role="status"` re-announced the whole sentence each time.
  */
 
-function dragEvent(dom: any, kind: string, over: { type: string }[], relatedTarget: any = null): any {
+function dragEvent(dom: any, kind: string, over: { kind: string; type: string }[], relatedTarget: any = null): any {
   const e = new dom.window.Event(kind, { bubbles: true, cancelable: true })
   Object.defineProperty(e, 'dataTransfer', { value: { items: over }, configurable: true })
   if (relatedTarget) Object.defineProperty(e, 'relatedTarget', { value: relatedTarget, configurable: true })

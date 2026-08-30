@@ -272,7 +272,7 @@ const TIMED_OUT =
 test('THE OFFLINE MESSAGE IS WHAT THE USER READS, NOT THE CLI OUTPUT', () => {
   const decision = decideAuth({
     code: 1,
-    label: null,
+    label: undefined,
     modelsListed: false,
     saysUnauthenticated: false,
     filePresent: true,
@@ -291,7 +291,7 @@ test('THE CLI STILL SPEAKS WHERE NOTHING BETTER IS KNOWN', () => {
   // best available, which is why the override exists at all.
   const decision = decideAuth({
     code: 0,
-    label: null,
+    label: undefined,
     modelsListed: false,
     saysUnauthenticated: false,
     filePresent: false,
