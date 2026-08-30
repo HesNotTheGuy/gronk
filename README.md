@@ -19,10 +19,10 @@ Your projects, your sessions, your history, in a window instead of a terminal.
 
 ![Gronk Home with the rock brand mark, pure-black chrome, Focus in the topbar, an activity heatmap, and recent projects](docs/images/home.png)
 
-> [!WARNING]
-> **0.2.0 is the first full release.** Built and tested on Windows. The macOS and
-> Linux installers come from CI and have not been run by the author yet. Reports
-> welcome.
+> [!NOTE]
+> **Current release is on the 0.5 line.** Installers ship for Windows, macOS, and
+> Linux. Day-to-day development is still Windows-first; macOS and Linux builds
+> come from CI — please report anything that only fails there.
 
 ## Download
 
