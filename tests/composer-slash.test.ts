@@ -201,3 +201,89 @@ test('AN ATTACHMENT THE AGENT CANNOT OPEN IS MARKED, AND ONE IT CAN IS NOT', asy
     view.unmount()
   }
 })
+
+/**
+ * The drop hint has to stay put while the pointer moves inside the composer.
+ *
+ * `dragleave` fires and bubbles when the pointer crosses onto a CHILD, so an
+ * unconditional reset tore the hint down and the next `dragover` rebuilt it. The
+ * hint is an in-flow block about 35px tall, so the transcript above it jumped on
+ * every crossing, and its `role="status"` re-announced the whole sentence each time.
+ */
+
+function dragEvent(dom: any, kind: string, over: { type: string }[], relatedTarget: any = null): any {
+  const e = new dom.window.Event(kind, { bubbles: true, cancelable: true })
+  Object.defineProperty(e, 'dataTransfer', { value: { items: over }, configurable: true })
+  if (relatedTarget) Object.defineProperty(e, 'relatedTarget', { value: relatedTarget, configurable: true })
+  return e
+}
+
+test('THE DROP HINT SURVIVES THE POINTER MOVING ONTO A CHILD', async () => {
+  const dom = ensureDom()
+  const view = await mount(createElement(Composer, props()))
+  await flush()
+  const wrap = view.container.querySelector('.composer-wrap') as any
+  const textarea = view.container.querySelector('textarea') as any
+  assert.ok(wrap && textarea, 'composer did not render')
+
+  await act(async () => {
+    wrap.dispatchEvent(dragEvent(dom, 'dragover', [{ kind: 'file', type: 'text/plain' }]))
+  })
+  await flush()
+  assert.ok(view.container.querySelector('.drop-hint'), 'no hint after dragging over')
+
+  // Crossing from the wrap's padding onto the textarea: still inside the composer.
+  await act(async () => {
+    wrap.dispatchEvent(dragEvent(dom, 'dragleave', [], textarea))
+  })
+  await flush()
+  assert.ok(
+    view.container.querySelector('.drop-hint'),
+    'the hint was torn down by the pointer moving onto a child, which flickers the transcript'
+  )
+  view.unmount()
+})
+
+test('LEAVING THE COMPOSER ALTOGETHER STILL PUTS THE HINT AWAY', async () => {
+  // The guard must not become "never dismiss": a hint that outlives the drag is
+  // worse than one that flickers.
+  const dom = ensureDom()
+  const view = await mount(createElement(Composer, props()))
+  await flush()
+  const wrap = view.container.querySelector('.composer-wrap') as any
+
+  await act(async () => {
+    wrap.dispatchEvent(dragEvent(dom, 'dragover', [{ kind: 'file', type: 'text/plain' }]))
+  })
+  await flush()
+  assert.ok(view.container.querySelector('.drop-hint'))
+
+  await act(async () => {
+    wrap.dispatchEvent(dragEvent(dom, 'dragleave', [], dom.window.document.body))
+  })
+  await flush()
+  assert.equal(view.container.querySelector('.drop-hint'), null, 'the hint outlived the drag')
+  view.unmount()
+})
+
+test('A DRAG THAT LEAVES THE WINDOW ENTIRELY DISMISSES THE HINT', async () => {
+  // relatedTarget is null when the pointer leaves the window. `null instanceof Node`
+  // is false, so this must fall through to the reset rather than be treated as inside.
+  const dom = ensureDom()
+  const view = await mount(createElement(Composer, props()))
+  await flush()
+  const wrap = view.container.querySelector('.composer-wrap') as any
+
+  await act(async () => {
+    wrap.dispatchEvent(dragEvent(dom, 'dragover', [{ kind: 'file', type: 'text/plain' }]))
+  })
+  await flush()
+  assert.ok(view.container.querySelector('.drop-hint'))
+
+  await act(async () => {
+    wrap.dispatchEvent(dragEvent(dom, 'dragleave', []))
+  })
+  await flush()
+  assert.equal(view.container.querySelector('.drop-hint'), null)
+  view.unmount()
+})

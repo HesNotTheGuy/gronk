@@ -327,3 +327,84 @@ test('the banner is a plain string, so the scope never reaches a component', asy
     h.restore()
   }
 })
+
+/**
+ * A crash report is not a turn's failure.
+ *
+ * The process-level guard sends one while a turn may still be streaming. Routed
+ * through `error` it called `setBusy(false)`, so the composer re-opened under a
+ * running agent — and a banner reading "Your sessions are still running" sat
+ * beside a UI saying the opposite. The turn was never actually cancelled, so a
+ * second prompt could be sent into a session already running one.
+ */
+
+/** A session on screen with a turn still open, which is what `busy` means. */
+async function busyTurn(h: Harness): Promise<void> {
+  await act(async () => {
+    h.emit({ type: 'connection', state: 'ready' })
+    h.emit({
+      type: 'session-resync',
+      sessionId: 's1',
+      messages: [],
+      usage: null,
+      plan: null,
+      source: 'local',
+      hasOpenTurn: true,
+      permissionMode: 'default'
+    } as any)
+  })
+  await flush()
+  assert.equal(h.hook().busy, true, 'the fixture failed to start a turn')
+}
+
+test('A PROCESS FAILURE DOES NOT RE-OPEN THE COMPOSER MID-TURN', async () => {
+  const h = await mountHook()
+  try {
+    await busyTurn(h)
+    await act(async () => {
+      h.emit({ type: 'app-error', message: 'BACKGROUND BOOM' })
+    })
+    await flush()
+    assert.equal(
+      h.hook().busy,
+      true,
+      'busy was cleared by a failure that says nothing about this turn'
+    )
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A PROCESS FAILURE STILL REACHES THE BANNER', async () => {
+  // Not clearing busy must not become not saying anything: the whole point of
+  // staying up instead of vanishing is that the user is told.
+  const h = await mountHook()
+  try {
+    await act(async () => {
+      h.emit({ type: 'app-error', message: 'BACKGROUND BOOM' })
+    })
+    await flush()
+    assert.equal(h.hook().error, 'BACKGROUND BOOM')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})
+
+test('A TURN FAILURE STILL CLEARS BUSY', async () => {
+  // The other half: narrowing `app-error` must not have taken the real one with it.
+  const h = await mountHook()
+  try {
+    await busyTurn(h)
+    await act(async () => {
+      h.emit({ type: 'error', message: 'AGENT BOOM' })
+    })
+    await flush()
+    assert.equal(h.hook().busy, false)
+    assert.equal(h.hook().error, 'AGENT BOOM')
+  } finally {
+    h.unmount()
+    h.restore()
+  }
+})

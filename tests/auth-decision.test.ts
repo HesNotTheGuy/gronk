@@ -7,6 +7,7 @@ import {
   shouldRefreshOnFocus,
   type ProbeFacts
 } from '../electron/main/auth-decision'
+import { authMessage } from '../electron/main/auth'
 
 /**
  * The sign-in decision table.
@@ -252,4 +253,65 @@ test('A TRANSPORT FAILURE IS RECOGNISED FROM WHAT THE CLI ACTUALLY PRINTS', () =
   assert.equal(looksLikeNetworkFailure('failed to lookup address information'), true)
   assert.equal(looksLikeNetworkFailure('You are not authenticated.'), false)
   assert.equal(looksLikeNetworkFailure('Available models:\n  * grok-4.6'), false)
+})
+
+/**
+ * The offline message has to survive the trip to the screen.
+ *
+ * `decideAuth` answering well is only half of it: `observeAuth` then replaced the
+ * message for EVERY `unknown` result with the CLI's own output, and on this path
+ * that output is exactly the `operation timed out` line the change exists to stop
+ * showing. The fallback could never fire, because the branch is only reached when
+ * that text is present. So the sentence written for the user was dead code, and
+ * the pure-function test above passed while the app showed something else.
+ */
+
+const TIMED_OUT =
+  'Error: error sending request for url (https://auth.x.ai/.well-known/openid-configuration): operation timed out'
+
+test('THE OFFLINE MESSAGE IS WHAT THE USER READS, NOT THE CLI OUTPUT', () => {
+  const decision = decideAuth({
+    code: 1,
+    label: null,
+    modelsListed: false,
+    saysUnauthenticated: false,
+    filePresent: true,
+    envKey: false,
+    networkError: true
+  })
+  assert.equal(decision.state, 'unknown')
+  const shown = authMessage(decision, TIMED_OUT, true)
+  assert.match(shown ?? '', /could not reach/i)
+  assert.doesNotMatch(shown ?? '', /operation timed out/i)
+  assert.doesNotMatch(shown ?? '', /https?:\/\//, 'a URL from a subprocess reached the screen')
+})
+
+test('THE CLI STILL SPEAKS WHERE NOTHING BETTER IS KNOWN', () => {
+  // The other `unknown` producer: genuinely undiagnosed. Its own words are the
+  // best available, which is why the override exists at all.
+  const decision = decideAuth({
+    code: 0,
+    label: null,
+    modelsListed: false,
+    saysUnauthenticated: false,
+    filePresent: false,
+    envKey: false,
+    networkError: false
+  })
+  assert.equal(decision.state, 'unknown')
+  assert.match(authMessage(decision, 'grok: something nobody has seen before', false) ?? '', /nobody has seen/)
+})
+
+test('A KNOWN STATE IS NEVER OVERWRITTEN BY SUBPROCESS OUTPUT', () => {
+  const decision = decideAuth({
+    code: 0,
+    label: 'Signed in',
+    modelsListed: true,
+    saysUnauthenticated: false,
+    filePresent: true,
+    envKey: false,
+    networkError: false
+  })
+  assert.equal(decision.state, 'authenticated')
+  assert.equal(authMessage(decision, 'noise from the CLI', false), decision.message)
 })

@@ -223,6 +223,7 @@ async function observeAuth(): Promise<AuthStatus> {
   const { code, stdout, stderr } = await runGrok(['models'], { timeoutMs: 12_000 })
   const combined = `${stdout}\n${stderr}`
 
+  const networkError = looksLikeNetworkFailure(combined)
   const decision = decideAuth({
     code,
     label: parseLoginLabel(stdout),
@@ -230,20 +231,34 @@ async function observeAuth(): Promise<AuthStatus> {
     saysUnauthenticated: looksUnauthenticated(stdout, stderr),
     filePresent,
     envKey,
-    networkError: looksLikeNetworkFailure(combined)
+    networkError
   })
 
-  // The one thing the pure decision cannot supply: the CLI's own words, for the
-  // state where we genuinely do not know what happened. Redacted on the way
-  // through, like every other subprocess output that crosses IPC.
-  if (decision.state === 'unknown') {
-    return {
-      ...decision,
-      message: sanitizeCliText(combined).slice(0, 280) || decision.message
-    }
-  }
+  return { ...decision, message: authMessage(decision, combined, networkError) }
+}
 
-  return decision
+/**
+ * Which words the user actually reads: the decision's own, or the CLI's.
+ *
+ * The CLI's are worth showing for the state where we genuinely do not know what
+ * happened and have nothing better to offer. They are worth NOT showing for a
+ * network failure, which is recognised upstream and already answered with a
+ * sentence written for the person reading it. Substituting `error sending
+ * request for url (...): operation timed out` there puts the exact string this
+ * was written to stop showing back on the screen — and silently, because the
+ * decision object it came from still holds the right message.
+ *
+ * Pulled out of `observeAuth` so this is answerable without a subprocess.
+ */
+export function authMessage(
+  decision: AuthStatus,
+  combined: string,
+  networkError: boolean
+): string | undefined {
+  if (decision.state === 'unknown' && !networkError) {
+    return sanitizeCliText(combined).slice(0, 280) || decision.message
+  }
+  return decision.message
 }
 
 export interface LoginResult {
