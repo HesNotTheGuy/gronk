@@ -4,9 +4,9 @@ Gronk is an Electron desktop app wrapping the Grok Build CLI. The maintainer
 directs the work and does not read code, so everything below exists to make a
 change safe to merge without a human reading the diff line by line.
 
-Read this before your first edit. It is short on purpose; the deep security
-rules live in `CLAUDE.md` at the workspace root (one level above this repo) and
-apply to you too.
+Read this before your first edit. These rules apply to every agent and tool that
+edits this tree — Claude, Grok, Cursor, or anything else. Do not assume a file
+outside the repo still holds the hard rules.
 
 ## The shape of a change
 
@@ -22,6 +22,53 @@ One PR per idea. Every PR:
 
 Never push to `main`. Never push a `v*` tag — a tag builds and publishes a
 public release, and that decision is the maintainer's alone.
+
+## Hard rules
+
+These are non-negotiable. "Cleanup" that breaks one of them is a bug.
+
+- **Every `ipcMain.handle` starts with `assertTrustedSender`.** Checked per
+  handler by `tests/ipc-handler-guard.test.ts` — not by totals, because 60
+  handlers and 60 guards also describes a file where one handler has two and
+  another has none.
+- **Every renderer-supplied argument is narrowed by a validator from
+  `ipc/validate.ts` before it is used.** A parameter's TypeScript type is erased
+  at build time, so `(e, sessionId: string)` happily receives an object or an
+  array and it reaches store reads and `path.join`. **Nothing enforces this** —
+  a green `npm test` is not evidence your handler validates anything. It is on
+  you and on review.
+- **Never remove or skip `--permission-mode`**, including for `default`. Without
+  it the CLI falls back to a config file that commonly auto-approves every tool
+  while the UI still shows a gated mode.
+- **Do not simplify containment checks** (`isPathInside`, `resolveInsideJail`,
+  and friends). Trailing-separator compares and realpath before compare are load
+  bearing; a shorter check reopens prefix escapes (`/data/priv` vs
+  `/data/private`) and symlink escapes.
+- **Settings describe the next session.** The running session is the one on
+  screen. Do not read a picker's live value from stored settings while a session
+  is up.
+- **A restart is a new session with an empty transcript.** If a setting can only
+  be read at spawn, it applies to *new* sessions and the UI must say so.
+- **Credentials stay in the Grok CLI.** Gronk must not store, log, or forward
+  tokens. Pattern redaction is not a substitute for never holding the secret.
+- **Do not claim the `grok` child is OS-sandboxed to the project folder.** ACP
+  fs helpers are jailed; approved tools (and YOLO) run as the user.
+- **Model output, tool results, and marketplace text stay inert.** Do not render
+  them as HTML or executable markdown.
+
+Public posture: [SECURITY.md](SECURITY.md) and [docs/supply-chain.md](docs/supply-chain.md).
+Internal review checklists stay off this tree on purpose.
+
+## Hot modules
+
+These files concentrate session lifecycle. A change that touches any of them must
+be **one behaviour** plus a test that fails without it. No drive-by refactors,
+renames, or "while I'm here" cleanups in the same PR:
+
+- `electron/main/agent-manager.ts`
+- `electron/main/acp/client.ts`
+- `electron/main/store.ts`
+- `src/hooks/useGronk.ts`
 
 ## Verify against the real CLI, not against belief
 
@@ -54,19 +101,6 @@ behaviour, a jsdom asymmetry, a guard that looks like dead weight and is not.
 Do not narrate. How a bug was found, what an earlier version did, which review
 produced a fix, issue numbers: that belongs in the PR description. In source it
 is noise the moment the change merges.
-
-## Things that look like cleanup and are not
-
-- **Removing a `--permission-mode` flag.** It is always emitted, including for
-  `default`. Without it the CLI falls back to a config file that commonly
-  auto-approves every tool while the UI still shows a gated mode.
-- **Restarting the agent to apply a setting.** A restart is a new session with
-  an empty transcript. If a setting can only be read at spawn, it applies to
-  *new* sessions and the UI must say so.
-- **Reading a picker's value from settings while a session is live.** Settings
-  describe the *next* session. The running one is the one on screen.
-- **Simplifying a containment check** (`isPathInside` and friends). Read
-  `CLAUDE.md` before touching anything under `electron/main/ipc/`.
 
 ## Renderer testing
 
