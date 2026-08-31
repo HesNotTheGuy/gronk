@@ -34,6 +34,21 @@ const DAY = 24 * HOUR
 // or to a date-only literal — both have already broken this harness once.
 const NOW = new Date('2026-08-02T12:00:00').getTime()
 
+// And the app reads the clock too, so pinning the fixtures is only half of it.
+//
+// A session card renders BOTH a relative age ("3d ago", via `Date.now()` inside
+// `formatRelative`) and an absolute stamp (`new Date(updatedAt).toLocaleString()`,
+// down to the second), and the heat bar's length is a function of recency.
+// Fixtures frozen at NOW against a live clock made the relative half walk as the
+// calendar moved — 3w became 4w, and the suite went red on a schedule with nobody
+// having changed anything. Moving the fixtures to a live clock instead fixes the
+// relative half and breaks the absolute half on EVERY run, which is worse.
+//
+// One clock for both. Freezing Date.now is what makes every derived string a
+// function of NOW alone. No component calls the Date constructor with no
+// arguments, so this is the only reader there is; a test pins that.
+Date.now = () => NOW
+
 const SCENARIO = new URLSearchParams(location.search).get('state') || 'default'
 
 /** Deterministic PRNG so the activity heatmap is identical on every capture. */
