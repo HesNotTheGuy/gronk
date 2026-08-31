@@ -19,10 +19,10 @@ Your projects, your sessions, your history, in a window instead of a terminal.
 
 ![Gronk Home with the rock brand mark, pure-black chrome, Focus in the topbar, an activity heatmap, and recent projects](docs/images/home.png)
 
-> [!WARNING]
-> **0.2.0 is the first full release.** Built and tested on Windows. The macOS and
-> Linux installers come from CI and have not been run by the author yet. Reports
-> welcome.
+> [!NOTE]
+> **Every release ships installers for Windows, macOS and Linux.** Day-to-day
+> development is Windows-first; the macOS and Linux builds come from CI and get
+> less hands-on use — please report anything that only fails there.
 
 ## Download
 
@@ -31,9 +31,9 @@ for Windows, macOS and Linux.
 
 | Platform | File |
 |---|---|
-| Windows | `-windows-x64-setup.exe`, or `-portable.exe` for no install |
-| macOS | `-macos-universal.dmg`, Apple Silicon and Intel |
-| Linux | `-linux-x86_64.AppImage`, or `-amd64.deb` |
+| Windows | `Gronk.Setup.<version>.exe` to install, or `Gronk.<version>.exe` to run without installing |
+| macOS | `Gronk-<version>-universal.dmg`, Apple Silicon and Intel |
+| Linux | `Gronk-<version>.AppImage`, or `gronk_<version>_amd64.deb` |
 
 Installers are unsigned, so your OS will warn you on first launch. On macOS,
 right-click the app and choose **Open**. On Windows, click **More info** then
