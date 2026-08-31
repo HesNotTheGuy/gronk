@@ -1,13 +1,3 @@
-/**
- * AGENTS.md is the control surface every coding agent loads. If the hard-rule
- * section is deleted or renamed away, Claude / Grok / Cursor stop seeing the
- * same non-negotiables — which is how "cleanup" PRs reopen IPC and permission
- * holes. This file pins the headings and the load-bearing phrases.
- *
- * Claims about what a named test covers are load-bearing too: a "covered by"
- * line that points at a suite with no matching assertion is worse than silence,
- * because a green `npm test` then reads as proof.
- */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -32,8 +22,6 @@ test('AGENTS.md still requires assertTrustedSender on every handler', () => {
 })
 
 test('AGENTS.md marks argument validation as required but unenforced', () => {
-  // Split from the sender-check bullet on purpose. ipc-handler-guard.test.ts
-  // has no assertion about validators; citing it for both was a vacuous claim.
   assert.match(text, /ipc\/validate\.ts/)
   assert.match(text, /Nothing enforces this/)
   assert.doesNotMatch(
