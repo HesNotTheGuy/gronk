@@ -27,9 +27,16 @@ public release, and that decision is the maintainer's alone.
 
 These are non-negotiable. "Cleanup" that breaks one of them is a bug.
 
-- **Every `ipcMain.handle` starts with `assertTrustedSender` and validates its
-  arguments.** The handler count and the guard count are expected to match.
-  Covered by `tests/ipc-handler-guard.test.ts`.
+- **Every `ipcMain.handle` starts with `assertTrustedSender`.** Checked per
+  handler by `tests/ipc-handler-guard.test.ts` — not by totals, because 60
+  handlers and 60 guards also describes a file where one handler has two and
+  another has none.
+- **Every renderer-supplied argument is narrowed by a validator from
+  `ipc/validate.ts` before it is used.** A parameter's TypeScript type is erased
+  at build time, so `(e, sessionId: string)` happily receives an object or an
+  array and it reaches store reads and `path.join`. **Nothing enforces this** —
+  a green `npm test` is not evidence your handler validates anything. It is on
+  you and on review.
 - **Never remove or skip `--permission-mode`**, including for `default`. Without
   it the CLI falls back to a config file that commonly auto-approves every tool
   while the UI still shows a gated mode.
