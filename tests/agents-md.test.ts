@@ -1,9 +1,3 @@
-/**
- * AGENTS.md is the control surface every coding agent loads. If the hard-rule
- * section is deleted or renamed away, Claude / Grok / Cursor stop seeing the
- * same non-negotiables — which is how "cleanup" PRs reopen IPC and permission
- * holes. This file pins the headings and the load-bearing phrases.
- */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -24,6 +18,16 @@ test('AGENTS.md still forbids dropping --permission-mode', () => {
 
 test('AGENTS.md still requires assertTrustedSender on every handler', () => {
   assert.match(text, /assertTrustedSender/)
+  assert.match(text, /ipc-handler-guard\.test\.ts/)
+})
+
+test('AGENTS.md marks argument validation as required but unenforced', () => {
+  assert.match(text, /ipc\/validate\.ts/)
+  assert.match(text, /Nothing enforces this/)
+  assert.doesNotMatch(
+    text,
+    /validates its arguments[\s\S]{0,120}Covered by `tests\/ipc-handler-guard/
+  )
 })
 
 test('AGENTS.md still forbids simplifying path containment', () => {
