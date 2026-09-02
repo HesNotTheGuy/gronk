@@ -27,6 +27,14 @@ test('HomeView is still a landing pad: no Folders or Build sessions headings', (
   assert.doesNotMatch(src, /workspace-folder-list/)
 })
 
+test('session-opening visual scenarios go through Build first', () => {
+  const src = read('scripts/visual/capture.js')
+  assert.match(src, /const OPEN_SESSION/)
+  // The old path: click the title on Home. That now photographs Home.
+  assert.doesNotMatch(src, /steps:\s*\[\s*\{\s*clickText:\s*SESSION_TITLE/)
+  assert.doesNotMatch(src, /usageSteps\s*=\s*\[\s*\{\s*clickText:\s*SESSION_TITLE/)
+})
+
 test('the shots harness only advertises the filler /home/dev/projects trio', () => {
   const shots = read('src/__shots.tsx')
   assert.match(shots, /cwd: '\/home\/dev\/projects\/orbital-api'/)
