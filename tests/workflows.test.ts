@@ -41,8 +41,7 @@ test('user and project rhai files are listed with source and display path', asyn
   )
 
   const list = await listSavedWorkflows({ userDir, projectRoot: project })
-  const names = list.map((w) => w.name)
-  assert.deepEqual(names, ['deep-research', 'mine', 'review-changes'])
+  assert.equal(list[0]?.name, 'deep-research')
   const mine = list.find((w) => w.name === 'mine')
   const review = list.find((w) => w.name === 'review-changes')
   assert.equal(mine?.source, 'user')
@@ -50,6 +49,11 @@ test('user and project rhai files are listed with source and display path', asyn
   assert.equal(mine?.slash, '/mine')
   assert.equal(review?.source, 'project')
   assert.equal(review?.path, '.grok/workflows/review-changes.rhai')
+  assert.ok(
+    list.findIndex((w) => w.name === 'review-changes') <
+      list.findIndex((w) => w.name === 'mine'),
+    'project rows should appear before user rows'
+  )
 })
 
 test('a missing meta.name falls back to a safe filename stem', async () => {

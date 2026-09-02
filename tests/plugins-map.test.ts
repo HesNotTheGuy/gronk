@@ -621,4 +621,4 @@ test('a safe rhai filename stem is accepted as a fallback name', () => {
   assert.equal(workflowNameFromFilename('Review.RHAI'), 'Review')
   assert.equal(workflowNameFromFilename('-evil.rhai'), null)
   assert.equal(workflowNameFromFilename('note.md'), null)
-}))
+})

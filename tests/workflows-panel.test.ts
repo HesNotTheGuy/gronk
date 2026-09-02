@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createElement } from 'react'
+import { act, createElement } from 'react'
 import { flush, mount } from './helpers/render'
 import { PluginsPanel } from '../src/components/PluginsPanel'
 import type { SavedWorkflow } from '../shared/types'
@@ -61,7 +61,9 @@ async function openWorkflows(over: Record<string, unknown> = {}) {
     (el.textContent ?? '').includes('Workflows')
   ) as HTMLButtonElement | undefined
   assert.ok(tab, 'no Workflows tab')
-  tab.click()
+  await act(async () => {
+    tab.click()
+  })
   await flush()
   return view
 }
