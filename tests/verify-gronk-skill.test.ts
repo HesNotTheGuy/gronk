@@ -5,18 +5,18 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import {
-  defaultUserData,
-  evidenceDir,
-  instancePath,
-  isSharedUserData,
-  scratchDir
-} from '../.cursor/skills/verify-gronk/control-gronk.mjs'
+
+/**
+ * Drive the verify-gronk CLI only. Importing control-gronk.mjs into this
+ * TypeScript project has no declarations, and tsc -p tsconfig.test.json
+ * fails closed on that (TS7016). The CLI is what agents run.
+ */
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SKILL = path.join(ROOT, '.cursor/skills/verify-gronk/SKILL.md')
 const DRIVER = path.join(ROOT, '.cursor/skills/verify-gronk/control-gronk.mjs')
 const FEATURES = path.join(ROOT, '.cursor/skills/verify-gronk/features')
+const EVIDENCE = path.join(ROOT, 'artifacts', 'verify-gronk')
 
 function driver(args: string[], env: NodeJS.ProcessEnv = process.env) {
   return spawnSync(process.execPath, [DRIVER, ...args], {
@@ -24,6 +24,19 @@ function driver(args: string[], env: NodeJS.ProcessEnv = process.env) {
     cwd: ROOT,
     env
   })
+}
+
+function paths(env: NodeJS.ProcessEnv = process.env) {
+  const r = driver(['paths'], env)
+  assert.equal(r.status, 0, r.stderr)
+  return JSON.parse(r.stdout) as {
+    repo: string
+    defaultUserData: string
+    scratch: string
+    evidence: string
+    instance: string
+    cdpPort: number
+  }
 }
 
 test('SKILL.md registers as verify-gronk and names the five jobs', () => {
@@ -75,20 +88,23 @@ test('doctor without a launch is not healthy', () => {
   fs.rmSync(isolated, { recursive: true, force: true })
 })
 
-test('shared userData is the real Gronk directory, not tmp', () => {
-  const real = defaultUserData()
-  assert.match(real, /gronk$/)
-  assert.equal(isSharedUserData(real), true)
-  assert.equal(isSharedUserData(path.join(os.tmpdir(), 'gronk-verify', 'user-data')), false)
+test('paths refuses the real Gronk directory and names tmp scratch', () => {
+  const json = paths()
+  assert.equal(path.basename(json.defaultUserData), 'gronk')
+  assert.notEqual(json.defaultUserData, json.scratch)
+  assert.ok(
+    json.instance.startsWith(json.scratch),
+    'instance file must live in scratch, not the real data dir'
+  )
+  assert.equal(json.evidence, EVIDENCE)
+  assert.equal(json.cdpPort, 9333)
 })
 
 test('cleanup deletes scratch and leaves evidence', () => {
   const isolated = fs.mkdtempSync(path.join(os.tmpdir(), 'gronk-verify-test-'))
-  const evidence = evidenceDir()
-  fs.mkdirSync(evidence, { recursive: true })
-  const proof = path.join(evidence, 'cleanup-sentinel.txt')
+  fs.mkdirSync(EVIDENCE, { recursive: true })
+  const proof = path.join(EVIDENCE, 'cleanup-sentinel.txt')
   fs.writeFileSync(proof, 'keep me\n')
-  fs.mkdirSync(isolated, { recursive: true })
   fs.writeFileSync(path.join(isolated, 'scratch-only.txt'), 'drop me\n')
 
   const r = driver(['cleanup'], { ...process.env, GRONK_VERIFY_DIR: isolated })
@@ -96,17 +112,6 @@ test('cleanup deletes scratch and leaves evidence', () => {
   assert.equal(fs.existsSync(isolated), false)
   assert.equal(fs.readFileSync(proof, 'utf8'), 'keep me\n')
   fs.unlinkSync(proof)
-})
-
-test('paths names the refused directory and the evidence dir', () => {
-  const r = driver(['paths'])
-  assert.equal(r.status, 0, r.stderr)
-  const json = JSON.parse(r.stdout)
-  assert.equal(json.defaultUserData, defaultUserData())
-  assert.equal(json.evidence, evidenceDir())
-  assert.equal(json.instance, instancePath())
-  assert.equal(json.scratch, scratchDir())
-  assert.equal(json.cdpPort, 9333)
 })
 
 test('click without a target is a usage error, not a silent success', () => {
