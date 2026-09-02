@@ -188,6 +188,9 @@ const SCENARIOS = [
   { name: 'light-settings', state: 'light-settings', steps: [{ clickText: 'Settings' }, { wait: 1200 }] },
   { name: 'usage-session', state: 'default', steps: usageSteps },
   { name: 'usage-apikey', state: 'apikey', steps: usageSteps },
+  // Published as docs/images/home.png and docs/images/build.png. After a recapture
+  // that actually changes one of these, copy the PNG — do not paste a live Gronk
+  // window. Home is a landing pad; Build still shows the filler folders.
   { name: 'readme-home', state: 'default', steps: [] },
   {
     name: 'readme-build',

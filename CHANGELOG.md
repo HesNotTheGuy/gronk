@@ -12,6 +12,9 @@ Notable changes to Gronk. Format based on
   live on Build (and Chat history lives on Chat). Home was a third copy of the
   same lists, so it was unclear where to pick up work. It is now a landing pad:
   Chat, Build, and the activity heatmap.
+- **README screenshots show that Home**, with the shots-harness filler
+  projects (`orbital-api`, `flux-dashboard`, `packet-relay`), not a live
+  profile. Folder and session lists still appear on Build.
 
 ## [0.5.1] - 2026-08-25
 
