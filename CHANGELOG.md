@@ -4,6 +4,15 @@ Notable changes to Gronk. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Home stopped listing folders and Build sessions.** Those catalogs already
+  live on Build (and Chat history lives on Chat). Home was a third copy of the
+  same lists, so it was unclear where to pick up work. It is now a landing pad:
+  Chat, Build, and the activity heatmap.
+
 ## [0.5.1] - 2026-08-25
 
 Follow-ups to 0.5.0, and one message that was actively misleading.
