@@ -17,7 +17,7 @@ Your projects, your sessions, your history, in a window instead of a terminal.
 
 </div>
 
-![Gronk Home with the rock brand mark, pure-black chrome, Focus in the topbar, an activity heatmap, and recent projects](docs/images/home.png)
+![Gronk Home: Chat and Build actions, an activity heatmap, and no folder or session catalog](docs/images/home.png)
 
 > [!NOTE]
 > **Every release ships installers for Windows, macOS and Linux.** Day-to-day

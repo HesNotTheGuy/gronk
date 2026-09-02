@@ -98,6 +98,8 @@ function localDayWindow(count: number): Date[] {
   return out
 }
 
+// The only project names public screenshots may show. Home does not list them
+// (it is a landing pad); Build does. Do not substitute a live profile's paths.
 const PROJECTS = [
   { cwd: '/home/dev/projects/orbital-api', name: 'orbital-api' },
   { cwd: '/home/dev/projects/flux-dashboard', name: 'flux-dashboard' },

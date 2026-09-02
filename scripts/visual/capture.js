@@ -62,6 +62,18 @@ const report = []
 
 const SESSION_TITLE = 'Rate limiter drops bursts under load'
 
+/**
+ * Home is a landing pad and no longer lists sessions. The fixture title lives
+ * on Build. A scenario that starts with clickText: SESSION_TITLE from default
+ * Home photographs Home and reports a missing step.
+ */
+const OPEN_SESSION = [
+  { clickText: 'Build' },
+  { wait: 1400 },
+  { clickText: SESSION_TITLE },
+  { wait: 1800 }
+]
+
 const PERMISSION_EVENT = {
   type: 'permission-request',
   request: {
@@ -118,8 +130,7 @@ const USAGE_EVENT = {
 }
 
 const usageSteps = [
-  { clickText: SESSION_TITLE },
-  { wait: 1800 },
+  ...OPEN_SESSION,
   { emit: USAGE_EVENT },
   { wait: 800 },
   // The tray's own Usage tab. It was `.usage-summary`, a control on UsageMeter,
@@ -136,18 +147,13 @@ const usageSteps = [
  * type (set an input's value), emit (push a main-process event), wait (ms).
  */
 const SCENARIOS = [
-  { name: 'preview-docked', state: 'preview', steps: [{ clickText: SESSION_TITLE }, { wait: 2000 }] },
-  { name: 'preview-popped', state: 'preview-popped', steps: [{ clickText: SESSION_TITLE }, { wait: 2000 }] },
-  { name: 'remote-images', state: 'remoteimg', steps: [{ clickText: SESSION_TITLE }, { wait: 2000 }] },
+  { name: 'preview-docked', state: 'preview', steps: [...OPEN_SESSION] },
+  { name: 'preview-popped', state: 'preview-popped', steps: [...OPEN_SESSION] },
+  { name: 'remote-images', state: 'remoteimg', steps: [...OPEN_SESSION] },
   {
     name: 'row-menu',
     state: 'default',
-    steps: [
-      { clickText: SESSION_TITLE },
-      { wait: 1800 },
-      { click: '.session-item-row .menu-btn.icon' },
-      { wait: 700 }
-    ]
+    steps: [...OPEN_SESSION, { click: '.session-item-row .menu-btn.icon' }, { wait: 700 }]
   },
   { name: 'sidebar-footer', state: 'default', steps: [{ clickText: 'Build' }, { wait: 1200 }] },
   {
@@ -183,16 +189,19 @@ const SCENARIOS = [
   {
     name: 'light-build',
     state: 'light-build',
-    steps: [{ clickText: SESSION_TITLE }, { wait: 1800 }, { click: '.tool-activity-bar' }, { wait: 800 }]
+    steps: [...OPEN_SESSION, { click: '.tool-activity-bar' }, { wait: 800 }]
   },
   { name: 'light-settings', state: 'light-settings', steps: [{ clickText: 'Settings' }, { wait: 1200 }] },
   { name: 'usage-session', state: 'default', steps: usageSteps },
   { name: 'usage-apikey', state: 'apikey', steps: usageSteps },
+  // Published as docs/images/home.png and docs/images/build.png. After a recapture
+  // that actually changes one of these, copy the PNG — do not paste a live Gronk
+  // window. Home is a landing pad; Build still shows the filler folders.
   { name: 'readme-home', state: 'default', steps: [] },
   {
     name: 'readme-build',
     state: 'default',
-    steps: [{ clickText: SESSION_TITLE }, { wait: 1800 }, { click: '.tool-activity-bar' }, { wait: 900 }]
+    steps: [...OPEN_SESSION, { click: '.tool-activity-bar' }, { wait: 900 }]
   },
   { name: 'readme-chat', state: 'default', steps: [{ clickText: 'Chat' }, { wait: 1400 }] },
   { name: 'readme-settings', state: 'default', steps: [{ clickText: 'Settings' }, { wait: 1200 }] },
@@ -204,15 +213,15 @@ const SCENARIOS = [
   {
     name: 'permission',
     state: 'default',
-    steps: [{ clickText: SESSION_TITLE }, { wait: 1800 }, { emit: PERMISSION_EVENT }, { wait: 1200 }]
+    steps: [...OPEN_SESSION, { emit: PERMISSION_EVENT }, { wait: 1200 }]
   },
   {
     name: 'toolfail',
     state: 'toolfail',
-    steps: [{ clickText: SESSION_TITLE }, { wait: 1800 }, { click: '.tool-activity-bar' }, { wait: 900 }]
+    steps: [...OPEN_SESSION, { click: '.tool-activity-bar' }, { wait: 900 }]
   },
-  { name: 'streaming', state: 'streaming', steps: [{ clickText: SESSION_TITLE }, { wait: 1800 }] },
-  { name: 'preview', state: 'preview', steps: [{ clickText: SESSION_TITLE }, { wait: 1800 }] },
+  { name: 'streaming', state: 'streaming', steps: [...OPEN_SESSION] },
+  { name: 'preview', state: 'preview', steps: [...OPEN_SESSION] },
   {
     name: 'plugins',
     state: 'default',
@@ -234,12 +243,7 @@ const SCENARIOS = [
     state: 'lightbox',
     width: 1000,
     height: 820,
-    steps: [
-      { clickText: SESSION_TITLE },
-      { wait: 1800 },
-      { click: '.local-image-btn' },
-      { wait: 900 }
-    ]
+    steps: [...OPEN_SESSION, { click: '.local-image-btn' }, { wait: 900 }]
   },
   /*
    * The catalogue. Twenty-four `![name](path)` in one reply, six of them not on
@@ -255,22 +259,17 @@ const SCENARIOS = [
   {
     name: 'image-catalogue',
     state: 'catalogue',
-    steps: [{ clickText: SESSION_TITLE }, { wait: 2200 }]
+    steps: [...OPEN_SESSION, { wait: 400 }]
   },
   {
     name: 'image-catalogue-failures',
     state: 'catalogue',
-    steps: [
-      { clickText: SESSION_TITLE },
-      { wait: 2200 },
-      { click: '.md-image-failures-toggle' },
-      { wait: 700 }
-    ]
+    steps: [...OPEN_SESSION, { wait: 400 }, { click: '.md-image-failures-toggle' }, { wait: 700 }]
   },
   {
     name: 'light-image-catalogue',
     state: 'light-catalogue',
-    steps: [{ clickText: SESSION_TITLE }, { wait: 2200 }]
+    steps: [...OPEN_SESSION, { wait: 400 }]
   },
   {
     // Narrow enough that auto-fill actually has to give up columns: the bubble
@@ -281,7 +280,7 @@ const SCENARIOS = [
     state: 'catalogue',
     width: 760,
     height: 820,
-    steps: [{ clickText: SESSION_TITLE }, { wait: 2200 }]
+    steps: [...OPEN_SESSION, { wait: 400 }]
   },
   { name: 'project-menu', state: 'project-menu', steps: [{ wait: 2500 }] },
   { name: 'folder-menu', state: 'folder-menu', steps: [{ wait: 2500 }] },
@@ -294,12 +293,7 @@ const SCENARIOS = [
     // to exactly the ambiguity it was built to remove.
     name: 'browse-with-active-project',
     state: 'default',
-    steps: [
-      { clickText: SESSION_TITLE },
-      { wait: 1800 },
-      { clickText: 'Build' },
-      { wait: 1600 }
-    ]
+    steps: [...OPEN_SESSION, { clickText: 'Build' }, { wait: 1600 }]
   }
 ]
 
