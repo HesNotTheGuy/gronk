@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { MarketplaceSource, McpAddInput, McpServer, Plugin,
-  InstalledSkill
+  InstalledSkill,
+  SavedWorkflow
 } from '../../shared/types'
 
 /**
@@ -17,27 +18,34 @@ export function usePlugins() {
   const [marketplaces, setMarketplaces] = useState<MarketplaceSource[]>([])
   const [mcpServers, setMcpServers] = useState<McpServer[]>([])
   const [skills, setSkills] = useState<InstalledSkill[]>([])
+  const [workflows, setWorkflows] = useState<SavedWorkflow[]>([])
   const [pluginsLoading, setPluginsLoading] = useState(false)
   const [pluginsError, setPluginsError] = useState<string | null>(null)
   const [pluginBusy, setPluginBusy] = useState<string | null>(null)
+  const projectCwdRef = useRef<string | undefined>(undefined)
 
-  const refreshPlugins = useCallback(async () => {
+  const refreshPlugins = useCallback(async (projectCwd?: string | null) => {
+    if (projectCwd !== undefined) {
+      projectCwdRef.current = projectCwd || undefined
+    }
     setPluginsLoading(true)
     setPluginsError(null)
     try {
-      // Skills are read straight off disk, so they cost nothing and never fail
-      // the way a CLI call can, but they are fetched together so one refresh
-      // brings the whole panel up to date.
-      const [inst, mkts, servers, skillList] = await Promise.all([
+      // Skills and workflows are read straight off disk, so they cost nothing
+      // and never fail the way a CLI call can, but they are fetched together
+      // so one refresh brings the whole panel up to date.
+      const [inst, mkts, servers, skillList, workflowList] = await Promise.all([
         window.gronk.listInstalledPlugins(),
         window.gronk.listMarketplaces(),
         window.gronk.listMcpServers(),
-        window.gronk.listSkills()
+        window.gronk.listSkills(),
+        window.gronk.listWorkflows(projectCwdRef.current)
       ])
       setInstalledPlugins(inst)
       setMarketplaces(mkts)
       setMcpServers(servers)
       setSkills(skillList)
+      setWorkflows(workflowList)
     } catch (err) {
       setPluginsError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -136,6 +144,7 @@ export function usePlugins() {
 
   return {
     skills,
+    workflows,
     installedPlugins,
     availablePlugins,
     marketplaces,

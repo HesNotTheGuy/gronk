@@ -155,6 +155,8 @@ const EXPECTED_MEMBERS: string[] = [
   // Skills on disk, for the Skills tab. Read from ~/.grok/skills and the CLI's
   // bundled set — nothing is installed through Gronk, the folder IS the install.
   "skills",
+  // Saved Grok Build Workflows on disk, for the Workflows tab.
+  "workflows",
   "startPreview",
   "stopPreview",
   "stopSession",

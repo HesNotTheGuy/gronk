@@ -115,13 +115,14 @@ test('every preview method on the fake is callable, not just present', async () 
     assert.deepEqual(popOut, { ok: true, message: '' })
     await api.previewDock()
     assert.deepEqual(await api.listSkills(), [])
+    assert.deepEqual(await api.listWorkflows(), [])
 
     const status = (await api.previewStatus()) as Record<string, unknown>
     // usePreview reads poppedOut on mount; undefined here would let a broken
     // detached-state read pass.
     assert.ok('poppedOut' in status, 'previewStatus must report poppedOut')
 
-    for (const name of ['previewPopOut', 'previewDock', 'listSkills']) {
+    for (const name of ['previewPopOut', 'previewDock', 'listSkills', 'listWorkflows']) {
       assert.ok(bridge.calls.includes(name), `${name} should be tracked in calls`)
     }
   } finally {

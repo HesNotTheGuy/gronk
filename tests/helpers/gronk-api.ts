@@ -153,6 +153,7 @@ export function installFakeBridge(overrides: Record<string, unknown> = {}): Fake
     previewDock: async () => track('previewDock', undefined),
 
     listSkills: async () => track('listSkills', []),
+    listWorkflows: async () => track('listWorkflows', []),
 
     listInstalledPlugins: async () => track('listInstalledPlugins', []),
     listAvailablePlugins: async () => track('listAvailablePlugins', []),

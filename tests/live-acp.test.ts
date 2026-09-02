@@ -39,7 +39,12 @@ import { createInterface } from 'node:readline'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { parseModelState, parseSetModelResult, resolveGrokBinary } from '../electron/main/acp/client'
+import {
+  parseAvailableCommands,
+  parseModelState,
+  parseSetModelResult,
+  resolveGrokBinary
+} from '../electron/main/acp/client'
 import { buildAgentArgs } from '../electron/main/agent-args'
 import { redactSecrets } from '../electron/main/redact'
 import type { ReasoningEffort } from '../shared/types'
@@ -185,6 +190,25 @@ live('SWITCHING MODEL STILL ANSWERS THE WAY THE APP READS IT', async (t) => {
     // appears, the strictness this relies on is gone and the app should know.
     const wrong = await agent.rpc('session/set_model', { sessionId, model: target })
     assert.ok(wrong.error, 'the agent accepted a set_model request with no `modelId`')
+  } finally {
+    agent.stop()
+  }
+})
+
+live('INITIALIZE STILL ADVERTISES WORKFLOW SLASH COMMANDS', async (t) => {
+  const { agent } = await startAgent()
+  try {
+    const init = await agent.rpc('initialize', INIT_PARAMS)
+    if (init.error) {
+      return t.skip(`agent would not initialize: ${redactSecrets(String(init.error.message ?? ''))}`)
+    }
+    const commands = parseAvailableCommands(init.result?._meta)
+    const names = commands.map((c) => c.name)
+    assert.ok(names.includes('workflow'), `workflow missing; saw ${names.join(', ') || '(none)'}`)
+    assert.ok(
+      names.includes('deep-research'),
+      `deep-research missing; saw ${names.join(', ') || '(none)'}`
+    )
   } finally {
     agent.stop()
   }

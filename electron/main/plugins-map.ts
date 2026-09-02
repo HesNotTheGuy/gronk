@@ -839,3 +839,52 @@ export function parseSkillFrontmatter(
   if (/[\/]/.test(name) || name.includes('..')) return null
   return description ? { name, description } : { name }
 }
+
+/**
+ * A workflow name the CLI will accept as a slash command.
+ *
+ * Verified against grok 1.0.13 docs: discovery keys off `meta.name`, filenames
+ * are `<safe-name>.rhai`, and the name becomes a slash token. Separators and
+ * flag-shaped names are refused so a listed row cannot be turned into `/-evil`.
+ */
+export const WORKFLOW_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
+
+/**
+ * Read `meta.name` / `meta.description` assignments out of a `.rhai` script.
+ *
+ * Only quoted assignments. The file is not executed. YAML front matter is not
+ * the workflow format; treating it as one would list a skill as a workflow.
+ */
+export function parseWorkflowMeta(
+  text: unknown
+): { name: string; description?: string } | null {
+  if (typeof text !== 'string') return null
+  const body = text.replace(/^\uFEFF/, '')
+  const name = matchWorkflowAssign(body, 'name')
+  if (!name || !WORKFLOW_NAME_RE.test(name) || CONTROL_CHARS.test(name)) return null
+  const description = matchWorkflowAssign(body, 'description')
+  if (description && CONTROL_CHARS.test(description)) {
+    return { name }
+  }
+  return description ? { name, description } : { name }
+}
+
+function matchWorkflowAssign(body: string, field: 'name' | 'description'): string | undefined {
+  const re = new RegExp(
+    String.raw`^\s*meta\.${field}\s*=\s*(['"])((?:\\.|[^\n\\])*?)\1\s*;?\s*$`,
+    'm'
+  )
+  const m = body.match(re)
+  if (!m) return undefined
+  const raw = m[2].replace(/\\(['"])/g, '$1')
+  const value = raw.trim()
+  return value || undefined
+}
+
+/** Filename stem used when `meta.name` is missing but the file itself is safe. */
+export function workflowNameFromFilename(filename: string): string | null {
+  if (!filename.toLowerCase().endsWith('.rhai')) return null
+  const stem = filename.slice(0, -5)
+  if (!WORKFLOW_NAME_RE.test(stem)) return null
+  return stem
+}

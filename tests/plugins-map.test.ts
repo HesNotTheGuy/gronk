@@ -17,7 +17,9 @@ import {
   mapPlugins,
   parseGitRemote,
   parseGitRemoteUrl,
-  parseSkillFrontmatter
+  parseSkillFrontmatter,
+  parseWorkflowMeta,
+  workflowNameFromFilename
 } from '../electron/main/plugins-map'
 
 // ── Option injection: a name starting with - is parsed as a flag ────
@@ -587,3 +589,36 @@ test('a name that could escape its directory is rejected', () => {
 test('a leading BOM does not defeat the block', () => {
   assert.equal(parseSkillFrontmatter('\uFEFF---\nname: bom\n---\n')?.name, 'bom')
 })
+
+// ── Workflow .rhai meta ────────────────────────────────────────────────────
+
+test('workflow meta.name and meta.description are read from quoted assignments', () => {
+  const parsed = parseWorkflowMeta(
+    'meta.name = "review-changes";\nmeta.description = "Review a PR range";\nfn main() {}\n'
+  )
+  assert.deepEqual(parsed, { name: 'review-changes', description: 'Review a PR range' })
+})
+
+test('workflow meta accepts single quotes and a missing description', () => {
+  assert.deepEqual(parseWorkflowMeta("meta.name = 'pr-review';\n"), { name: 'pr-review' })
+})
+
+test('workflow meta refuses YAML front matter and unquoted names', () => {
+  assert.equal(parseWorkflowMeta('---\nname: review-changes\n---\n'), null)
+  assert.equal(parseWorkflowMeta('meta.name = review-changes;\n'), null)
+  assert.equal(parseWorkflowMeta(''), null)
+  assert.equal(parseWorkflowMeta(null), null)
+})
+
+test('workflow meta refuses a name that could become a slash escape', () => {
+  for (const bad of ['../evil', '-flag', 'has space', 'a/b', '']) {
+    assert.equal(parseWorkflowMeta(`meta.name = "${bad}";\n`), null, bad)
+  }
+})
+
+test('a safe rhai filename stem is accepted as a fallback name', () => {
+  assert.equal(workflowNameFromFilename('review-changes.rhai'), 'review-changes')
+  assert.equal(workflowNameFromFilename('Review.RHAI'), 'Review')
+  assert.equal(workflowNameFromFilename('-evil.rhai'), null)
+  assert.equal(workflowNameFromFilename('note.md'), null)
+}))

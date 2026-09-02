@@ -24,6 +24,7 @@ import {
   uninstallPlugin,
   listSkills
 } from '../plugins'
+import { listWorkflows } from '../workflows'
 import {
   assertCliName,
   assertCliToken,
@@ -56,6 +57,12 @@ export function registerPluginsIpc(): void {
   ipcMain.handle('gronk:list-skills', async (e) => {
     assertTrustedSender(e)
     return listSkills()
+  })
+
+  ipcMain.handle('gronk:list-workflows', async (e, projectCwd?: unknown) => {
+    assertTrustedSender(e)
+    const cwd = assertOptionalString(projectCwd, 'cwd')
+    return listWorkflows(cwd)
   })
 
   ipcMain.handle('gronk:plugin-install', async (e, source: unknown, trust: unknown) => {

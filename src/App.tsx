@@ -990,11 +990,16 @@ export function App() {
         marketplaces={g.marketplaces}
         mcpServers={g.mcpServers}
         skills={g.skills}
+        workflows={g.workflows}
         loading={g.pluginsLoading}
         error={g.pluginsError}
         busyName={g.pluginBusy}
         onClose={() => setShowPlugins(false)}
-        onRefresh={() => void g.refreshPlugins()}
+        onRefresh={() => void g.refreshPlugins(g.cwd)}
+        onUseCommand={(command) => {
+          setShowPlugins(false)
+          g.setDraft({ ...g.draft, text: command })
+        }}
         onLoadCatalog={() => void g.loadPluginCatalog()}
         onInstall={(source, trust) => void g.installPlugin(source, trust)}
         onEnable={(name) => void g.enablePlugin(name)}
