@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import type { McpAddInput, McpServer, MarketplaceSource, Plugin,
-  InstalledSkill
+  InstalledSkill,
+  SavedWorkflow
 } from '../../shared/types'
 import { McpServersPanel } from './McpServersPanel'
 import { PluginCard } from './PluginCard'
 import { PluginDetailsModal } from './PluginDetailsModal'
 import { PluginTrustModal } from './PluginTrustModal'
 import { plainText } from '../lib/plugin-view'
+import { savedWorkflowCommand, workflowManageCommand } from '../lib/workflows'
 
-type Tab = 'installed' | 'skills' | 'marketplace' | 'mcp'
+type Tab = 'installed' | 'skills' | 'workflows' | 'marketplace' | 'mcp'
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'installed', label: 'Installed' },
   { id: 'skills', label: 'Skills' },
+  { id: 'workflows', label: 'Workflows' },
   { id: 'marketplace', label: 'Marketplace' },
   { id: 'mcp', label: 'MCP servers' }
 ]
@@ -35,11 +38,14 @@ interface Props {
   marketplaces: MarketplaceSource[]
   mcpServers: McpServer[]
   skills: InstalledSkill[]
+  workflows: SavedWorkflow[]
   loading: boolean
   error: string | null
   /** Name (or install source) of the entry with an action in flight */
   busyName: string | null
   onClose: () => void
+  /** Insert a slash line into the composer. Does not send. */
+  onUseCommand?: (command: string) => void
   /** Fast: installed plugins + marketplaces + MCP servers */
   onRefresh: () => void
   /** Slower: syncs marketplace git caches */
@@ -59,10 +65,12 @@ export function PluginsPanel({
   marketplaces,
   mcpServers,
   skills,
+  workflows,
   loading,
   error,
   busyName,
   onClose,
+  onUseCommand,
   onRefresh,
   onLoadCatalog,
   onInstall,
@@ -142,6 +150,7 @@ export function PluginsPanel({
               {t.id === 'installed' ? ` (${installed.length})` : null}
               {t.id === 'mcp' ? ` (${mcpServers.length})` : null}
               {t.id === 'skills' ? ` (${skills.length})` : null}
+              {t.id === 'workflows' ? ` (${workflows.length})` : null}
             </button>
           ))}
           <div className="plugins-tabs-spacer" />
@@ -157,7 +166,91 @@ export function PluginsPanel({
 
         {error ? <p className="settings-hint warn-text plugins-error">{error}</p> : null}
 
-        {tab === 'skills' ? (
+        {tab === 'workflows' ? (
+          <div className="plugins-body">
+            <p className="settings-hint">
+              Grok Build Workflows. Ask in plain language and Grok authors a{' '}
+              <code className="path-inline">.rhai</code> script, or reuse a saved one.
+              Project scripts live in <code className="path-inline">.grok/workflows</code>.
+              Personal ones live in <code className="path-inline">~/.grok/workflows</code>.
+              Each becomes a slash command. There is no live ACP dashboard in Gronk;
+              watch with <code className="path-inline">/workflow runs</code> in the
+              session. Pause, resume, and stop are the same slash lines.
+            </p>
+            <div className="workflow-controls" aria-label="Workflow run commands">
+              <button
+                type="button"
+                className="btn-mini"
+                onClick={() => onUseCommand?.(workflowManageCommand('runs'))}
+              >
+                /workflow runs
+              </button>
+              <button
+                type="button"
+                className="btn-mini"
+                onClick={() => onUseCommand?.(workflowManageCommand('pause'))}
+              >
+                pause
+              </button>
+              <button
+                type="button"
+                className="btn-mini"
+                onClick={() => onUseCommand?.(workflowManageCommand('resume'))}
+              >
+                resume
+              </button>
+              <button
+                type="button"
+                className="btn-mini"
+                onClick={() => onUseCommand?.(workflowManageCommand('stop'))}
+              >
+                stop
+              </button>
+              <button
+                type="button"
+                className="btn-mini"
+                onClick={() => onUseCommand?.(workflowManageCommand('save'))}
+              >
+                save
+              </button>
+            </div>
+            {workflows.length === 0 ? (
+              <div className="browse-empty">No saved workflows found.</div>
+            ) : (
+              <div className="skill-list">
+                {workflows.map((wf) => (
+                  <div key={`${wf.source}:${wf.slash}`} className="skill-row">
+                    <div className="skill-head">
+                      <span className="plugin-name">{plainText(wf.name, 80)}</span>
+                      <span
+                        className={`plugin-chip ${wf.source === 'user' ? 'hot' : ''}`}
+                      >
+                        {wf.source === 'user'
+                          ? 'yours'
+                          : wf.source === 'project'
+                            ? 'project'
+                            : 'built-in'}
+                      </span>
+                      {onUseCommand ? (
+                        <button
+                          type="button"
+                          className="btn-mini workflow-use"
+                          onClick={() => onUseCommand(savedWorkflowCommand(wf.name))}
+                        >
+                          Use {plainText(wf.slash, 40)}
+                        </button>
+                      ) : null}
+                    </div>
+                    <p className="plugin-desc">
+                      {plainText(wf.description) || 'No description provided.'}
+                    </p>
+                    <p className="workflow-path">{plainText(wf.path, 200)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : tab === 'skills' ? (
           <div className="plugins-body">
             <p className="settings-hint">
               A skill is a folder containing SKILL.md. Drop one into{' '}

@@ -288,6 +288,33 @@ test('COMMANDS FROM THE AGENT ARE VALIDATED, CAPPED AND DEDUPED', async () => {
   assert.equal(many.length, 64, 'the list is not capped')
 })
 
+test('GROK 1.0.13 INITIALIZE STILL ADVERTISES WORKFLOW AND DEEP-RESEARCH', async () => {
+  // Captured from `grok agent stdio` initialize._meta.availableCommands on
+  // grok 1.0.13 (5e9a58528b76). If these vanish, the composer menu loses the
+  // only ACP-advertised way to start a workflow.
+  const { parseAvailableCommands } = await import('../electron/main/acp/client')
+  const parsed = parseAvailableCommands({
+    availableCommands: [
+      { name: 'compact', description: 'Compress conversation history to save context window' },
+      { name: 'deep-research', description: 'Research with bounded parallel agents', input: { hint: '<query>' } },
+      {
+        name: 'workflow',
+        description: 'Launch a saved workflow, list runs, or manage a run (pause, resume, stop, save)',
+        input: {
+          hint: '<name> [--agent-budget N] [--effort LEVEL] [args] | runs | pause|resume|stop|save [name]'
+        }
+      },
+      { name: 'goal', description: 'Set, manage, or check an autonomous goal' }
+    ]
+  })
+  const names = parsed.map((c) => c.name)
+  assert.ok(names.includes('workflow'), 'workflow command dropped from initialize')
+  assert.ok(names.includes('deep-research'), 'deep-research command dropped from initialize')
+  const workflow = parsed.find((c) => c.name === 'workflow')
+  assert.match(workflow?.hint ?? '', /runs/)
+  assert.match(workflow?.hint ?? '', /pause/)
+})
+
 test('A SPENT BALANCE IS NOT REPORTED AS A CRASH TO RETRY', async () => {
   const { rpcErrorMessage, isBillingRefusal } = await import('../electron/main/acp/client')
 

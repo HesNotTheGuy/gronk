@@ -50,7 +50,8 @@ const READ_ONLY = [
   'gronk:plugin-available',
   'gronk:plugin-marketplaces',
   'gronk:mcp-list',
-  'gronk:list-skills'
+  'gronk:list-skills',
+  'gronk:list-workflows'
 ]
 
 interface Handler {

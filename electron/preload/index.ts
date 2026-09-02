@@ -91,6 +91,8 @@ const api: GronkApi = {
   previewReload: () => ipcRenderer.invoke('gronk:preview-reload'),
   previewStatus: () => ipcRenderer.invoke('gronk:preview-status'),
   listSkills: () => ipcRenderer.invoke('gronk:list-skills'),
+  listWorkflows: (projectCwd?: string) =>
+    ipcRenderer.invoke('gronk:list-workflows', projectCwd),
   listInstalledPlugins: () => ipcRenderer.invoke('gronk:plugin-list'),
   listAvailablePlugins: () => ipcRenderer.invoke('gronk:plugin-available'),
   listMarketplaces: () => ipcRenderer.invoke('gronk:plugin-marketplaces'),

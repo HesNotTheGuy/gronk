@@ -721,6 +721,23 @@ const api: Record<string, unknown> = {
   previewPopOut: async () => ({ ok: true, message: '' }),
   previewDock: async () => undefined,
 
+  listWorkflows: async () => [
+    {
+      name: 'deep-research',
+      description:
+        'Research with bounded parallel agents, cross-check evidence, and write a cited report',
+      source: 'builtin' as const,
+      path: 'built-in',
+      slash: '/deep-research'
+    },
+    {
+      name: 'review-changes',
+      description: 'Review a PR range with parallel agents',
+      source: 'project' as const,
+      path: '.grok/workflows/review-changes.rhai',
+      slash: '/review-changes'
+    }
+  ],
   listSkills: async () => [
     {
       name: 'snap-lens-studio',

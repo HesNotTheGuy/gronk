@@ -814,6 +814,30 @@ export interface InstalledSkill {
   directory: string
 }
 
+/**
+ * A Grok Build Workflow the CLI would discover.
+ *
+ * Not a VS Code workspace and not a Home folder. Saved scripts live in
+ * `.grok/workflows/*.rhai` (project) and `~/.grok/workflows/*.rhai` (user).
+ * Each becomes a slash command. `builtin` is the one initialize advertises
+ * (`/deep-research`); other built-ins live inside the CLI binary and are not
+ * listed from disk.
+ */
+export type WorkflowSource = 'builtin' | 'project' | 'user'
+
+export interface SavedWorkflow {
+  name: string
+  description?: string
+  source: WorkflowSource
+  /**
+   * Display path only. User rows are `~/.grok/workflows/<file>.rhai`.
+   * Project rows are `.grok/workflows/<file>.rhai`. Built-in has no file.
+   */
+  path: string
+  /** Slash token the composer should insert, including the leading slash. */
+  slash: string
+}
+
 export interface PluginActionResult {
   ok: boolean
   message: string
@@ -1053,6 +1077,11 @@ export interface GronkApi {
   listInstalledPlugins: () => Promise<Plugin[]>
   /** Skills on disk, from ~/.grok/skills and the CLI's bundled set. */
   listSkills: () => Promise<InstalledSkill[]>
+  /**
+   * Saved Grok Build Workflows. `projectCwd` is optional; when present, project
+   * `.grok/workflows/*.rhai` are listed as well as `~/.grok/workflows`.
+   */
+  listWorkflows: (projectCwd?: string) => Promise<SavedWorkflow[]>
   listAvailablePlugins: () => Promise<Plugin[]>
   listMarketplaces: () => Promise<MarketplaceSource[]>
   installPlugin: (source: string, trust: boolean) => Promise<PluginActionResult>
