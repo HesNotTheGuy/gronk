@@ -4,8 +4,10 @@ import type {
   ProjectContext,
   SessionInfo,
   SessionSearchHit,
-  SessionLiveness
+  SessionLiveness,
+  TerminalSession
 } from '../../shared/types'
+import { TERMINAL_SESSION_GROUP, TERMINAL_SESSION_NOTE } from '../../shared/types'
 import { SessionRow } from './SessionRow'
 import { hasGotGoing } from '../lib/explainer'
 import { folderName, isChatSession } from '../../shared/path'
@@ -51,6 +53,9 @@ interface Props {
   onOpenProject: (cwd?: string | null) => void
   onOpenChat: () => void
   onSelectSession: (s: SessionInfo) => void
+  /** Sessions the grok TUI started. Distinct list, never mixed into projectSessions. */
+  terminalSessions?: TerminalSession[]
+  onSelectTerminalSession?: (s: TerminalSession) => void
   onRenameSession: (id: string, title: string) => void
   onArchiveSession: (id: string) => void
   onExportSession: (id: string, format: 'md' | 'json') => void
@@ -116,6 +121,8 @@ export function Sidebar({
   onOpenProject: _onOpenProject,
   onOpenChat,
   onSelectSession,
+  terminalSessions = [],
+  onSelectTerminalSession,
   onRenameSession,
   onArchiveSession,
   onExportSession,
@@ -579,6 +586,34 @@ export function Sidebar({
                 </div>
               ))
             )}
+            {terminalSessions.length > 0 ? (
+              <div className="session-nav-group">
+                <div className="session-nav-group-head">{TERMINAL_SESSION_GROUP}</div>
+                <p className="terminal-session-note">{TERMINAL_SESSION_NOTE}</p>
+                {terminalSessions.map((s) => {
+                  const title = s.title?.trim() || folderName(s.folder) || s.id
+                  const date = s.updatedAt ? new Date(s.updatedAt).toLocaleDateString() : ''
+                  const meta = date ? `${folderName(s.folder)} · ${date}` : folderName(s.folder)
+                  return (
+                    <div
+                      key={s.id}
+                      className={`session-item-row ${s.id === activeSessionId ? 'active' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        className="session-item"
+                        disabled={!authenticated}
+                        title={`${title}\n${s.folder}`}
+                        onClick={() => onSelectTerminalSession?.(s)}
+                      >
+                        <div className="name">{title}</div>
+                        <div className="meta">{meta}</div>
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
             {projectSessionNav.hidden > 0 ? (
               <button
                 type="button"

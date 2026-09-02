@@ -27,6 +27,7 @@ import { PreviewPane } from './components/PreviewPane'
 import { useGronk } from './hooks/useGronk'
 import { useActivityCalendar } from './hooks/useActivityCalendar'
 import { folderName, isChatSession } from '../shared/path'
+import { TERMINAL_SESSION_NOTE } from '../shared/types'
 import { formatDayLabel } from './lib/calendar'
 import type { LoginMethod, SessionInfo } from '../shared/types'
 
@@ -348,6 +349,8 @@ export function App() {
         onOpenProject={(cwd) => openProject(cwd)}
         onOpenChat={openChat}
         onSelectSession={(s) => void g.selectSession(s)}
+        terminalSessions={g.terminalSessions}
+        onSelectTerminalSession={(s) => void g.selectTerminalSession(s)}
         onRenameSession={(id, t) => void g.renameSession(id, t)}
         onArchiveSession={(id) => void g.archiveSession(id)}
         onExportSession={(id, f) => void g.exportSession(id, f)}
@@ -621,7 +624,9 @@ export function App() {
           </div>
         ) : null}
 
-        {g.historySource && g.historySource !== 'empty' && inConversation ? (
+        {g.openedFromTerminal && inConversation ? (
+          <div className="history-banner">{TERMINAL_SESSION_NOTE}</div>
+        ) : g.historySource && g.historySource !== 'empty' && inConversation ? (
           <div className="history-banner">
             Transcript restored ({g.historySource}
             {g.historySource === 'local' ? ' cache' : ''})

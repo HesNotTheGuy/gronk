@@ -241,3 +241,28 @@ live('THE REASONING-EFFORT FLAG IS STILL IN A PLACE THAT WORKS', async (t) => {
     agent.stop()
   }
 })
+
+live('SESSION/LIST STILL RETURNS NATIVE SESSIONS WITH AN ID AND A FOLDER', async (t) => {
+  const { agent } = await startAgent()
+  try {
+    const init = await agent.rpc('initialize', INIT_PARAMS)
+    if (init.error) return t.skip('agent would not initialize')
+
+    const listed = await agent.rpc('session/list', {})
+    if (listed.error) {
+      return t.skip(
+        `session/list refused: ${redactSecrets(String(listed.error.message ?? listed.error.data ?? ''))}`
+      )
+    }
+
+    const { parseSessionList } = await import('../electron/main/cli-sessions')
+    const rows = parseSessionList(listed.result)
+    assert.ok(Array.isArray(rows), 'parseSessionList did not return an array')
+    for (const row of rows) {
+      assert.ok(row.id, 'session/list row has no id')
+      assert.ok(row.folder, 'session/list row has no folder')
+    }
+  } finally {
+    agent.stop()
+  }
+})

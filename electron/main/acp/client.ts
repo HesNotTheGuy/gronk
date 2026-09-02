@@ -458,6 +458,34 @@ export class GrokAcpClient extends EventEmitter {
     }) as Promise<AcpSessionNewResult>
   }
 
+  /**
+   * Every native grok session on this machine, including ones started in the
+   * terminal TUI. Costs nothing. The payload is untrusted; parse it with
+   * parseSessionList before showing anything.
+   */
+  async sessionList(): Promise<unknown> {
+    return this.request('session/list', {})
+  }
+
+  /**
+   * Resume a native grok session by id plus its folder.
+   *
+   * Same param names as session/load: the folder is `cwd`, and mcpServers is
+   * required on that sibling call. session/resume is the CLI 1.0 method for
+   * sessions Gronk did not create.
+   */
+  async sessionResume(
+    sessionId: string,
+    cwd: string,
+    mcpServers: unknown[] = []
+  ): Promise<AcpSessionNewResult> {
+    return this.request('session/resume', {
+      sessionId,
+      cwd,
+      mcpServers
+    }) as Promise<AcpSessionNewResult>
+  }
+
   async sessionPrompt(
     sessionId: string,
     prompt: Array<{ type: string; text?: string; [k: string]: unknown }>

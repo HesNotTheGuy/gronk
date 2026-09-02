@@ -13,6 +13,7 @@ import type {
   ReasoningEffort,
   SessionInfo,
   SessionLiveness,
+  TerminalSession,
   SessionUsage,
   ToolCallInfo
 } from '../../shared/types'
@@ -152,6 +153,11 @@ export function useGronk() {
    */
   const [sessionLiveness, setSessionLiveness] = useState<Record<string, SessionLiveness>>({})
   const [historySource, setHistorySource] = useState<string | null>(null)
+  /**
+   * This conversation was opened from the terminal group. There is no local
+   * transcript to restore; the banner must say so.
+   */
+  const [openedFromTerminal, setOpenedFromTerminal] = useState(false)
   /**
    * What the live session is running, as opposed to what settings would start next.
    *
@@ -503,6 +509,7 @@ export function useGronk() {
     const [
       projects,
       sess,
+      terminalSess,
       s,
       path,
       modelList,
@@ -514,6 +521,7 @@ export function useGronk() {
     ] = await Promise.all([
       window.gronk.getRecentProjects(),
       window.gronk.listSessions(),
+      window.gronk.listTerminalSessions().catch(() => []),
       window.gronk.getSettings(),
       window.gronk.getGrokPath(),
       window.gronk.listModels(),
@@ -526,6 +534,7 @@ export function useGronk() {
     hydrateCatalog({
       recentProjects: projects,
       sessions: sess,
+      terminalSessions: terminalSess,
       chatWorkspacePath: chatPath,
       projectNotes: notes
     })
@@ -1380,6 +1389,7 @@ export function useGronk() {
       }
 
       beginAttempt('agent')
+      setOpenedFromTerminal(false)
       // The clicked id is known, so this switch starts narrower than the ones a
       // project or chat opens. It still accepts anything until main confirms,
       // because a load can resolve to a different id and the history events
@@ -1488,6 +1498,113 @@ export function useGronk() {
     ]
   )
   selectSessionRef.current = selectSession
+
+  const selectTerminalSession = useCallback(
+    async (session: TerminalSession) => {
+      if (
+        !needsSessionReload({
+          requestedId: session.id,
+          activeId: sessionId,
+          connection,
+          error,
+          hydrating
+        })
+      ) {
+        setBrowsing(false)
+        stickToBottom.current = true
+        return
+      }
+
+      transcriptCache.current = rememberTranscript(
+        transcriptCache.current,
+        sessionId,
+        settledTranscript()
+      )
+
+      const authNow = await window.gronk.getAuthStatus()
+      setAuth(authNow)
+      if (!authNow.authenticated) {
+        focusRef.current = confirmSwitch(focusRef.current, null)
+        failAttempt(
+          'agent',
+          authNow.message ||
+            'Sign in with your own Grok account before continuing a terminal session.'
+        )
+        return
+      }
+
+      beginAttempt('agent')
+      const ticket = openSwitch(session.id)
+
+      const abandoned = (): boolean => {
+        if (switchIsCurrent(ticket)) return false
+        if (focusRef.current.state === 'settled' && shownRef.current) {
+          void window.gronk.focusSession(shownRef.current)
+        }
+        return true
+      }
+
+      try {
+        const chatPath =
+          chatWorkspacePath || (await window.gronk.getChatWorkspacePath())
+        const isChat = isChatWorkspace(session.folder, chatPath)
+
+        setPermission(null)
+        setBusy(true)
+        setHydrating(true)
+        setHistorySource(null)
+        setOpenedFromTerminal(true)
+        setActivePlan(null)
+        setUsage(null)
+        setSessionId(session.id)
+        setCwd(session.folder)
+        setSurface(isChat ? 'chat' : 'project')
+        setBrowsing(false)
+        setAgentSurface(isChat ? 'chat' : 'project')
+        stickToBottom.current = true
+        setMessages([])
+        await yieldPaint()
+
+        const request = `resume-${(loadCounter.current += 1)}`
+        loadRequest.current = request
+        const result = await window.gronk.resumeTerminalSession(
+          session.id,
+          session.folder,
+          request
+        )
+        if (abandoned()) {
+          if (loadRequest.current === request) loadRequest.current = null
+          return
+        }
+        loadRequest.current = null
+        focusRef.current = confirmSwitch(focusRef.current, result.sessionId)
+        setSessionId(result.sessionId)
+        await refreshMeta()
+        setBusy(
+          resyncTurn.current?.sessionId === result.sessionId && resyncTurn.current.open
+        )
+        setHydrating(false)
+      } catch (err) {
+        if (abandoned()) return
+        focusRef.current = confirmSwitch(focusRef.current, null)
+        failAttempt('agent', err instanceof Error ? err.message : String(err))
+        setBusy(false)
+        setHydrating(false)
+      }
+    },
+    [
+      refreshMeta,
+      chatWorkspacePath,
+      sessionId,
+      connection,
+      error,
+      hydrating,
+      beginAttempt,
+      failAttempt,
+      openSwitch,
+      switchIsCurrent
+    ]
+  )
 
   const sendPrompt = useCallback(
     async (
@@ -1769,6 +1886,8 @@ export function useGronk() {
     ...plugins,
     ...dataDir,
     historySource,
+    openedFromTerminal,
+    selectTerminalSession,
     usage,
     activePlan,
     planCollapsed,

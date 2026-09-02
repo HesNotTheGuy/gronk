@@ -52,6 +52,31 @@ export interface SessionInfo {
   userTurns?: number
 }
 
+/**
+ * A grok session started outside Gronk (the terminal TUI).
+ *
+ * Not a store row. session/list is the only source, and there is no local
+ * transcript to paint. Do not coerce this into SessionInfo: archive, export,
+ * search, and rename all assume a Gronk-owned file that these do not have.
+ */
+export interface TerminalSession {
+  id: string
+  folder: string
+  updatedAt: number
+  title?: string
+}
+
+/** Sidebar heading. Distinct from Gronk's own session list on purpose. */
+export const TERMINAL_SESSION_GROUP = 'From terminal'
+
+/**
+ * Restore is not a Gronk-native load. History arrives from the agent after
+ * session/resume. The sidebar must say so; painting an empty transcript as
+ * if it were ours would lie.
+ */
+export const TERMINAL_SESSION_NOTE =
+  'History lives with the agent. Gronk has no local transcript.'
+
 export interface ProjectContext {
   cwd: string
   name: string
@@ -979,9 +1004,24 @@ export interface GronkApi {
     sessionId?: string
   ) => Promise<void>
   listSessions: () => Promise<SessionInfo[]>
+  /**
+   * Native grok sessions started outside Gronk (terminal TUI). Empty when the
+   * CLI is missing, the user is signed out, or session/list fails. Never mixed
+   * into listSessions.
+   */
+  listTerminalSessions: () => Promise<TerminalSession[]>
   /** `requestId` is echoed on this load's history events so the renderer can claim them. */
   loadSession: (
     sessionId: string,
+    requestId?: string
+  ) => Promise<{ sessionId: string; restored: boolean }>
+  /**
+   * Open a terminal-TUI session via session/resume. folder is that session's
+   * cwd. There is no local transcript to paint first.
+   */
+  resumeTerminalSession: (
+    sessionId: string,
+    folder: string,
     requestId?: string
   ) => Promise<{ sessionId: string; restored: boolean }>
   getTranscript: (sessionId: string) => Promise<ChatMessage[]>

@@ -86,6 +86,7 @@ const EXPECTED_MEMBERS: string[] = [
   "models",
   "moveDataDir",
   "newChat",
+  "openedFromTerminal",
   "openChat",
   "openProject",
   "pendingLogin",
@@ -124,6 +125,7 @@ const EXPECTED_MEMBERS: string[] = [
   "revealExport",
   "scrollRef",
   "selectSession",
+  "selectTerminalSession",
   "sendPrompt",
   "sessionId",
   // Two live sessions: what each one is doing, and stopping one without opening it.
@@ -162,6 +164,7 @@ const EXPECTED_MEMBERS: string[] = [
   "stopSession",
   "storeHealth",
   "surface",
+  "terminalSessions",
   "togglePreview",
   "unarchiveSession",
   "uninstallPlugin",

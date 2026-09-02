@@ -39,6 +39,7 @@ import {
 } from './agent/prompt'
 import { routeSessionUpdate, upsertToolCall } from './agent/session-update'
 import { livenessOf, mayForward } from './agent/session-liveness'
+import { terminalResumeParams } from './cli-sessions'
 import {
   appendPermissionAudit,
   getSettings,
@@ -737,6 +738,85 @@ export class AgentManager {
         this.setState('error', message)
         throw err2
       }
+    }
+  }
+
+  /**
+   * Continue a session the grok TUI started. session/resume with that id and
+   * its folder. No local transcript is read or invented; history is whatever
+   * the agent replays. A failed resume is a failed open, not a new session.
+   */
+  async resumeTerminalSession(
+    sessionId: string,
+    folder: string,
+    requestId?: string
+  ): Promise<{ sessionId: string; restored: boolean }> {
+    this.historyRequestId = requestId
+    const targetCwd = normalizeCwd(folder)
+    if (!targetCwd) throw new Error('No project folder for session')
+
+    const settings = getSettings()
+    const stateBeforeLoad = this.state
+    this.setState('loading')
+
+    this.liveMessages = []
+    this.emit({ type: 'history-clear', sessionId, forRequest: this.historyRequestId })
+
+    try {
+      const needBoot = needsAgentBoot({
+        hasClient: !!this.client,
+        state: stateBeforeLoad,
+        currentCwd: this.cwd ? normalizeCwd(this.cwd) : null,
+        targetCwd
+      })
+
+      if (needBoot) {
+        await this.bootAgent(targetCwd, {
+          model: settings.model,
+          surface: isChatPadCwd(targetCwd) ? 'chat' : 'project'
+        })
+        this.liveMessages = []
+      }
+      if (!this.client) throw new Error('Agent not running')
+
+      this.replayingHistory = true
+      this.usage.reset()
+      this.lastPlan = null
+      this.lastHistorySource = null
+      this.suppressHistoryReplay = false
+      this.historyAssistantId = null
+
+      const absCwd = path.isAbsolute(targetCwd) ? targetCwd : path.resolve(targetCwd)
+      const params = terminalResumeParams(sessionId, absCwd)
+      const result = await this.client.sessionResume(
+        params.sessionId,
+        params.cwd,
+        params.mcpServers
+      )
+      this.sessionId = result.sessionId || sessionId
+      this.cwd = targetCwd
+      this.replayingHistory = false
+      this.suppressHistoryReplay = false
+      this.setState('ready')
+      this.emit({ type: 'session', sessionId: this.sessionId, cwd: targetCwd })
+
+      const source = historySource(0, this.liveMessages.length)
+
+      this.persistLiveTranscript()
+      this.lastHistorySource = source
+      this.emit({
+        type: 'history-done',
+        sessionId: this.sessionId,
+        source,
+        forRequest: this.historyRequestId
+      })
+      return { sessionId: this.sessionId, restored: this.liveMessages.length > 0 }
+    } catch (err) {
+      this.replayingHistory = false
+      this.suppressHistoryReplay = false
+      const message = err instanceof Error ? err.message : String(err)
+      this.setState('error', message)
+      throw err
     }
   }
 
@@ -1514,6 +1594,11 @@ export interface ManagedSession {
     cwd?: string,
     requestId?: string
   ): Promise<{ sessionId: string; restored: boolean }>
+  resumeTerminalSession(
+    sessionId: string,
+    folder: string,
+    requestId?: string
+  ): Promise<{ sessionId: string; restored: boolean }>
   stop(): Promise<void>
   sendPrompt(text: string, options?: unknown): Promise<{ messageId: string }>
   setModel(modelId: string): Promise<{ model: string }>
@@ -1794,6 +1879,33 @@ export class AgentRegistry {
       this.booting = manager
     }
     const result = await manager.loadSession(sessionId, cwd, requestId)
+    this.sessions.set(result.sessionId, manager)
+    if (this.booting === manager) this.booting = null
+    this.focus(result.sessionId)
+    return result
+  }
+
+  /**
+   * Open a terminal-TUI session. Live match is focused; otherwise resume
+   * with that id and folder. Same adopt/focus spine as loadSession.
+   */
+  async resumeTerminalSession(
+    sessionId: string,
+    folder: string,
+    requestId?: string
+  ): Promise<{ sessionId: string; restored: boolean }> {
+    const live = this.sessions.get(sessionId)
+    if (live && live.getConnectionState() === 'ready') {
+      this.focus(sessionId)
+      return { sessionId, restored: true }
+    }
+
+    const manager = live ?? this.createSession()
+    if (!live) {
+      this.adopt(manager)
+      this.booting = manager
+    }
+    const result = await manager.resumeTerminalSession(sessionId, folder, requestId)
     this.sessions.set(result.sessionId, manager)
     if (this.booting === manager) this.booting = null
     this.focus(result.sessionId)

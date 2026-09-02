@@ -24,6 +24,7 @@ interface Fake extends ManagedSession {
   readonly id: string
   stopped: number
   loads: number
+  resumes: Array<{ sessionId: string; folder: string }>
   reemitted: number
   /** What this session holds, the way the real one holds `liveMessages`. */
   messages: ChatMessage[]
@@ -48,6 +49,7 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
     id,
     stopped: 0,
     loads: 0,
+    resumes: [],
     reemitted: 0,
     messages: [],
     emit: (event) => sink?.(event),
@@ -109,6 +111,13 @@ function fakeSession(id: string, cwd = '/work/alpha'): Fake {
       state = 'ready'
       sink?.({ type: 'connection', state: 'ready', sessionId: id })
       return { sessionId: id, restored: true }
+    },
+    resumeTerminalSession: async (sessionId: string, folder: string) => {
+      self.resumes.push({ sessionId, folder })
+      started = true
+      state = 'ready'
+      sink?.({ type: 'connection', state: 'ready', sessionId })
+      return { sessionId, restored: false }
     },
     stop: async () => {
       self.stopped += 1
@@ -560,6 +569,26 @@ test('STARTING AND RESUMING BOTH HAND THE RENDERER THE SESSION THEY RESOLVED', a
   await registry.loadSession('b', '/work/beta')
   assert.ok(
     sent.some((e) => e.type === 'session-resync' && e.sessionId === 'b'),
+    'loadSession focused the session it resolved'
+  )
+})
+
+test('resuming a terminal session sends that session id plus its folder', async () => {
+  const session = fakeSession('cli-alpha', '/tmp/tui-alpha')
+  const { registry } = harness(session)
+
+  const result = await registry.resumeTerminalSession('cli-alpha', '/tmp/tui-alpha', 'load-1')
+  assert.equal(result.sessionId, 'cli-alpha')
+  assert.deepEqual(session.resumes, [{ sessionId: 'cli-alpha', folder: '/tmp/tui-alpha' }])
+})
+
+test('resuming a terminal session focuses the session it resolved', async () => {
+  const session = fakeSession('cli-alpha', '/tmp/tui-alpha')
+  const { registry, sent } = harness(session)
+
+  await registry.resumeTerminalSession('cli-alpha', '/tmp/tui-alpha')
+  assert.ok(
+    sent.some((e) => e.type === 'session-resync' && e.sessionId === 'cli-alpha'),
     'resuming focused the session it resolved'
   )
 })
@@ -601,7 +630,7 @@ test('EVERY HISTORY EVENT CARRIES THE REQUEST IT ANSWERS', async () => {
   )
 
   const emits = source.match(/type: 'history-(replace|clear|done)'/g) ?? []
-  assert.equal(emits.length, 4, 'the number of history emits changed — check each one stamps')
+  assert.equal(emits.length, 6, 'the number of history emits changed — check each one stamps')
 
   const stamped = source.match(/forRequest: this\.historyRequestId/g) ?? []
   assert.equal(
