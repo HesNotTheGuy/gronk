@@ -29,7 +29,7 @@ Preconditions:
 - **Read the overlay.** Run `control-gronk.mjs eval --js "!!document.querySelector('.auth-overlay')"`. If `true` and there is no `Continue to app` button, stop the click-through. Snapshot and screenshot the overlay. Home is underneath; a user cannot press Chat or Build. That is `home-auth-overlay`, not a failed Home mount.
 - **Continue when signed in.** If the overlay offers `Continue to app`, run `control-gronk.mjs click --text "Continue to app"`. The dialog is gone. `.home-view` is interactable.
 - **Hide onboarding if it covers the hero.** Run `control-gronk.mjs click --text Hide --within .onboarding` when `aria-label="Getting started"` is present. The checklist leaves; Home remains.
-- **Open Chat from Home.** Run `control-gronk.mjs click --text Chat --within .home-actions`. Topbar kicker becomes `Chat`. Main shows kicker `Chat` and heading `Talk with Grok`.
+- **Open Chat from Home.** Run `control-gronk.mjs click --text Chat --within .home-actions`. If the overlay is up this returns `blocked by dialog` — that is the correct result, not a driver bug. When the overlay is gone, topbar kicker becomes `Chat`. Main shows kicker `Chat` and heading `Talk with Grok`.
 - **Return Home.** Run `control-gronk.mjs click --selector button.brand`. `button.brand` has `aria-current="page"`. Heading is again `Grok on your desktop`.
 - **Open Build from Home.** Run `control-gronk.mjs click --text Build --within .home-actions`. Topbar kicker becomes `Build`. Main kicker is `Build`.
 - **Heatmap.** From Home, confirm `.calendar-panel` and the group `Show activity for`. Do not treat an empty `No activity to show yet.` as a failure on a fresh userData dir.

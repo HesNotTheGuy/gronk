@@ -75,7 +75,7 @@ Stable handles from this tree:
 | --- | --- |
 | Shell | `.app` ; Focus adds `.app.focus-mode` |
 | Home brand (go Home) | `button.brand` (`title="Home"`, `aria-current="page"` when Home) |
-| Chat / Build rail | `nav[aria-label="Main"]` buttons whose label is `Chat` or `Build` |
+| Chat / Build rail | `nav[aria-label="Main"]` `.nav-item-label` text `Chat` or `Build` (the subtitle is extra text; `--text Chat` matches the label child) |
 | Home landing | `.home-view` ; kicker `.home-kicker` = `Home` ; `h1` contains `Grok on your desktop` |
 | Home Chat / Build | `.home-actions` buttons `Chat` (primary) and `Build` (secondary) |
 | Chat browse | `.browse-home` kicker `Chat` ; `h1` contains `Talk with Grok` |
@@ -87,6 +87,8 @@ Stable handles from this tree:
 | Search | `aria-label="Search every session by title or message text"` (hidden on Home) |
 | Heatmap | `.calendar-panel` ; scope group `aria-label="Show activity for"` (`All` / `Chat` / `Build`) |
 | Onboarding | `aria-label="Getting started"` ; **Hide** |
+
+`click` refuses when a modal (`.auth-overlay` or `[role=dialog][aria-modal=true]`) is up and the target is not inside it. A DOM `.click()` would go through; a person cannot. If the overlay has no `Continue to app` button, stop and snapshot the overlay.
 
 `eval` is for reading state after a user action. Do not call `window.gronk.*` as the proof.
 

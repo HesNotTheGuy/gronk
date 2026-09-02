@@ -480,17 +480,37 @@ function clickScript(flags) {
     const root = ${JSON.stringify(within)} ? document.querySelector(${JSON.stringify(within)}) : document
     if (!root) return { ok: false, reason: 'within not found: ${JSON.stringify(within)}' }
     const dialog = document.querySelector('.auth-overlay, [role="dialog"][aria-modal="true"]')
+    const blocked = (el) => {
+      if (dialog && !dialog.contains(el)) {
+        return {
+          ok: false,
+          reason: 'blocked by dialog',
+          dialog: true,
+          dialogClass: dialog.className || null
+        }
+      }
+      return null
+    }
     if (${JSON.stringify(selector)}) {
       const el = root.querySelector(${JSON.stringify(selector)})
       if (!el) return { ok: false, reason: 'selector not found', dialog: !!dialog }
+      const stop = blocked(el)
+      if (stop) return stop
       el.click()
       return { ok: true, via: 'selector', text: (el.textContent || '').trim().slice(0, 80), dialog: !!dialog }
     }
     const wanted = ${JSON.stringify(text || '')}
     if (!wanted) return { ok: false, reason: 'need --text or --selector' }
     const nodes = [...root.querySelectorAll('button, [role="button"], a, [role="tab"]')]
-    const el = nodes.find((n) => (n.textContent || '').replace(/\\s+/g, ' ').trim() === wanted)
+    const labelOf = (n) => {
+      const child = n.querySelector('.nav-item-label')
+      if (child) return child.textContent.replace(/\\s+/g, ' ').trim()
+      return (n.textContent || '').replace(/\\s+/g, ' ').trim()
+    }
+    const el = nodes.find((n) => labelOf(n) === wanted)
     if (!el) return { ok: false, reason: 'no control with that text', dialog: !!dialog }
+    const stop = blocked(el)
+    if (stop) return stop
     el.click()
     return { ok: true, via: 'text', text: wanted, dialog: !!dialog }
   })()`
