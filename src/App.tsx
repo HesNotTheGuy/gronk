@@ -652,8 +652,6 @@ export function App() {
               />
             ) : null}
             <HomeView
-              projects={g.recentProjects}
-              sessions={g.projectOnlySessions}
               authenticated={g.isAuthenticated}
               authLabel={g.auth?.accountLabel}
               grokFound={!!g.grokPath || !!g.health?.grokFound}
@@ -663,11 +661,6 @@ export function App() {
               onSelectActivityDay={selectActivityDay}
               onOpenChat={() => g.goChat()}
               onOpenProjects={() => g.goProjects()}
-              onOpenProject={(cwd) => openProject(cwd)}
-              onSelectSession={(s) => void g.selectSession(s)}
-              onRenameSession={(id, t) => void g.renameSession(id, t)}
-              onArchiveSession={(id) => void g.archiveSession(id)}
-              onDeleteSession={(id) => void g.deleteSession(id)}
               onSignIn={() => setShowAuthModal(true)}
               onSettings={() => g.setShowSettings(true)}
             />
