@@ -1014,9 +1014,9 @@ export function useGronk() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
-      if (mod && e.key.toLowerCase() === 'n' && cwd) {
+      if (mod && e.key.toLowerCase() === 'n') {
         e.preventDefault()
-        void openProjectRef.current?.(cwd, { forceNew: true })
+        void openProjectRef.current?.(undefined, { forceNew: true })
       }
       if (mod && e.key === ',') {
         e.preventDefault()
@@ -1029,7 +1029,7 @@ export function useGronk() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cwd])
+  }, [])
 
   const selectSessionRef = useRef<
     ((session: SessionInfo) => Promise<void>) | null
@@ -1309,9 +1309,8 @@ export function useGronk() {
       await openChat({ forceNew: true })
       return
     }
-    if (!cwd) return
-    await openProject(cwd, { forceNew: true })
-  }, [cwd, openProject, openChat, agentSurface, surface])
+    await openProject(undefined, { forceNew: true })
+  }, [openProject, openChat, agentSurface, surface])
 
   const goHome = useCallback(() => {
     setSurface('home')

@@ -271,12 +271,9 @@ export function App() {
       },
       {
         id: 'new-session',
-        label: 'New session in current project',
+        label: 'New session',
         hint: 'Build',
-        run: () => {
-          if (g.cwd) void g.newChat()
-          else requireAuth(() => void g.openProject())
-        }
+        run: () => requireAuth(() => void g.newChat())
       },
       { id: 'settings', label: 'Settings', hint: 'Ctrl+,', run: () => g.setShowSettings(true) },
       { id: 'plugins', label: 'Plugins & skills', run: () => setShowPlugins(true) },
