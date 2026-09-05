@@ -6,14 +6,6 @@ import { installFakeBridge } from './helpers/gronk-api'
 import { Sidebar } from '../src/components/Sidebar'
 import type { AppSurface, MainToRendererEvent } from '../shared/types'
 
-/**
- * + New session must ask which folder to bind before a session exists.
- *
- * The Build sidebar, Ctrl/Cmd+N, and newChat used to pass the open project's
- * path through, so the picker never ran and cancel could not happen. The
- * folder dialog already exists on openProject(); New session has to reach it.
- */
-
 type Hook = Record<string, any>
 
 interface Harness {
