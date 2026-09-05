@@ -617,6 +617,24 @@ const api: Record<string, unknown> = {
   getProjectNotes: async () => ({}),
   setProjectNote: async () => ({}),
   listSessions: async () => (empty ? [] : SESSIONS),
+  listTerminalSessions: async () =>
+    empty || SCENARIO !== 'cli-sessions'
+      ? []
+      : [
+          {
+            id: 'cli-alpha',
+            folder: 'C:\\work\\antenna',
+            title: 'fix the parser',
+            updatedAt: NOW - 2 * HOUR
+          },
+          {
+            id: 'cli-beta',
+            folder: 'D:\\lab\\beacon',
+            title: 'resume from TUI',
+            updatedAt: NOW - 5 * HOUR
+          }
+        ],
+  resumeTerminalSession: async () => ({ sessionId: 'cli-alpha', restored: false }),
   listModels: async () => [
     { id: 'grok-4.5', name: 'Grok 4.5', isDefault: true },
     { id: 'grok-4.5-fast', name: 'Grok 4.5 Fast' },

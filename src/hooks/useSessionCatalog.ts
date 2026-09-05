@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import type { ProjectContext, ProjectNotes, SessionInfo } from '../../shared/types'
+import type { ProjectContext, ProjectNotes, SessionInfo, TerminalSession } from '../../shared/types'
 import { isChatSession, isChatWorkspace, isWorkspaceSession } from '../../shared/path'
 
 /**
@@ -17,6 +17,7 @@ import { isChatSession, isChatWorkspace, isWorkspaceSession } from '../../shared
  */
 export function useSessionCatalog() {
   const [sessions, setSessions] = useState<SessionInfo[]>([])
+  const [terminalSessions, setTerminalSessions] = useState<TerminalSession[]>([])
   const [recentProjects, setRecentProjects] = useState<ProjectContext[]>([])
   const [chatWorkspacePath, setChatWorkspacePath] = useState<string | null>(null)
   /**
@@ -39,11 +40,13 @@ export function useSessionCatalog() {
     (meta: {
       recentProjects: ProjectContext[]
       sessions: SessionInfo[]
+      terminalSessions: TerminalSession[]
       chatWorkspacePath: string
       projectNotes: ProjectNotes
     }) => {
       setRecentProjects(meta.recentProjects)
       setSessions(meta.sessions)
+      setTerminalSessions(meta.terminalSessions)
       setChatWorkspacePath(meta.chatWorkspacePath)
       setProjectNotes(meta.projectNotes)
     },
@@ -140,6 +143,7 @@ export function useSessionCatalog() {
     chatSessions,
     /** Folder agent sessions only (never app Chat) */
     projectOnlySessions,
+    terminalSessions,
     archivedSessions,
     chatWorkspacePath,
     showArchived,

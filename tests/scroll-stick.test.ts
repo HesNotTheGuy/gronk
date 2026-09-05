@@ -332,11 +332,11 @@ test('ONLY A DELIBERATE MOVE RE-ATTACHES THE TRANSCRIPT TO THE END', async () =>
   const assignments = source.split('stickToBottom.current = true').length - 1
   assert.equal(
     assignments,
-    4,
+    6,
     'the set of events that re-attach the transcript to the end changed. Every one has ' +
-      'to be something the user just asked for — opening a session, going somewhere, ' +
-      'sending a prompt. If this moved, name the event and say why a person would expect ' +
-      'to be taken to the end by it'
+      'to be something the user just asked for — opening a session (Gronk or terminal), ' +
+      'going somewhere, sending a prompt. If this moved, name the event and say why a ' +
+      'person would expect to be taken to the end by it'
   )
 
   // The two that must never: finishing a restore, and the bulk paint before it. Both

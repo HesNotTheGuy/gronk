@@ -394,3 +394,54 @@ test('THE ACCOUNT CHIP GOES TO USAGE WHEN SIGNED IN, AND SIGNS IN WHEN NOT', asy
     signedOut.unmount()
   }
 })
+
+test('Build shows a labeled From terminal group and the honest no-local-transcript copy', async () => {
+  const view = await mount(
+    sidebar({
+      surface: 'project',
+      terminalSessions: [
+        {
+          id: 'cli-alpha',
+          folder: '/tmp/tui-alpha',
+          title: 'fix the parser',
+          updatedAt: Date.parse('2026-08-21T06:52:43.000Z')
+        }
+      ]
+    })
+  )
+  await flush()
+  const text = view.container.textContent || ''
+  assert.match(text, /From terminal/)
+  assert.match(text, /no local transcript/i)
+  assert.match(text, /fix the parser/)
+  view.unmount()
+})
+
+test('an empty terminal group is not rendered', async () => {
+  const view = await mount(sidebar({ surface: 'project', terminalSessions: [] }))
+  await flush()
+  const text = view.container.textContent || ''
+  assert.equal(text.includes('From terminal'), false)
+  assert.equal(text.includes('no local transcript'), false)
+  view.unmount()
+})
+
+test('clicking a terminal row asks to resume that id plus its folder', async () => {
+  const clicks: Array<{ id: string; folder: string }> = []
+  const view = await mount(
+    sidebar({
+      surface: 'project',
+      terminalSessions: [{ id: 'cli-alpha', folder: '/tmp/tui-alpha', updatedAt: 1 }],
+      onSelectTerminalSession: (s: { id: string; folder: string }) =>
+        clicks.push({ id: s.id, folder: s.folder })
+    })
+  )
+  await flush()
+  const row = [...view.container.querySelectorAll('.session-item')].find((el) =>
+    (el.textContent || '').includes('tui-alpha')
+  )
+  assert.ok(row, 'no terminal session row')
+  await view.click(row)
+  assert.deepEqual(clicks, [{ id: 'cli-alpha', folder: '/tmp/tui-alpha' }])
+  view.unmount()
+})

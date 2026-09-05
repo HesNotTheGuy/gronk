@@ -6,18 +6,24 @@
 import { app, dialog, ipcMain } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import { resolveGrokBinary } from '../acp/client'
 import { agentManager } from '../agent-manager'
+import { buildAgentArgs } from '../agent-args'
 import { scheduleAttachmentSweep } from '../attachment-gc'
 import { getAuthStatus } from '../auth'
+import { fetchTerminalSessionList } from '../cli-sessions'
 import { exportTranscriptMarkdown } from '../fs-utils'
 import { assertTrustedSender } from '../ipc-guard'
 import {
   archiveSession,
   deleteSession,
+  getSettings,
   getTranscript,
   listSessions,
   listSessionsWithTranscripts,
+  normalizeCwd,
   renameSession,
+  requestedPermissionMode,
   saveTranscript
 } from '../store'
 import { parseQuery, rankHits, scoreSession } from '../../../shared/session-search'
@@ -30,6 +36,27 @@ export function registerSessionsIpc(ctx: IpcContext): void {
   ipcMain.handle('gronk:list-sessions', (e) => {
     assertTrustedSender(e)
     return listSessions()
+  })
+
+  ipcMain.handle('gronk:list-terminal-sessions', async (e) => {
+    assertTrustedSender(e)
+    const auth = await getAuthStatus()
+    if (!auth.authenticated) return []
+    const settings = getSettings()
+    const binary = resolveGrokBinary(settings.grokBinary)
+    if (!binary) return []
+    const built = buildAgentArgs({
+      permissionMode: requestedPermissionMode({}, settings.permissionMode),
+      alwaysApproveAck: settings.alwaysApproveAck,
+      model: settings.model,
+      reasoningEffort: settings.reasoningEffort,
+      surface: 'project'
+    })
+    return fetchTerminalSessionList({
+      binary,
+      args: built.args,
+      knownIds: listSessions().map((s) => s.id)
+    })
   })
 
   ipcMain.handle('gronk:load-session', async (e, sessionId: unknown, requestId?: unknown) => {
@@ -49,6 +76,24 @@ export function registerSessionsIpc(ctx: IpcContext): void {
     const match = sessions.find((s) => s.id === id)
     return agentManager.loadSession(id, match?.cwd, request)
   })
+
+  ipcMain.handle(
+    'gronk:resume-terminal-session',
+    async (e, sessionId: unknown, folder: unknown, requestId?: unknown) => {
+      assertTrustedSender(e)
+      const auth = await getAuthStatus()
+      if (!auth.authenticated) {
+        throw new Error(
+          auth.message ||
+            'Sign in required before continuing a terminal session. Use your own Grok account.'
+        )
+      }
+      const id = assertString(sessionId, 'sessionId')
+      const cwd = normalizeCwd(assertString(folder, 'folder'))
+      const request = assertOptionalString(requestId, 'requestId')
+      return agentManager.resumeTerminalSession(id, cwd, request)
+    }
+  )
 
   ipcMain.handle('gronk:get-transcript', (e, sessionId: string) => {
     assertTrustedSender(e)

@@ -184,6 +184,11 @@ const SCENARIOS = [
     ]
   },
   { name: 'nav-build-browse', state: 'default', steps: [{ clickText: 'Build' }, { wait: 1400 }] },
+  {
+    name: 'cli-sessions',
+    state: 'cli-sessions',
+    steps: [{ clickText: 'Build' }, { wait: 1400 }]
+  },
   { name: 'nav-chat-browse', state: 'default', steps: [{ clickText: 'Chat' }, { wait: 1400 }] },
   { name: 'light-home', state: 'light-home', steps: [] },
   {
