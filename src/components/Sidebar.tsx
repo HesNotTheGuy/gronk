@@ -479,13 +479,9 @@ export function Sidebar({
               <button
                 type="button"
                 className="session-nav-new"
-                disabled={!authenticated || !activeCwd}
+                disabled={!authenticated}
                 onClick={onNewProjectSession}
-                title={
-                  activeCwd
-                    ? `Start a fresh agent session in ${folderName(activeCwd)}`
-                    : 'Open a session first so the agent has a folder'
-                }
+                title="Start a fresh agent session in a folder you choose"
               >
                 + New session
               </button>
