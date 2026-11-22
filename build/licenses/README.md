@@ -22,10 +22,10 @@ NUL bytes) and strips every CR on commit. The committed blob then fails an
 auditor's hash check against Electron's published dist, while Linux/Windows
 packages still ship the pristine file from electron-builder's own download.
 
-The Chromium notices file for Electron 36.4.0 is 15,190,831 bytes and
-sha256 `335b624d1b4f479532f7a2b974031f9a0c482dd599472489add4368ad9e9b8c8`.
-That is the official dist content, CRs included. Do not re-save the HTML
-through an editor that rewrites line endings.
+The Chromium notices file for Electron 44.11.5 is 20,115,518 bytes and
+sha256 `3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353`.
+That is the official dist content. Do not re-save the HTML through an editor
+that rewrites line endings.
 
 ## When bumping Electron
 

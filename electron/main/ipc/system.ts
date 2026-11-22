@@ -188,7 +188,9 @@ export function registerSystemIpc(ctx: IpcContext): void {
     if (typeof text !== 'string') throw new Error('text must be a string')
     // Cap so a runaway payload cannot pin megabytes into the system clipboard.
     if (text.length > 2_000_000) throw new Error('text too large to copy')
-    clipboard.writeText(text)
+    // Electron 44 made writeText async to match navigator.clipboard. Return
+    // that promise so invoke waits until the OS clipboard actually has the text.
+    return clipboard.writeText(text)
   })
 
   /**
