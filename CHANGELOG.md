@@ -8,6 +8,10 @@ Notable changes to Gronk. Format based on
 
 ### Changed
 
+- **Electron is 44.11.5.** That is the newest 44.x patch. It includes the
+  eMudhra intermediate certificate block (44.9.1) and the October 2026 Node.js
+  security fixes (Node 24.22.1 from 44.10.0, 24.22.3 here). Copy on the main
+  process now waits for Electron's async clipboard write.
 - **Home stopped listing folders and Build sessions.** Those catalogs already
   live on Build (and Chat history lives on Chat). Home was a third copy of the
   same lists, so it was unclear where to pick up work. It is now a landing pad:

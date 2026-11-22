@@ -121,7 +121,7 @@ export function runContextAction(wc: WebContents, item: ContextItem): void {
       // comes from the user's dev server, so following it would hand an
       // untrusted page a navigation; putting it on the clipboard hands the
       // decision to the person reading it.
-      if (item.url) clipboard.writeText(item.url)
+      if (item.url) void clipboard.writeText(item.url)
       return
     default:
       return

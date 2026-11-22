@@ -102,9 +102,10 @@ export const Menu = {
   setApplicationMenu: () => unsupported('Menu.setApplicationMenu')
 }
 export const clipboard = {
-  writeText: (text: string): void => {
+  writeText: (text: string): Promise<void> => {
     if (clipboardWrites === null) unsupported('clipboard.writeText')
     clipboardWrites.push(text)
+    return Promise.resolve()
   }
 }
 /** Present so main-process code can import Notification; tests never show toasts. */
